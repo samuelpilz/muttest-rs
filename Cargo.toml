@@ -1,6 +1,10 @@
 [package]
 name = "muttest"
-version = "0.1.0"
+version = "0.1.0-alpha"
 edition = "2021"
+description = "effective mutation testing for Rust"
 
 [dependencies]
+
+[workspace]
+members = [".", "muttest-codegen", "cargo-muttest"]
