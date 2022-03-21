@@ -1,7 +1,6 @@
 [package]
-name = "cargo-muttest"
+name = "muttest-core"
 version = "0.1.0-alpha"
 edition = "2021"
 
 [dependencies]
-structopt = { version = "0.3.21" }
