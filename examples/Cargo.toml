@@ -1,0 +1,10 @@
+[package]
+name = "muttest-examples"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+muttest = {path = ".."}
+
+[lib]
+path = "lib.rs"

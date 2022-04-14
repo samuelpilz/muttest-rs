@@ -3,20 +3,12 @@ name = "muttest"
 version = "0.1.0-alpha"
 edition = "2021"
 description = "effective mutation testing for Rust"
+autoexamples = false
 
 [dependencies]
 muttest-codegen = { path = "codegen" }
-structopt = { version = "0.3.21", optional = true }
 lazy_static = "1.4.0"
 
-[features]
-bin = ["structopt"]
-default = ["bin"]
-
-[[bin]]
-name = "cargo-muttest"
-required-features = ["bin"]
-
 [workspace]
-members = [".", "codegen", "core"]
+members = [".", "codegen", "core", "app", "examples"]
 

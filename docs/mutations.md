@@ -6,7 +6,11 @@
   * integer/float
   * string/byte/char
   * bool
-* Operator
+* comparison operator
+  * change direction
+  * change bounds
+  * change to eq/ne
+* arithmetic Operator
   * change binop
   * change/remove unop
   * change assignOp

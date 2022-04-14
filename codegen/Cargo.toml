@@ -4,12 +4,11 @@ version = "0.1.0-alpha"
 edition = "2021"
 
 [dependencies]
-proc-macro2 = "1.0.24"
+proc-macro2 = { version = "1.0.24", features = ["span-locations"] }
 syn = { version = "1.0.86", features = ["full", "fold"] }
 quote = "1.0.9"
 lazy_static = "1.4.0"
+muttest-core = { path = "../core" }
 
 [lib]
 proc_macro = true
-doctest = false
-test = false
