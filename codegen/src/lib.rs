@@ -21,7 +21,8 @@ use muttest_core as core;
 
 lazy_static! {
     static ref MUTATION_ID: AtomicUsize = AtomicUsize::new(1);
-    static ref MUTTEST_DIR: PathBuf = core::get_muttest_dir().expect("unable to get muttest directory");
+    static ref MUTTEST_DIR: PathBuf =
+        core::get_muttest_dir().expect("unable to get muttest directory");
     static ref LOGGER: Mutex<fs::File> = {
         fs::create_dir_all(&*MUTTEST_DIR).expect("unable to create muttest directory");
         Mutex::new(
@@ -69,7 +70,7 @@ fn display_span(span: Span) -> String {
     let end = span.end();
     format!(
         "{}@{}:{}-{}:{}",
-        source_file_path(span).display(),
+        source_file_path(span).unwrap_or_default().display(),
         start.line,
         start.column,
         end.line,
@@ -78,12 +79,13 @@ fn display_span(span: Span) -> String {
 }
 
 #[cfg(procmacro2_semver_exempt)]
-fn source_file_path(span: Span) -> PathBuf {
-    span.source_file().path()
+fn source_file_path(span: Span) -> Option<PathBuf> {
+    Some(span.source_file().path())
 }
 #[cfg(not(procmacro2_semver_exempt))]
-fn source_file_path(span: Span) -> PathBuf {
-    PathBuf::new()
+#[allow(unused_variables)]
+fn source_file_path(span: Span) -> Option<PathBuf> {
+    None
 }
 
 /// reserves mutation ids, the first is returned
@@ -141,10 +143,16 @@ impl Fold for MuttestTransformer {
                 parse_quote_spanned! {op.span()=>
                     {
                         let (left, right) = (#left, #right);
+                        let mut p = ::core::marker::PhantomData;
                         #[allow(unused_imports)]
-                        use ::muttest::{IsYesSub, IsNotSub};
-                        match ::muttest::mutable_bin_op(#mut_id, module_path!(), #op_str) {
-                            "-" => (&left).get_sub().sub(left, right),
+                        use ::muttest::sub::{IsYes, IsNo};
+                        #[allow(unused_assignments)]
+                        match Some(::muttest::mutable_bin_op(#mut_id, module_path!(), #op_str)) {
+                            None => {
+                                p = ::muttest::phantom_for_type(&(left #op right));
+                                unreachable!()
+                            },
+                            Some("-") => (&(&left, &right, p)).get().sub(left, right),
                             _ => left #op right,
                         }
                     }

@@ -1,12 +1,11 @@
 use std::{
     fs,
     io::Write,
-    ops::Sub,
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
-    },
+    }, marker::PhantomData,
 };
 
 pub use muttest_codegen::mutate;
@@ -126,38 +125,46 @@ macro_rules! mutable_ints {
 }
 mutable_ints!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
-pub trait IsYesSub {
-    fn get_sub(&self) -> YesSub;
+pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
+    PhantomData
 }
-pub trait IsNotSub {
-    fn get_sub(&self) -> NotSub;
-}
-impl<T: Sub<T, Output = T>> IsYesSub for T {
-    fn get_sub(&self) -> YesSub {
-        YesSub
-    }
-}
-impl<T> IsNotSub for &T {
-    fn get_sub(&self) -> NotSub {
-        NotSub
-    }
-}
-pub struct YesSub;
-pub struct NotSub;
 
-impl YesSub {
-    pub fn is_sub(&self) -> bool {
-        true
+// support for speculative mutation into subtraction
+pub mod sub {
+
+    pub struct Yes;
+    pub struct No;
+    
+    pub trait IsYes {
+        fn get(&self) -> Yes;
     }
-    pub fn sub<T: Sub<T, Output = T>>(self, left: T, right: T) -> T {
-        left.sub(right)
+    pub trait IsNo {
+        fn get(&self) -> No;
     }
-}
-impl NotSub {
-    pub fn is_sub(&self) -> bool {
-        false
+    impl<L: std::ops::Sub<R, Output = O>, R, O> IsYes for (&L, &R, core::marker::PhantomData<O>) {
+        fn get(&self) -> Yes {
+            Yes
+        }
     }
-    pub fn sub<T>(self, _: T, _: T) -> T {
-        panic!()
+    impl<L, R, O> IsNo for &(&L, &R, core::marker::PhantomData<O>) {
+        fn get(&self) -> No {
+            No
+        }
+    }
+    impl Yes {
+        pub fn is_sub(&self) -> bool {
+            true
+        }
+        pub fn sub<L: std::ops::Sub<R, Output = O>, R, O>(self, left: L, right: R) -> O {
+            left.sub(right)
+        }
+    }
+    impl No {
+        pub fn is_sub(&self) -> bool {
+            false
+        }
+        pub fn sub<L, R, O>(self, _: L, _: R) -> O {
+            panic!()
+        }
     }
 }
