@@ -10,7 +10,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote_spanned, spanned::Spanned, BinOp, Expr, ExprBinary,
@@ -108,9 +108,7 @@ impl Fold for MuttestTransformer {
                 let mut_id = get_mutation_ids(1);
                 save_msg(&format!("MUTABLE {mut_id}: INT {x}"));
                 parse_quote_spanned! {i.span()=>
-                    {
-                        ::muttest::mutable_int(#mut_id, module_path!(), #x)
-                    }
+                    ::muttest::mutable_int(#mut_id, module_path!(), #i)
                 }
             }
             Expr::Binary(ExprBinary {
@@ -140,20 +138,51 @@ impl Fold for MuttestTransformer {
                 let op_str = op.to_token_stream().to_string();
                 let mut_id = get_mutation_ids(1);
                 save_msg(&format!("MUTABLE {mut_id}: CALC {op_str}"));
+
+                let mutations = [
+                    ("+", "add"),
+                    ("-", "sub"),
+                    ("*", "mul"),
+                    ("/", "div"),
+                    ("%", "rem"),
+                ];
+                let op_symbols = mutations.iter().map(|x| x.0).collect::<Vec<_>>();
+                let op_names = mutations
+                    .iter()
+                    .map(|x| Ident::new(x.1, op.span()))
+                    .collect::<Vec<_>>();
+
                 parse_quote_spanned! {op.span()=>
                     {
+                        // arguments are evaluated before executing the calculation
                         let (left, right) = (#left, #right);
-                        let mut p = ::core::marker::PhantomData;
-                        #[allow(unused_imports)]
-                        use ::muttest::sub::{IsYes, IsNo};
+                        let left_type = ::muttest::phantom_for_type(&left);
+                        let right_type = ::muttest::phantom_for_type(&right);
+                        // this carries the output type of the computation
+                        // the assignment in the default-case defines the type of this phantom
+                        let mut output_type = ::core::marker::PhantomData;
                         #[allow(unused_assignments)]
-                        match Some(::muttest::mutable_bin_op(#mut_id, module_path!(), #op_str)) {
-                            None => {
-                                p = ::muttest::phantom_for_type(&(left #op right));
-                                unreachable!()
+                        match ::muttest::mutable_bin_op(#mut_id, module_path!(), #op_str) {
+                            "" => {
+                                let output = left #op right;
+                                // after the computation is performed its output type is stored into the variable
+                                // giving the compiler the necessary type hint required for the mutated cases
+                                output_type = ::muttest::phantom_for_type(&output);
+                                #(
+                                    ::muttest::report_speculation(
+                                        #mut_id, #op_symbols,
+                                        ::muttest::get_binop!(#op_names, left_type, right_type, output_type)
+                                            .is_impl()
+                                    );
+                                )*
+                                output
                             },
-                            Some("-") => (&(&left, &right, p)).get().sub(left, right),
-                            _ => left #op right,
+                            // possible mutations
+                            #(#op_symbols =>
+                                ::muttest::get_binop!(#op_names, left_type, right_type, output_type).run(left, right),
+                            )*
+                            // the base case needs to be first in order to give the compiler the correct type hints
+                            _ => unreachable!(),
                         }
                     }
                 }
@@ -166,6 +195,10 @@ impl Fold for MuttestTransformer {
 fn is_calc_op(op: BinOp) -> bool {
     match op {
         BinOp::Add(_) => true,
+        BinOp::Sub(_) => true,
+        BinOp::Mul(_) => true,
+        BinOp::Div(_) => true,
+        BinOp::Rem(_) => true,
         _ => false,
     }
 }

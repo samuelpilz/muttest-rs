@@ -1,11 +1,12 @@
 use std::{
     fs,
     io::Write,
+    marker::PhantomData,
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
-    }, marker::PhantomData,
+    },
 };
 
 pub use muttest_codegen::mutate;
@@ -78,7 +79,7 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
 ) -> bool {
     mutable_covered(m_id, module);
     let ord = left.partial_cmp(right);
-    save_msg(&format!("CMP {m_id:?}; {ord:?}"));
+    save_msg(&format!("CMP {m_id}; {ord:?}"));
     if let Some(ord) = ord {
         match get_active_mutation_for_mutable(m_id) {
             1 => match op_str {
@@ -101,15 +102,20 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
     }
 }
 
-pub fn mutable_bin_op(m_id: usize, module: &'static str, op_str: &'static str) -> &'static str {
+pub fn mutable_bin_op(m_id: usize, module: &'static str, _op_str: &'static str) -> &'static str {
     mutable_covered(m_id, module);
     match get_active_mutation_for_mutable(m_id) {
         1 => "-",
-        _ => op_str,
+        _ => "",
     }
 }
+pub fn report_speculation(m_id: usize, op: &str, ok: bool) {
+    save_msg(&format!("CALC {m_id}: `{op}` {ok:?}"));
+}
 
-// pub trait MutableBinOpAdd: Sized {}
+pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
+    PhantomData
+}
 
 pub trait MutableInt: Copy {
     fn increment(self) -> Self;
@@ -125,46 +131,63 @@ macro_rules! mutable_ints {
 }
 mutable_ints!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
-pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
-    PhantomData
+macro_rules! binop_mutation {
+    ($m:ident, $t:path, $f:ident) => {
+        pub mod $m {
+            use core::marker::PhantomData;
+
+            pub struct Yes;
+            pub struct No;
+
+            pub trait IsYes {
+                fn get_impl(&self) -> Yes;
+            }
+            pub trait IsNo {
+                fn get_impl(&self) -> No;
+            }
+            impl<L: $t, R> IsYes for (PhantomData<L>, PhantomData<R>, PhantomData<<L as $t>::Output>) {
+                fn get_impl(&self) -> Yes {
+                    Yes
+                }
+            }
+            impl<L, R, O> IsNo for &(PhantomData<L>, PhantomData<R>, PhantomData<O>) {
+                fn get_impl(&self) -> No {
+                    No
+                }
+            }
+            impl Yes {
+                pub fn is_impl(&self) -> bool {
+                    true
+                }
+                pub fn run<L: $t, R>(self, left: L, right: R) -> <L as $t>::Output {
+                    <L as $t>::$f(left, right)
+                }
+            }
+            impl No {
+                pub fn is_impl(&self) -> bool {
+                    false
+                }
+                pub fn run<L, R, O>(self, _: L, _: R) -> O {
+                    panic!()
+                }
+            }
+        }
+    };
 }
 
-// support for speculative mutation into subtraction
-pub mod sub {
+binop_mutation!(add, std::ops::Add<R>, add);
+binop_mutation!(sub, std::ops::Sub<R>, sub);
+binop_mutation!(mul, std::ops::Mul<R>, mul);
+binop_mutation!(div, std::ops::Div<R>, div);
+binop_mutation!(rem, std::ops::Rem<R>, rem);
 
-    pub struct Yes;
-    pub struct No;
-    
-    pub trait IsYes {
-        fn get(&self) -> Yes;
-    }
-    pub trait IsNo {
-        fn get(&self) -> No;
-    }
-    impl<L: std::ops::Sub<R, Output = O>, R, O> IsYes for (&L, &R, core::marker::PhantomData<O>) {
-        fn get(&self) -> Yes {
-            Yes
-        }
-    }
-    impl<L, R, O> IsNo for &(&L, &R, core::marker::PhantomData<O>) {
-        fn get(&self) -> No {
-            No
-        }
-    }
-    impl Yes {
-        pub fn is_sub(&self) -> bool {
-            true
-        }
-        pub fn sub<L: std::ops::Sub<R, Output = O>, R, O>(self, left: L, right: R) -> O {
-            left.sub(right)
-        }
-    }
-    impl No {
-        pub fn is_sub(&self) -> bool {
-            false
-        }
-        pub fn sub<L, R, O>(self, _: L, _: R) -> O {
-            panic!()
+#[macro_export]
+macro_rules! get_binop {
+    ($op:ident, $left:expr, $right:expr, $o:expr) => {
+        {
+            #[allow(unused_imports)]
+            use ::muttest::$op::{IsYes, IsNo};
+            (&($left, $right, $o)).get_impl()
         }
     }
 }

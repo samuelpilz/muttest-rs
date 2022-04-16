@@ -1,10 +1,13 @@
-use std::{
-    ops::{Add, Sub},
-};
+use std::ops::{Add, Sub};
 
 #[muttest::mutate]
 fn s() -> String {
     "a".to_owned() + "b"
+}
+
+#[muttest::mutate]
+fn ints() -> i32 {
+    5 * 4
 }
 
 #[muttest::mutate]
@@ -35,4 +38,5 @@ impl Sub for A {
 fn tests() {
     assert_eq!(&s(), "ab");
     assert!(matches!(a(), O1));
+    assert_eq!(ints(), 20);
 }
