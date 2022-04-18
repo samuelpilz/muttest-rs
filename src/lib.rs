@@ -1,12 +1,10 @@
 use std::{
+    collections::BTreeMap,
     fs,
     io::Write,
     marker::PhantomData,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
+    sync::{Mutex, RwLock},
 };
 
 pub use muttest_codegen::mutate;
@@ -28,12 +26,23 @@ lazy_static! {
         Mutex::new(file)
         // TODO: log to different files for integration test (set file in runner)
     };
-    // TODO: report errors
-    static ref ACTIVE_MUTATION: AtomicUsize = {
-        AtomicUsize::new(std::env::var("MUTTEST_MUTATION")
-            .ok()
-            .and_then(|v| v.parse().ok()).unwrap_or_default())
+    static ref ACTIVE_MUTATION: RwLock<BTreeMap<usize, String>> = {
+        RwLock::new(parse_active_mutations(&std::env::var("MUTTEST_MUTATION").unwrap_or_default()))
     };
+}
+fn parse_active_mutations(env: &str) -> BTreeMap<usize, String> {
+    let mut mutations = BTreeMap::new();
+
+    // TODO: report errors
+    for m in env.split(";") {
+        if m.is_empty() {
+            continue;
+        }
+        let m = m.split("=").collect::<Vec<_>>();
+        mutations.insert(m[0].parse().unwrap(), m[1].to_owned());
+    }
+
+    mutations
 }
 
 fn save_msg(msg: &str) {
@@ -43,17 +52,20 @@ fn save_msg(msg: &str) {
 }
 
 // TODO: feature-gate export of this function
-pub fn set_mutation(m_id: usize) {
-    ACTIVE_MUTATION.store(m_id, Ordering::SeqCst);
-}
-pub fn get_active_mutation() -> usize {
-    ACTIVE_MUTATION.load(Ordering::SeqCst)
+pub fn set_mutation(m_id: usize, mutation: String) {
+    ACTIVE_MUTATION
+        .write()
+        .expect("write-lock active mutations")
+        .insert(m_id, mutation);
 }
 /// get the active mutation for a mutable
-pub fn get_active_mutation_for_mutable(m_id: usize) -> usize {
+pub fn get_active_mutation_for_mutable(m_id: usize) -> Option<String> {
+    // TODO: without copy via raii
     ACTIVE_MUTATION
-        .load(Ordering::SeqCst)
-        .saturating_sub(m_id - 1)
+        .read()
+        .expect("read-lock active mutations")
+        .get(&m_id)
+        .cloned()
 }
 pub fn mutable_behavior() -> Option<usize> {
     None
@@ -64,9 +76,11 @@ fn mutable_covered(m_id: usize, module: &str) {
 
 pub fn mutable_int<T: MutableInt>(m_id: usize, module: &str, x: T) -> T {
     mutable_covered(m_id, module);
-    match get_active_mutation_for_mutable(m_id) {
-        1 => x.increment(),
-        _ => x,
+    match get_active_mutation_for_mutable(m_id).as_deref() {
+        None => x,
+        Some(p) if p.chars().all(|c| c.is_numeric()) => T::parse(p),
+        Some("+1") => x.increment(),
+        _ => todo!(),
     }
 }
 
@@ -81,21 +95,15 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
     let ord = left.partial_cmp(right);
     save_msg(&format!("CMP {m_id}; {ord:?}"));
     if let Some(ord) = ord {
-        match get_active_mutation_for_mutable(m_id) {
-            1 => match op_str {
-                "<" => ord.reverse().is_lt(),
-                "<=" => ord.reverse().is_le(),
-                ">=" => ord.reverse().is_ge(),
-                ">" => ord.reverse().is_gt(),
-                _ => unreachable!(),
-            },
-            _ => match op_str {
-                "<" => ord.is_lt(),
-                "<=" => ord.is_le(),
-                ">=" => ord.is_ge(),
-                ">" => ord.is_gt(),
-                _ => unreachable!(),
-            },
+        match get_active_mutation_for_mutable(m_id)
+            .as_deref()
+            .unwrap_or(op_str)
+        {
+            "<" => ord.is_lt(),
+            "<=" => ord.is_le(),
+            ">=" => ord.is_ge(),
+            ">" => ord.is_gt(),
+            _ => todo!(),
         }
     } else {
         false
@@ -104,13 +112,23 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
 
 pub fn mutable_bin_op(m_id: usize, module: &'static str, _op_str: &'static str) -> &'static str {
     mutable_covered(m_id, module);
-    match get_active_mutation_for_mutable(m_id) {
-        1 => "-",
-        _ => "",
+    match get_active_mutation_for_mutable(m_id).as_deref() {
+        None => "",
+        Some("-") => "-",
+        Some("+") => "+",
+        Some("*") => "*",
+        Some("/") => "/",
+        Some("%") => "%",
+        _ => todo!(),
     }
 }
-pub fn report_speculation(m_id: usize, op: &str, ok: bool) {
-    save_msg(&format!("CALC {m_id}: `{op}` {ok:?}"));
+pub fn report_possible_mutations(m_id: usize, reports: &[(&str, bool)]) {
+    let mutations = reports
+        .iter()
+        .filter(|(_, ok)| *ok)
+        .map(|(m, _)| *m)
+        .collect::<Vec<_>>();
+    save_msg(&format!("CALC {m_id}: {mutations:?}"));
 }
 
 pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
@@ -118,6 +136,7 @@ pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
 }
 
 pub trait MutableInt: Copy {
+    fn parse(s: &str) -> Self;
     fn increment(self) -> Self;
 }
 macro_rules! mutable_ints {
@@ -125,6 +144,9 @@ macro_rules! mutable_ints {
         $(impl MutableInt for $t {
             fn increment(self) -> Self {
                 self + 1
+            }
+            fn parse(s: &str) -> Self {
+                s.parse().expect("unable to parse number")
             }
         })*
     };
@@ -145,7 +167,13 @@ macro_rules! binop_mutation {
             pub trait IsNo {
                 fn get_impl(&self) -> No;
             }
-            impl<L: $t, R> IsYes for (PhantomData<L>, PhantomData<R>, PhantomData<<L as $t>::Output>) {
+            impl<L: $t, R> IsYes
+                for (
+                    PhantomData<L>,
+                    PhantomData<R>,
+                    PhantomData<<L as $t>::Output>,
+                )
+            {
                 fn get_impl(&self) -> Yes {
                     Yes
                 }
@@ -183,11 +211,9 @@ binop_mutation!(rem, std::ops::Rem<R>, rem);
 
 #[macro_export]
 macro_rules! get_binop {
-    ($op:ident, $left:expr, $right:expr, $o:expr) => {
-        {
-            #[allow(unused_imports)]
-            use ::muttest::$op::{IsYes, IsNo};
-            (&($left, $right, $o)).get_impl()
-        }
-    }
+    ($op:ident, $left:expr, $right:expr, $o:expr) => {{
+        #[allow(unused_imports)]
+        use ::muttest::$op::{IsNo, IsYes};
+        (&($left, $right, $o)).get_impl()
+    }};
 }

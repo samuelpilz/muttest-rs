@@ -26,11 +26,3 @@ pub fn get_muttest_dir() -> Result<PathBuf, MuttestError> {
     );
     Ok(root_dir.join("muttest"))
 }
-
-trait X {
-    fn x(self);
-}
-trait IsX {
-
-}
-

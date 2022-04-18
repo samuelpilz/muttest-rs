@@ -21,14 +21,13 @@ use muttest_core as core;
 
 lazy_static! {
     static ref MUTATION_ID: AtomicUsize = AtomicUsize::new(1);
-    static ref MUTTEST_DIR: PathBuf =
-        core::get_muttest_dir().expect("unable to get muttest directory");
     static ref LOGGER: Mutex<fs::File> = {
-        fs::create_dir_all(&*MUTTEST_DIR).expect("unable to create muttest directory");
-        Mutex::new(
-            fs::File::create(MUTTEST_DIR.join("transform.log"))
-                .expect("unable to open logger file"),
-        )
+        let dir = core::get_muttest_dir().expect("unable to get muttest directory");
+        let crate_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
+        let file_name = format!("transform-{crate_name}.log");
+
+        fs::create_dir_all(&dir).expect("unable to create muttest directory");
+        Mutex::new(fs::File::create(dir.join(file_name)).expect("unable to open logger file"))
     };
 }
 
@@ -88,9 +87,9 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
     None
 }
 
-/// reserves mutation ids, the first is returned
-fn get_mutation_ids(num_mutations: usize) -> usize {
-    MUTATION_ID.fetch_add(num_mutations, Ordering::SeqCst)
+/// reserves a new mutable id
+fn new_mutable_id() -> usize {
+    MUTATION_ID.fetch_add(1, Ordering::SeqCst)
 }
 
 struct MuttestTransformer;
@@ -105,7 +104,7 @@ impl Fold for MuttestTransformer {
             }) => {
                 // let suffix = i.suffix();
                 let x: usize = i.base10_parse().unwrap();
-                let mut_id = get_mutation_ids(1);
+                let mut_id = new_mutable_id();
                 save_msg(&format!("MUTABLE {mut_id}: INT {x}"));
                 parse_quote_spanned! {i.span()=>
                     ::muttest::mutable_int(#mut_id, module_path!(), #i)
@@ -118,11 +117,12 @@ impl Fold for MuttestTransformer {
                 ..
             }) if is_cmp_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let mut_id = get_mutation_ids(1);
+                let mut_id = new_mutable_id();
                 save_msg(&format!("MUTABLE {mut_id}: CMP {op_str}"));
                 parse_quote_spanned! {op.span()=>
                     {
                         let (left, right) = (#left, #right);
+                        // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
                             ::muttest::mutable_cmp(#mut_id, module_path!(), #op_str, &left, &right)
                         }
@@ -136,7 +136,7 @@ impl Fold for MuttestTransformer {
                 ..
             }) if is_calc_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let mut_id = get_mutation_ids(1);
+                let mut_id = new_mutable_id();
                 save_msg(&format!("MUTABLE {mut_id}: CALC {op_str}"));
 
                 let mutations = [
@@ -146,11 +146,8 @@ impl Fold for MuttestTransformer {
                     ("/", "div"),
                     ("%", "rem"),
                 ];
-                let op_symbols = mutations.iter().map(|x| x.0).collect::<Vec<_>>();
-                let op_names = mutations
-                    .iter()
-                    .map(|x| Ident::new(x.1, op.span()))
-                    .collect::<Vec<_>>();
+                let op_symbols = mutations.map(|x| x.0);
+                let op_names = mutations.map(|x| Ident::new(x.1, op.span()));
 
                 parse_quote_spanned! {op.span()=>
                     {
@@ -168,13 +165,16 @@ impl Fold for MuttestTransformer {
                                 // after the computation is performed its output type is stored into the variable
                                 // giving the compiler the necessary type hint required for the mutated cases
                                 output_type = ::muttest::phantom_for_type(&output);
-                                #(
-                                    ::muttest::report_speculation(
-                                        #mut_id, #op_symbols,
-                                        ::muttest::get_binop!(#op_names, left_type, right_type, output_type)
-                                            .is_impl()
-                                    );
-                                )*
+                                // report the possible mutations
+                                ::muttest::report_possible_mutations(#mut_id,
+                                    &[
+                                        #((
+                                            #op_symbols,
+                                            ::muttest::get_binop!(#op_names, left_type, right_type, output_type)
+                                                .is_impl()
+                                        ),)*
+                                    ]
+                                );
                                 output
                             },
                             // possible mutations
