@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-structopt = "0.3.21"
+clap = { version = "3.1.9", features = ["derive", "cargo"] }
+thiserror = "1.0.30"
+cargo_metadata = "0.14.2"
+csv = "1.1"
+serde = "1"

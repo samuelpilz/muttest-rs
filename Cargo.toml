@@ -10,5 +10,5 @@ muttest-codegen = { path = "codegen" }
 lazy_static = "1.4.0"
 
 [workspace]
-members = [".", "codegen", "core", "app", "examples"]
+members = [".", "codegen", "app", "examples"]
 

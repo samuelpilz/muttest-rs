@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
@@ -14,41 +14,47 @@ use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote_spanned, spanned::Spanned, BinOp, Expr, ExprBinary,
-    ExprLit, File, Item, Lit,
+    ExprLit, File, Lit,
 };
 
-use muttest_core as core;
-
 lazy_static! {
-    static ref MUTATION_ID: AtomicUsize = AtomicUsize::new(1);
-    static ref LOGGER: Mutex<fs::File> = {
-        let dir = core::get_muttest_dir().expect("unable to get muttest directory");
-        let crate_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
-        let file_name = format!("transform-{crate_name}.log");
+    static ref MUTABLE_ID: AtomicUsize = AtomicUsize::new(1);
+    static ref MUTABLE_FILE: Mutex<fs::File> = {
+        let mut dir = target_dir();
+        dir.push("muttest");
+        let mut target_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
+        let crate_name = std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
+        if crate_name != target_name.replace("-", "_") {
+            target_name.push_str("-");
+            target_name.push_str(&crate_name);
+        }
+        let file_name = format!("mutable-{target_name}.csv");
 
         fs::create_dir_all(&dir).expect("unable to create muttest directory");
-        Mutex::new(fs::File::create(dir.join(file_name)).expect("unable to open logger file"))
+        let mut file = fs::File::create(dir.join(file_name)).expect("unable to open logger file");
+        writeln!(&mut file, "id,kind,code,loc").expect("unable to write mutable file");
+        file.flush().expect("unable to flush log");
+        Mutex::new(file)
     };
 }
 
-fn save_msg(msg: &str) {
-    let mut f = LOGGER.lock().unwrap();
-    writeln!(&mut f, "{}", msg).expect("unable to write log");
-    f.flush().expect("unable to flush log");
+// TODO: make optional & implement other estimation strategies
+fn target_dir() -> PathBuf {
+    let cargo_metadata = cargo_metadata::MetadataCommand::new()
+        .exec()
+        .expect("unable to get cargo metadata");
+    cargo_metadata.target_directory.into()
+}
+
+fn save_mutable(m_id: usize, mut_kind: &str, code: &str, loc: &str) {
+    let mut f = MUTABLE_FILE.lock().unwrap();
+    writeln!(&mut f, "{m_id},{mut_kind},{},{loc}", code).expect("unable to write mutable file");
+    f.flush().expect("unable to flush mutable file");
 }
 
 #[proc_macro_attribute]
 pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    // TODO: optionally skip transformations based on ...?
     let input = parse_macro_input!(input as File);
-
-    for i in &input.items {
-        save_msg(&format!(
-            "transform {} in {}",
-            item_name(i),
-            display_span(i.span())
-        ));
-    }
 
     let result = MuttestTransformer.fold_file(input);
 
@@ -57,19 +63,15 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     result.into_token_stream().into()
 }
 
-fn item_name(item: &Item) -> String {
-    match item {
-        Item::Fn(i) => format!("fn {}", i.sig.ident),
-        _ => todo!(),
-    }
-}
-
 fn display_span(span: Span) -> String {
     let start = span.start();
     let end = span.end();
     format!(
         "{}@{}:{}-{}:{}",
-        source_file_path(span).unwrap_or_default().display(),
+        source_file_path(span)
+            .as_deref()
+            .unwrap_or_else(|| Path::new("<unknown-file>"))
+            .display(),
         start.line,
         start.column,
         end.line,
@@ -87,9 +89,9 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
     None
 }
 
-/// reserves a new mutable id
+/// reserves and returns a new mutable id
 fn new_mutable_id() -> usize {
-    MUTATION_ID.fetch_add(1, Ordering::SeqCst)
+    MUTABLE_ID.fetch_add(1, Ordering::SeqCst)
 }
 
 struct MuttestTransformer;
@@ -102,12 +104,14 @@ impl Fold for MuttestTransformer {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(i), ..
             }) => {
-                // let suffix = i.suffix();
-                let x: usize = i.base10_parse().unwrap();
-                let mut_id = new_mutable_id();
-                save_msg(&format!("MUTABLE {mut_id}: INT {x}"));
+                let m_id = new_mutable_id();
+                save_mutable(m_id, "int", i.base10_digits(), &display_span(i.span()));
                 parse_quote_spanned! {i.span()=>
-                    ::muttest::mutable_int(#mut_id, module_path!(), #i)
+                    ::muttest::mutable_int(
+                        #m_id,
+                        ::muttest::MutableLocation::new(file!(), module_path!(), line!(), column!()),
+                        #i,
+                    )
                 }
             }
             Expr::Binary(ExprBinary {
@@ -117,14 +121,20 @@ impl Fold for MuttestTransformer {
                 ..
             }) if is_cmp_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let mut_id = new_mutable_id();
-                save_msg(&format!("MUTABLE {mut_id}: CMP {op_str}"));
+                let m_id = new_mutable_id();
+                save_mutable(m_id, "cmp", &op_str, &display_span(op.span()));
                 parse_quote_spanned! {op.span()=>
                     {
                         let (left, right) = (#left, #right);
                         // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
-                            ::muttest::mutable_cmp(#mut_id, module_path!(), #op_str, &left, &right)
+                            ::muttest::mutable_cmp(
+                                #m_id,
+                                ::muttest::MutableLocation::new(file!(), module_path!(), line!(), column!()),
+                                #op_str,
+                                &left,
+                                &right
+                            )
                         }
                     }
                 }
@@ -136,8 +146,8 @@ impl Fold for MuttestTransformer {
                 ..
             }) if is_calc_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let mut_id = new_mutable_id();
-                save_msg(&format!("MUTABLE {mut_id}: CALC {op_str}"));
+                let m_id = new_mutable_id();
+                save_mutable(m_id, "calc", &op_str, &display_span(op.span()));
 
                 let mutations = [
                     ("+", "add"),
@@ -158,15 +168,20 @@ impl Fold for MuttestTransformer {
                         // this carries the output type of the computation
                         // the assignment in the default-case defines the type of this phantom
                         let mut output_type = ::core::marker::PhantomData;
+                        let mut_op = ::muttest::mutable_bin_op(
+                            #m_id,
+                            ::muttest::MutableLocation::new(file!(), module_path!(), line!(), column!()),
+                            #op_str
+                        );
                         #[allow(unused_assignments)]
-                        match ::muttest::mutable_bin_op(#mut_id, module_path!(), #op_str) {
+                        match mut_op {
                             "" => {
                                 let output = left #op right;
                                 // after the computation is performed its output type is stored into the variable
                                 // giving the compiler the necessary type hint required for the mutated cases
                                 output_type = ::muttest::phantom_for_type(&output);
                                 // report the possible mutations
-                                ::muttest::report_possible_mutations(#mut_id,
+                                ::muttest::report_possible_mutations(#m_id,
                                     &[
                                         #((
                                             #op_symbols,

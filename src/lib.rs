@@ -13,15 +13,19 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     static ref MUTTEST_DIR: PathBuf = {
-        let mut directory = PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR").expect("unable to get cargo manifest dir"),
-        );
-        directory.push("target/muttest");
-        directory
+        // TODO: read some env var
+        let dir = PathBuf::from("target/muttest");
+        fs::create_dir_all(&dir).expect("unable to create muttest directory");
+        dir
     };
-    static ref LOGGER: Mutex<fs::File> = {
-        fs::create_dir_all(&*MUTTEST_DIR).expect("unable to create muttest directory");
+    static ref COVERAGE_FILE: Mutex<fs::File> = {
         let filename = "cover.log";
+        let file = fs::File::create(MUTTEST_DIR.join(filename)).expect("unable to open logger file");
+        Mutex::new(file)
+        // TODO: log to different files for integration test (set file in runner)
+    };
+    static ref MUTATIONS_FILE: Mutex<fs::File> = {
+        let filename = "mutations.csv";
         let file = fs::File::create(MUTTEST_DIR.join(filename)).expect("unable to open logger file");
         Mutex::new(file)
         // TODO: log to different files for integration test (set file in runner)
@@ -38,17 +42,29 @@ fn parse_active_mutations(env: &str) -> BTreeMap<usize, String> {
         if m.is_empty() {
             continue;
         }
-        let m = m.split("=").collect::<Vec<_>>();
+        let m = m.split(":").collect::<Vec<_>>();
         mutations.insert(m[0].parse().unwrap(), m[1].to_owned());
     }
 
     mutations
 }
 
-fn save_msg(msg: &str) {
-    let mut f = LOGGER.lock().unwrap();
-    writeln!(&mut f, "{}", msg).expect("unable to write log");
-    f.flush().expect("unable to flush log");
+fn report_coverage(m_id: usize, loc: MutableLocation) {
+    let mut f = COVERAGE_FILE.lock().unwrap();
+    writeln!(&mut f, "{m_id},{loc:?}").expect("unable to write log");
+    f.flush().expect("unable to flush coverage report");
+}
+
+pub fn report_possible_mutations(m_id: usize, reports: &[(&str, bool)]) {
+    let mut f = MUTATIONS_FILE.lock().unwrap();
+    let mutations = reports
+        .iter()
+        .filter(|(_, ok)| *ok)
+        .map(|(m, _)| *m)
+        .collect::<Vec<_>>();
+    writeln!(&mut f, "{m_id},{mutations:?}").expect("unable to write log");
+    f.flush()
+        .expect("unable to flush possible mutations report");
 }
 
 // TODO: feature-gate export of this function
@@ -67,15 +83,28 @@ pub fn get_active_mutation_for_mutable(m_id: usize) -> Option<String> {
         .get(&m_id)
         .cloned()
 }
-pub fn mutable_behavior() -> Option<usize> {
-    None
+
+#[derive(Debug, Clone, Copy)]
+#[allow(unused)]
+pub struct MutableLocation {
+    file: &'static str,
+    module: &'static str,
+    line: u32,
+    column: u32,
 }
-fn mutable_covered(m_id: usize, module: &str) {
-    save_msg(&format!("COVERED {m_id} in {module}"));
+impl MutableLocation {
+    pub fn new(file: &'static str, module: &'static str, line: u32, column: u32) -> Self {
+        MutableLocation {
+            file,
+            module,
+            line,
+            column,
+        }
+    }
 }
 
-pub fn mutable_int<T: MutableInt>(m_id: usize, module: &str, x: T) -> T {
-    mutable_covered(m_id, module);
+pub fn mutable_int<T: MutableInt>(m_id: usize, loc: MutableLocation, x: T) -> T {
+    report_coverage(m_id, loc);
     match get_active_mutation_for_mutable(m_id).as_deref() {
         None => x,
         Some(p) if p.chars().all(|c| c.is_numeric()) => T::parse(p),
@@ -86,14 +115,15 @@ pub fn mutable_int<T: MutableInt>(m_id: usize, module: &str, x: T) -> T {
 
 pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
     m_id: usize,
-    module: &str,
+    loc: MutableLocation,
     op_str: &str,
     left: &T,
     right: &T1,
 ) -> bool {
-    mutable_covered(m_id, module);
+    report_coverage(m_id, loc);
     let ord = left.partial_cmp(right);
-    save_msg(&format!("CMP {m_id}; {ord:?}"));
+    // TODO: record behavior for weak mutation testing
+    // save_msg(&format!("CMP {m_id}; {ord:?}"));
     if let Some(ord) = ord {
         match get_active_mutation_for_mutable(m_id)
             .as_deref()
@@ -110,8 +140,8 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
     }
 }
 
-pub fn mutable_bin_op(m_id: usize, module: &'static str, _op_str: &'static str) -> &'static str {
-    mutable_covered(m_id, module);
+pub fn mutable_bin_op(m_id: usize, loc: MutableLocation, _op_str: &'static str) -> &'static str {
+    report_coverage(m_id, loc);
     match get_active_mutation_for_mutable(m_id).as_deref() {
         None => "",
         Some("-") => "-",
@@ -122,15 +152,6 @@ pub fn mutable_bin_op(m_id: usize, module: &'static str, _op_str: &'static str) 
         _ => todo!(),
     }
 }
-pub fn report_possible_mutations(m_id: usize, reports: &[(&str, bool)]) {
-    let mutations = reports
-        .iter()
-        .filter(|(_, ok)| *ok)
-        .map(|(m, _)| *m)
-        .collect::<Vec<_>>();
-    save_msg(&format!("CALC {m_id}: {mutations:?}"));
-}
-
 pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
     PhantomData
 }

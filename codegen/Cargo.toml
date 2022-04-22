@@ -8,7 +8,7 @@ proc-macro2 = { version = "1.0.24", features = ["span-locations"] }
 syn = { version = "1.0.86", features = ["full", "fold"] }
 quote = "1.0.9"
 lazy_static = "1.4.0"
-muttest-core = { path = "../core" }
+cargo_metadata = "0.14.2" # TODO: make optional
 
 [lib]
 proc_macro = true
