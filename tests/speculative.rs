@@ -11,8 +11,13 @@ fn ints() -> i32 {
 }
 
 #[muttest::mutate]
-fn a() -> O1 {
+fn a1() -> O1 {
     A + A
+}
+
+#[muttest::mutate]
+fn a2() -> O2 {
+    A - A
 }
 
 struct A;
@@ -37,6 +42,7 @@ impl Sub for A {
 #[test]
 fn tests() {
     assert_eq!(&s(), "ab");
-    assert!(matches!(a(), O1));
+    assert!(matches!(a1(), O1));
+    assert!(matches!(a2(), O2));
     assert_eq!(ints(), 20);
 }

@@ -1,10 +1,11 @@
 use std::{
-    io,
-    path::{Path, PathBuf},
+    collections::BTreeMap,
+    fs,
+    io::{self, Write},
     process::{Command, Stdio},
 };
 
-use cargo_metadata::camino::Utf8PathBuf;
+use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use serde::Deserialize;
 
@@ -48,37 +49,45 @@ fn main() -> Result<(), MuttestError> {
     println!("{compilation_result:?}");
 
     // read created mutables
-    let mutable_files = read_mutables(muttest_dir.as_std_path())?;
+    let mut mutables = read_mutable_defs(&muttest_dir)?;
+
+    let details_filepath = muttest_dir.join("details.csv");
+    setup_mutable_details(&details_filepath)?;
 
     // run test suites without mutations for coverage
     for test_exe in &compilation_result.test_exes {
         println!("call {}", &test_exe.name);
         Command::new(&test_exe.path)
+            .env("MUTTEST_DETAILS_FILE", &details_filepath)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
     }
+
+    read_mutable_details(&muttest_dir, &mut mutables)?;
+
     // TODO: read coverage data and possible mutations
 
     // evaluate mutations
-    for mf in &mutable_files {
-        println!("TARGET {}: {}", mf.0, mf.1.len());
-        for mutable @ Mutable { id, code, kind, .. } in &mf.1 {
-            let mutations = mutable.mutations();
-            println!("{}: `{}` -{}-> {:?}", id, code, kind, &mutations);
+    for (m_id, mutable @ Mutable { code, kind, .. }) in &mutables {
+        let mutations = mutable.mutations();
+        println!("{:?}: `{}` -{}-> {:?}", m_id, code, kind, &mutations);
 
-            for m in mutations {
-                // run test suites without mutations for coverage
-                for test_exe in &compilation_result.test_exes {
-                    println!("call {} with {id}:{m}", &test_exe.name);
-                    let result = Command::new(&test_exe.path)
-                        .env("MUTTEST_MUTATION", format!("{id}:{m}"))
-                        .stdout(Stdio::null())
-                        .spawn()?
-                        .wait()?;
-                    println!("      ... {}", result.code().unwrap_or_default());
-                    // TODO: run tests in finer granularity
-                }
+        for m in mutations {
+            println!("mutation {m}");
+            // run test suites without mutations for coverage
+            for test_exe in &compilation_result.test_exes {
+                print!("call {}", &test_exe.name);
+                io::stdout().flush()?;
+                let result = Command::new(&test_exe.path)
+                    .env("MUTTEST_MUTATION", format!("{}:{m}", m_id.1))
+                    // .env("MUTTEST_DETAILS_FILE", &details_filepath)
+                    // TODO: think about details here
+                    .stdout(Stdio::null())
+                    .spawn()?
+                    .wait()?;
+                println!(" ... {}", result.code().unwrap_or_default());
+                // TODO: run tests in finer granularity
             }
         }
     }
@@ -99,20 +108,46 @@ struct TestExe {
     name: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(unused)]
+#[derive(Debug, Deserialize, Default)]
 struct Mutable {
-    id: usize,
     kind: String,
     code: String,
-    loc: String,
+    loc: Option<String>,
+    ty: Option<String>,
+    possible_mutations: Option<Vec<String>>,
 }
-
 impl Mutable {
+    fn from_def(
+        MutableDefinition {
+            kind, code, loc, ..
+        }: MutableDefinition,
+    ) -> Self {
+        Self {
+            kind,
+            code,
+            loc: Some(loc).filter(String::is_empty),
+            ..Self::default()
+        }
+    }
     fn mutations(&self) -> Vec<String> {
         match &*self.kind {
-            "int" => vec!["1000".to_owned()],
-            "calc" => vec!["+", "-", "*", "/", "%"]
+            "int" => {
+                let i = self.code.parse::<u128>().expect("unable to parse int");
+                let mut m = vec![];
+                if i != 0 {
+                    m.push((i - 1).to_string());
+                }
+                m.push((i + 1).to_string());
+                m
+            }
+            "calc" => self
+                .possible_mutations
+                .iter()
+                .flatten()
+                .filter(|&x| x != &self.code)
+                .map(ToOwned::to_owned)
+                .collect(),
+            "cmp" => ["<", "<=", ">=", ">"]
                 .into_iter()
                 .filter(|x| x != &self.code)
                 .map(ToOwned::to_owned)
@@ -120,6 +155,20 @@ impl Mutable {
             _ => vec![],
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct MutableDefinition {
+    id: usize,
+    kind: String,
+    code: String,
+    loc: String,
+}
+#[derive(Debug, Deserialize)]
+struct MutableDetails {
+    id: String,
+    kind: String,
+    data: String,
 }
 
 /// execute `cargo test --no-run --message-format=json` and collect output
@@ -162,33 +211,73 @@ fn compile(cargo_exe: &str) -> Result<CompilationResult, MuttestError> {
     Ok(result)
 }
 
-fn read_mutables(muttest_dir: &Path) -> Result<Vec<(String, Vec<Mutable>)>, MuttestError> {
-    let mut mutables = vec![];
+fn read_mutable_defs(
+    muttest_dir: &Utf8Path,
+) -> Result<BTreeMap<(String, usize), Mutable>, MuttestError> {
+    let mut mutables = BTreeMap::new();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
         let file_name = file.file_name().into_string().unwrap();
         let mutated_package = file_name
-            .strip_prefix("mutable-")
+            .strip_prefix("definitions-")
             .and_then(|f| f.strip_suffix(".csv"));
         let mutated_package = match mutated_package {
             None => continue,
             Some(n) => n,
         };
-        // TODO: delete outdated mutable files
+        // TODO: try to delete outdated muttest files
 
         // read mutable
         let file_path = muttest_dir.join(&file_name);
         let mut reader = csv::ReaderBuilder::new()
             .from_path(&file_path)
             .map_err(|e| MuttestError::Csv(file_path.clone(), e))?;
-        let ms = reader
-            .deserialize()
-            .collect::<Result<Vec<Mutable>, _>>()
-            .map_err(|e| MuttestError::Csv(file_path.clone(), e))?;
-
-        mutables.push((mutated_package.to_owned(), ms));
+        for md in reader.deserialize::<MutableDefinition>() {
+            let md = md.map_err(|e| MuttestError::Csv(file_path.clone(), e))?;
+            mutables.insert((mutated_package.to_owned(), md.id), Mutable::from_def(md));
+        }
     }
     Ok(mutables)
+}
+
+fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), MuttestError> {
+    let mut details_file = fs::File::create(details_filepath)?;
+    writeln!(&mut details_file, "id,kind,data")?;
+    details_file.flush()?;
+    details_file.sync_all()?;
+    Ok(())
+}
+
+fn read_mutable_details(
+    muttest_dir: &Utf8Path,
+    mutables: &mut BTreeMap<(String, usize), Mutable>,
+) -> Result<(), MuttestError> {
+    let details_file = muttest_dir.join("details.csv");
+    let mut reader = csv::ReaderBuilder::new()
+        .from_path(&details_file)
+        .map_err(|e| MuttestError::Csv(details_file.clone(), e))?;
+    for md in reader.deserialize::<MutableDetails>() {
+        let md = md.map_err(|e| MuttestError::Csv(details_file.clone(), e))?;
+
+        let id = md.id.split_once(":").expect("id format");
+        let id = (id.1.to_owned(), id.0.parse::<usize>().expect("id format"));
+        if let Some(m) = mutables.get_mut(&id) {
+            match &*md.kind {
+                "type" => m.ty = Some(md.data),
+                "mutations" => {
+                    m.possible_mutations = Some(md.data.split(":").map(ToOwned::to_owned).collect())
+                }
+                "loc" => {
+                    m.loc.get_or_insert(md.data);
+                }
+                _ => {}
+            }
+        }
+        // mutables.insert((mutated_package.to_owned(), md.id), Mutable::from_def(md));
+    }
+    // TODO: read details file and add to mutables
+
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -200,7 +289,7 @@ pub enum MuttestError {
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("failed to read file {0}. {1}")]
-    Csv(PathBuf, csv::Error),
+    Csv(Utf8PathBuf, csv::Error),
 }
 
 fn display_exit_code_msg(e: &Option<i32>) -> String {
