@@ -50,11 +50,12 @@ fn parse_active_mutations(env: &str) -> BTreeMap<usize, String> {
 
     mutations
 }
+
 // TODO: use MuttestError instead
 fn open_details_file() -> Result<Option<fs::File>, std::io::Error> {
     match std::env::var("MUTTEST_DETAILS_FILE") {
         Err(VarError::NotPresent) => Ok(None),
-        Err(_) => todo!("not unicode error"),
+        Err(_) => todo!("not unicode"),
         Ok(f) => Ok(Some(
             fs::OpenOptions::new()
                 .read(true)

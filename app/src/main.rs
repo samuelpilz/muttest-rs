@@ -44,7 +44,7 @@ fn main() -> Result<(), MuttestError> {
     let muttest_dir = cargo_metadata.target_directory.join("muttest");
 
     // compile libs and test cases
-    let compilation_result = compile(&cargo_exe)?;
+    let compilation_result = compile(&cargo_exe, &muttest_dir)?;
 
     println!("{compilation_result:?}");
 
@@ -172,12 +172,13 @@ struct MutableDetails {
 }
 
 /// execute `cargo test --no-run --message-format=json` and collect output
-fn compile(cargo_exe: &str) -> Result<CompilationResult, MuttestError> {
+fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, MuttestError> {
     let mut result = CompilationResult::default();
 
     // TODO: pass features from opts
     let mut compile_out = Command::new(cargo_exe)
         .args(&["test", "--no-run", "--message-format=json"])
+        .env("MUTTEST_DIR", muttest_dir)
         .stderr(Stdio::inherit())
         .stdout(Stdio::piped())
         .spawn()

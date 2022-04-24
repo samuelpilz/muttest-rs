@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::Write,
+    ops::DerefMut,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -28,31 +29,33 @@ lazy_static! {
         }
         target_name
     };
-    static ref MUTABLE_DEFINITIONS_FILE: Mutex<fs::File> = {
-        let mut dir = target_dir();
-        dir.push("muttest");
-        let file_name = format!("definitions-{}.csv", &*TARGET_NAME);
-
-        fs::create_dir_all(&dir).expect("unable to create muttest directory");
-        let mut file = fs::File::create(dir.join(file_name)).expect("unable to open logger file");
-        writeln!(&mut file, "id,kind,code,loc").expect("unable to write mutable file");
-        file.flush().expect("unable to flush log");
-        Mutex::new(file)
-    };
+    static ref MUTABLE_DEFINITIONS_FILE: Mutex<Option<fs::File>> =
+        Mutex::new(open_definitions_file().expect("unable to open definitions file"));
 }
 
-// TODO: make optional & implement other estimation strategies
-fn target_dir() -> PathBuf {
-    let cargo_metadata = cargo_metadata::MetadataCommand::new()
-        .exec()
-        .expect("unable to get cargo metadata");
-    cargo_metadata.target_directory.into()
+// TODO: use MuttestError instead
+fn open_definitions_file() -> Result<Option<fs::File>, std::io::Error> {
+    match option_env!("MUTTEST_DIR") {
+        None => Ok(None),
+        Some(dir) => {
+            let dir = PathBuf::from(dir);
+            fs::create_dir_all(&dir)?;
+            let file_name = format!("definitions-{}.csv", &*TARGET_NAME);
+            let mut file = fs::File::create(dir.join(file_name))?;
+            writeln!(&mut file, "id,kind,code,loc")?;
+            file.flush()?;
+            file.sync_all()?;
+            Ok(Some(file))
+        }
+    }
 }
 
 fn save_mutable(m_id: usize, mut_kind: &str, code: &str, loc: &str) {
     let mut f = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
-    writeln!(&mut f, "{m_id},{mut_kind},{},{loc}", code).expect("unable to write mutable file");
-    f.flush().expect("unable to flush mutable file");
+    if let Some(f) = f.deref_mut() {
+        writeln!(f, "{m_id},{mut_kind},{},{loc}", code).expect("unable to write mutable file");
+        f.flush().expect("unable to flush mutable file");
+    }
 }
 
 #[proc_macro_attribute]
