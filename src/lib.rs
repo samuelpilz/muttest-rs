@@ -1,30 +1,32 @@
+use lazy_static::lazy_static;
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     env::VarError,
     fmt::{self, Display},
     fs,
-    io::Write,
+    io::{self, Write},
     marker::PhantomData,
     ops::DerefMut,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, RwLock},
 };
-
-pub use muttest_codegen::mutate;
-
-use lazy_static::lazy_static;
 
 // TODO: make stubbable
 lazy_static! {
     static ref MUTTEST_DIR: PathBuf = {
-        // TODO: read some env var
+        // TODO: try to read env var `MUTTEST_DIR` for target dir
+        if !Path::new("target").is_dir() {
+            panic!("target dir not found");
+        }
         let dir = PathBuf::from("target/muttest");
-        fs::create_dir_all(&dir).expect("unable to create muttest directory");
+        if !dir.exists() {
+            fs::create_dir(&dir).expect("unable to create muttest directory");
+        }
         dir
     };
     static ref COVERAGE_FILE: Mutex<fs::File> = {
-        let filename = "cover.log";
-        let file = fs::File::create(MUTTEST_DIR.join(filename)).expect("unable to open logger file");
+        let file = fs::File::create(MUTTEST_DIR.join("cover.log")).expect("unable to open logger file");
         Mutex::new(file)
         // TODO: log to different files for integration test (set file in runner)
     };
@@ -36,6 +38,26 @@ lazy_static! {
         RwLock::new(parse_active_mutations(&std::env::var("MUTTEST_MUTATION").unwrap_or_default()))
     };
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Io(#[from] io::Error),
+    #[error("failed to read csv file {0}. {1}")]
+    Csv(PathBuf, csv::Error),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MutableId {
+    pub id: usize,
+    pub crate_name: Cow<'static, str>,
+}
+impl fmt::Display for MutableId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.id, self.crate_name)
+    }
+}
+
 fn parse_active_mutations(env: &str) -> BTreeMap<usize, String> {
     let mut mutations = BTreeMap::new();
 
@@ -51,9 +73,8 @@ fn parse_active_mutations(env: &str) -> BTreeMap<usize, String> {
     mutations
 }
 
-// TODO: use MuttestError instead
-fn open_details_file() -> Result<Option<fs::File>, std::io::Error> {
-    match std::env::var("MUTTEST_DETAILS_FILE") {
+fn open_details_file() -> Result<Option<fs::File>, Error> {
+    match std::env::var("MUTTEST_DIR") {
         Err(VarError::NotPresent) => Ok(None),
         Err(_) => todo!("not unicode"),
         Ok(f) => Ok(Some(
@@ -61,31 +82,20 @@ fn open_details_file() -> Result<Option<fs::File>, std::io::Error> {
                 .read(true)
                 .write(true)
                 .append(true)
-                .open(f)?,
+                .open(PathBuf::from(f).join("details.csv"))?,
         )),
     }
     // TODO: read already reported messages
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MutableId {
-    pub id: usize,
-    pub crate_name: &'static str,
-}
-impl fmt::Display for MutableId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.id, self.crate_name)
-    }
-}
-
-fn report_coverage(m_id: MutableId) {
+fn report_coverage(m_id: &MutableId) {
     let mut f = COVERAGE_FILE.lock().unwrap();
     writeln!(&mut f, "{m_id}").expect("unable to write log");
     f.flush().expect("unable to flush coverage report");
 }
 
-fn report_detail<T: Display>(m_id: MutableId, kind: &'static str, data: T) {
-    let is_new = MUTABLE_DETAILS.lock().unwrap().insert((m_id, kind));
+fn report_detail<T: Display>(m_id: &MutableId, kind: &'static str, data: T) {
+    let is_new = MUTABLE_DETAILS.lock().unwrap().insert((m_id.clone(), kind));
     if !is_new {
         return;
     }
@@ -97,7 +107,7 @@ fn report_detail<T: Display>(m_id: MutableId, kind: &'static str, data: T) {
     }
 }
 
-pub fn report_possible_mutations(m_id: MutableId, reports: &[(&str, bool)]) {
+pub fn report_possible_mutations(m_id: &MutableId, reports: &[(&str, bool)]) {
     let mutations = reports
         .iter()
         .filter(|(_, ok)| *ok)
@@ -107,16 +117,16 @@ pub fn report_possible_mutations(m_id: MutableId, reports: &[(&str, bool)]) {
     report_detail(m_id, "mutations", mutations);
 }
 
-pub fn report_mutable_type(m_id: MutableId, ty: &str) {
+pub fn report_mutable_type(m_id: &MutableId, ty: &str) {
     report_detail(m_id, "type", ty);
 }
 
-pub fn report_location(m_id: MutableId, file: &'static str, line: u32, column: u32) {
+pub fn report_location(m_id: &MutableId, file: &'static str, line: u32, column: u32) {
     report_detail(m_id, "loc", MutableLocation { file, line, column })
 }
 
 /// get the active mutation for a mutable
-pub fn get_active_mutation_for_mutable(m_id: MutableId) -> Option<String> {
+pub fn get_active_mutation_for_mutable(m_id: &MutableId) -> Option<String> {
     // TODO: somehow consider m_id.crate_name
     ACTIVE_MUTATION
         .read()
@@ -138,7 +148,7 @@ impl fmt::Display for MutableLocation {
     }
 }
 
-pub fn mutable_int<T: MutableInt>(m_id: MutableId, x: T) -> T {
+pub fn mutable_int<T: MutableInt>(m_id: &MutableId, x: T) -> T {
     report_coverage(m_id);
     report_mutable_type(m_id, T::type_str());
     match get_active_mutation_for_mutable(m_id).as_deref() {
@@ -150,7 +160,7 @@ pub fn mutable_int<T: MutableInt>(m_id: MutableId, x: T) -> T {
 }
 
 pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
-    m_id: MutableId,
+    m_id: &MutableId,
     op_str: &str,
     left: &T,
     right: &T1,
@@ -175,7 +185,7 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
     }
 }
 
-pub fn mutable_bin_op(m_id: MutableId, _op_str: &'static str) -> &'static str {
+pub fn mutable_bin_op(m_id: &MutableId, _op_str: &'static str) -> &'static str {
     report_coverage(m_id);
     match get_active_mutation_for_mutable(m_id).as_deref() {
         None => "",
@@ -256,7 +266,7 @@ macro_rules! binop_mutation {
                     false
                 }
                 pub fn run<L, R, O>(self, _: L, _: R) -> O {
-                    panic!()
+                    unreachable!()
                 }
             }
         }

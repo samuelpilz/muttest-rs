@@ -10,12 +10,13 @@ use std::{
 };
 
 use lazy_static::lazy_static;
+use muttest_core::Error;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote_spanned, spanned::Spanned, BinOp, Expr, ExprBinary,
-    ExprLit, File, Lit,
+    ExprLit, File, Item, Lit,
 };
 
 lazy_static! {
@@ -34,14 +35,12 @@ lazy_static! {
 }
 
 // TODO: use MuttestError instead
-fn open_definitions_file() -> Result<Option<fs::File>, std::io::Error> {
+fn open_definitions_file() -> Result<Option<fs::File>, Error> {
     match option_env!("MUTTEST_DIR") {
         None => Ok(None),
         Some(dir) => {
-            let dir = PathBuf::from(dir);
-            fs::create_dir_all(&dir)?;
-            let file_name = format!("definitions-{}.csv", &*TARGET_NAME);
-            let mut file = fs::File::create(dir.join(file_name))?;
+            let file_name = format!("mutable-definitions-{}.csv", &*TARGET_NAME);
+            let mut file = fs::File::create(PathBuf::from(dir).join(file_name))?;
             writeln!(&mut file, "id,kind,code,loc")?;
             file.flush()?;
             file.sync_all()?;
@@ -101,7 +100,14 @@ fn new_mutable_id() -> usize {
 struct MuttestTransformer;
 
 impl Fold for MuttestTransformer {
-    // TODO: skip consts & tests
+    // TODO: skip consts & tests ...
+    fn fold_item(&mut self, i: Item) -> Item {
+        match i {
+            Item::Const(_) => i,
+            _ => syn::fold::fold_item(self, i),
+        }
+    }
+
     fn fold_expr(&mut self, e: Expr) -> Expr {
         let e = syn::fold::fold_expr(self, e);
 
@@ -113,12 +119,32 @@ impl Fold for MuttestTransformer {
                 save_mutable(m_id, "int", i.base10_digits(), &display_span(i.span()));
                 let crate_name = &*TARGET_NAME;
                 let m_id: Expr = parse_quote_spanned! {i.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: #crate_name}
+                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
                 };
                 parse_quote_spanned! {i.span()=>
                     ({
-                        ::muttest::report_location(#m_id, file!(), line!(), column!());
-                        ::muttest::mutable_int(#m_id, #i)
+                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
+                        ::muttest::mutable_int(&#m_id, #i)
+                    },).0
+                }
+            }
+            Expr::Binary(ExprBinary {
+                left, op, right, ..
+            }) if is_bool_op(op) => {
+                let op_str = op.to_token_stream().to_string();
+                let m_id = new_mutable_id();
+                save_mutable(m_id, "bool", &op_str, &display_span(op.span()));
+                let crate_name = &*TARGET_NAME;
+                let m_id: Expr = parse_quote_spanned! {op.span() =>
+                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
+                };
+                parse_quote_spanned! {op.span()=>
+                    ({
+                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
+                        // for type-inference, keep the original expression in the first branch
+                        if false {left #op right} else {
+                            #left #op #right
+                        }
                     },).0
                 }
             }
@@ -130,15 +156,15 @@ impl Fold for MuttestTransformer {
                 save_mutable(m_id, "cmp", &op_str, &display_span(op.span()));
                 let crate_name = &*TARGET_NAME;
                 let m_id: Expr = parse_quote_spanned! {op.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: #crate_name}
+                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
                 };
                 parse_quote_spanned! {op.span()=>
                     ({
-                        ::muttest::report_location(#m_id, file!(), line!(), column!());
+                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
                         let (left, right) = (#left, #right);
                         // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
-                            ::muttest::mutable_cmp(#m_id, #op_str, &left, &right)
+                            ::muttest::mutable_cmp(&#m_id, #op_str, &left, &right)
                         }
                     },).0
                 }
@@ -162,11 +188,11 @@ impl Fold for MuttestTransformer {
 
                 let crate_name = &*TARGET_NAME;
                 let m_id: Expr = parse_quote_spanned! {op.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: #crate_name}
+                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
                 };
                 parse_quote_spanned! {op.span()=>
                     ({
-                        ::muttest::report_location(#m_id, file!(), line!(), column!());
+                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
                         // arguments are evaluated before executing the calculation
                         let (left, right) = (#left, #right);
                         let left_type = ::muttest::phantom_for_type(&left);
@@ -174,7 +200,7 @@ impl Fold for MuttestTransformer {
                         // this carries the output type of the computation
                         // the assignment in the default-case defines the type of this phantom
                         let mut output_type = ::core::marker::PhantomData;
-                        let mut_op = ::muttest::mutable_bin_op(#m_id, #op_str);
+                        let mut_op = ::muttest::mutable_bin_op(&#m_id, #op_str);
                         #[allow(unused_assignments)]
                         match mut_op {
                             "" => {
@@ -183,7 +209,7 @@ impl Fold for MuttestTransformer {
                                 // giving the compiler the necessary type hint required for the mutated cases
                                 output_type = ::muttest::phantom_for_type(&output);
                                 // report the possible mutations
-                                ::muttest::report_possible_mutations(#m_id,
+                                ::muttest::report_possible_mutations(&#m_id,
                                     &[
                                         #((
                                             #op_symbols,
@@ -206,6 +232,14 @@ impl Fold for MuttestTransformer {
             }
             _ => e,
         }
+    }
+}
+
+fn is_bool_op(op: BinOp) -> bool {
+    match op {
+        BinOp::And(_) => true,
+        BinOp::Or(_) => true,
+        _ => false,
     }
 }
 

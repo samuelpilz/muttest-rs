@@ -1,14 +1,18 @@
 [package]
-name = "muttest"
+name = "muttest-core"
 version = "0.1.0-alpha"
 edition = "2021"
 description = "effective mutation testing for Rust"
 autoexamples = false
 
 [dependencies]
-muttest-codegen = { path = "codegen" }
 lazy_static = "1.4.0"
+thiserror = "1.0.30"
+csv = "1.1"
+serde = "1"
+
+[dev-dependencies]
+muttest = { path = "api" }
 
 [workspace]
-members = [".", "codegen", "app", "examples"]
-
+members = [".", "codegen", "app", "examples", "api"]

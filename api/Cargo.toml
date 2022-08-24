@@ -1,0 +1,11 @@
+[package]
+name = "muttest"
+version = "0.1.0-alpha"
+edition = "2021"
+
+[dependencies]
+muttest-core = { path = ".." }
+muttest-codegen = { path = "../codegen" }
+
+[lib]
+path = "lib.rs"

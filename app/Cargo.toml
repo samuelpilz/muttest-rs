@@ -5,7 +5,14 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "3.1.9", features = ["derive", "cargo"] }
-thiserror = "1.0.30"
 cargo_metadata = "0.14.2"
+thiserror = "1.0.30"
 csv = "1.1"
 serde = "1"
+muttest-core = { path = ".." }
+
+[[bin]]
+name = "cargo-muttest"
+path = "main.rs"
+test = false
+bench = false

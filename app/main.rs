@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     fs,
     io::{self, Write},
@@ -7,6 +8,7 @@ use std::{
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
+use muttest_core::MutableId;
 use serde::Deserialize;
 
 #[derive(Debug, Parser)]
@@ -28,20 +30,21 @@ impl From<OptCargoPlugin> for Opt {
     }
 }
 
-fn main() -> Result<(), MuttestError> {
+fn main() -> Result<(), Error> {
     let is_cargo_plugin = std::env::var_os("CARGO").is_some();
     let opt = if is_cargo_plugin {
         OptCargoPlugin::parse().into()
     } else {
         Opt::parse()
     };
-    println!("{:?}", opt);
+    println!("{opt:?}");
 
     // TODO: pass features from opts
     // read cargo metadata
     let cargo_exe = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
     let cargo_metadata = cargo_metadata::MetadataCommand::new().exec()?;
     let muttest_dir = cargo_metadata.target_directory.join("muttest");
+    fs::create_dir_all(&muttest_dir)?;
 
     // compile libs and test cases
     let compilation_result = compile(&cargo_exe, &muttest_dir)?;
@@ -51,14 +54,16 @@ fn main() -> Result<(), MuttestError> {
     // read created mutables
     let mut mutables = read_mutable_defs(&muttest_dir)?;
 
-    let details_filepath = muttest_dir.join("details.csv");
+    println!("Mutables {mutables:?}");
+
+    let details_filepath = muttest_dir.join("mutable-details.csv");
     setup_mutable_details(&details_filepath)?;
 
     // run test suites without mutations for coverage
     for test_exe in &compilation_result.test_exes {
         println!("call {}", &test_exe.name);
         Command::new(&test_exe.path)
-            .env("MUTTEST_DETAILS_FILE", &details_filepath)
+            .env("MUTTEST_DIR", &muttest_dir)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
@@ -71,7 +76,7 @@ fn main() -> Result<(), MuttestError> {
     // evaluate mutations
     for (m_id, mutable @ Mutable { code, kind, .. }) in &mutables {
         let mutations = mutable.mutations();
-        println!("{:?}: `{}` -{}-> {:?}", m_id, code, kind, &mutations);
+        println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}");
 
         for m in mutations {
             println!("mutation {m}");
@@ -80,13 +85,18 @@ fn main() -> Result<(), MuttestError> {
                 print!("call {}", &test_exe.name);
                 io::stdout().flush()?;
                 let result = Command::new(&test_exe.path)
-                    .env("MUTTEST_MUTATION", format!("{}:{m}", m_id.1))
-                    // .env("MUTTEST_DETAILS_FILE", &details_filepath)
+                    .env("MUTTEST_MUTATION", format!("{}:{m}", m_id.crate_name))
                     // TODO: think about details here
                     .stdout(Stdio::null())
                     .spawn()?
                     .wait()?;
-                println!(" ... {}", result.code().unwrap_or_default());
+                let exit_code = match result.code() {
+                    None => "TIMEOUT",
+                    Some(0) => "survived",
+                    Some(_) => "killed",
+                };
+                println!(" ... {}", exit_code);
+                // TODO: if code is none, then error
                 // TODO: run tests in finer granularity
             }
         }
@@ -172,7 +182,7 @@ struct MutableDetails {
 }
 
 /// execute `cargo test --no-run --message-format=json` and collect output
-fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, MuttestError> {
+fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
     let mut result = CompilationResult::default();
 
     // TODO: pass features from opts
@@ -182,11 +192,15 @@ fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult,
         .stderr(Stdio::inherit())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|_| MuttestError::Cargo("test", None))?;
+        .map_err(|_| Error::Cargo("test", None))?;
     let reader = std::io::BufReader::new(compile_out.stdout.take().unwrap());
     for msg in cargo_metadata::Message::parse_stream(reader) {
         let test_artifact = match msg? {
             cargo_metadata::Message::CompilerArtifact(a) if a.profile.test => a,
+            cargo_metadata::Message::CompilerMessage(m) => {
+                eprintln!("{}", m.message);
+                continue;
+            }
             _ => continue,
         };
         let test_exe = match test_artifact.executable.as_deref() {
@@ -202,25 +216,21 @@ fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult,
         result.test_exes.push(test_exe);
     }
 
-    let status = compile_out
-        .wait()
-        .map_err(|_| MuttestError::Cargo("test", None))?;
+    let status = compile_out.wait().map_err(|_| Error::Cargo("test", None))?;
     if !status.success() {
-        return Err(MuttestError::Cargo("test", status.code()));
+        return Err(Error::Cargo("test", status.code()));
     }
 
     Ok(result)
 }
 
-fn read_mutable_defs(
-    muttest_dir: &Utf8Path,
-) -> Result<BTreeMap<(String, usize), Mutable>, MuttestError> {
+fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutable>, CoreError> {
     let mut mutables = BTreeMap::new();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
         let file_name = file.file_name().into_string().unwrap();
         let mutated_package = file_name
-            .strip_prefix("definitions-")
+            .strip_prefix("mutable-definitions-")
             .and_then(|f| f.strip_suffix(".csv"));
         let mutated_package = match mutated_package {
             None => continue,
@@ -232,16 +242,20 @@ fn read_mutable_defs(
         let file_path = muttest_dir.join(&file_name);
         let mut reader = csv::ReaderBuilder::new()
             .from_path(&file_path)
-            .map_err(|e| MuttestError::Csv(file_path.clone(), e))?;
+            .map_err(|e| CoreError::Csv(file_path.as_std_path().to_owned(), e))?;
         for md in reader.deserialize::<MutableDefinition>() {
-            let md = md.map_err(|e| MuttestError::Csv(file_path.clone(), e))?;
-            mutables.insert((mutated_package.to_owned(), md.id), Mutable::from_def(md));
+            let md = md.map_err(|e| CoreError::Csv(file_path.as_std_path().to_owned(), e))?;
+            let id = MutableId {
+                id: md.id,
+                crate_name: Cow::Owned(mutated_package.to_owned()),
+            };
+            mutables.insert(id, Mutable::from_def(md));
         }
     }
     Ok(mutables)
 }
 
-fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), MuttestError> {
+fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), CoreError> {
     let mut details_file = fs::File::create(details_filepath)?;
     writeln!(&mut details_file, "id,kind,data")?;
     details_file.flush()?;
@@ -249,19 +263,23 @@ fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), MuttestError
     Ok(())
 }
 
+// TODO: generic function for csv reader
 fn read_mutable_details(
     muttest_dir: &Utf8Path,
-    mutables: &mut BTreeMap<(String, usize), Mutable>,
-) -> Result<(), MuttestError> {
-    let details_file = muttest_dir.join("details.csv");
+    mutables: &mut BTreeMap<MutableId, Mutable>,
+) -> Result<(), Error> {
+    let details_file = muttest_dir.join("mutable-details.csv");
     let mut reader = csv::ReaderBuilder::new()
         .from_path(&details_file)
-        .map_err(|e| MuttestError::Csv(details_file.clone(), e))?;
+        .map_err(|e| CoreError::Csv(details_file.as_std_path().to_owned(), e))?;
     for md in reader.deserialize::<MutableDetails>() {
-        let md = md.map_err(|e| MuttestError::Csv(details_file.clone(), e))?;
+        let md = md.map_err(|e| CoreError::Csv(details_file.as_std_path().to_owned(), e))?;
 
         let id = md.id.split_once(":").expect("id format");
-        let id = (id.1.to_owned(), id.0.parse::<usize>().expect("id format"));
+        let id = MutableId {
+            id: id.0.parse::<usize>().expect("id format"),
+            crate_name: Cow::Owned(id.1.to_owned()),
+        };
         if let Some(m) = mutables.get_mut(&id) {
             match &*md.kind {
                 "type" => m.ty = Some(md.data),
@@ -281,16 +299,21 @@ fn read_mutable_details(
     Ok(())
 }
 
+type CoreError = muttest_core::Error;
+
 #[derive(Debug, thiserror::Error)]
-pub enum MuttestError {
+pub enum Error {
     #[error("failed to run `cargo {0}`{}", display_exit_code_msg(.1))]
     Cargo(&'static str, Option<i32>),
     #[error("failed to read cargo metadata")]
     CargoMetadata(#[from] cargo_metadata::Error),
     #[error("{0}")]
-    Io(#[from] io::Error),
-    #[error("failed to read file {0}. {1}")]
-    Csv(Utf8PathBuf, csv::Error),
+    CoreError(#[from] muttest_core::Error),
+}
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Self::CoreError(e.into())
+    }
 }
 
 fn display_exit_code_msg(e: &Option<i32>) -> String {
