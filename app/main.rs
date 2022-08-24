@@ -85,7 +85,7 @@ fn main() -> Result<(), Error> {
                 print!("call {}", &test_exe.name);
                 io::stdout().flush()?;
                 let result = Command::new(&test_exe.path)
-                    .env("MUTTEST_MUTATION", format!("{}:{m}", m_id.crate_name))
+                    .env("MUTTEST_MUTATION", format!("{}:{}={m}", m_id.id, m_id.crate_name))
                     // TODO: think about details here
                     .stdout(Stdio::null())
                     .spawn()?
@@ -275,11 +275,7 @@ fn read_mutable_details(
     for md in reader.deserialize::<MutableDetails>() {
         let md = md.map_err(|e| CoreError::Csv(details_file.as_std_path().to_owned(), e))?;
 
-        let id = md.id.split_once(":").expect("id format");
-        let id = MutableId {
-            id: id.0.parse::<usize>().expect("id format"),
-            crate_name: Cow::Owned(id.1.to_owned()),
-        };
+        let id = md.id.parse().unwrap();
         if let Some(m) = mutables.get_mut(&id) {
             match &*md.kind {
                 "type" => m.ty = Some(md.data),

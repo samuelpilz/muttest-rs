@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     fs,
     io::Write,
     ops::DerefMut,
@@ -10,17 +11,39 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use muttest_core::Error;
+use muttest_core::{Error, MutableId, MUTTEST_DIR};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote_spanned, spanned::Spanned, BinOp, Expr, ExprBinary,
-    ExprLit, File, Item, Lit,
+    ExprLit, File, Item, ItemFn, Lit,
 };
 
+#[proc_macro_attribute]
+pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemFn);
+
+    let mut transformer = MuttestTransformer::new_selftest();
+
+    let result = transformer.fold_item_fn(input);
+
+    result.into_token_stream().into()
+}
+
+#[proc_macro_attribute]
+pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as File);
+
+    let mut transformer = MuttestTransformer::new();
+
+    let result = transformer.fold_file(input);
+
+    result.into_token_stream().into()
+}
+
 lazy_static! {
-    static ref MUTABLE_ID: AtomicUsize = AtomicUsize::new(1);
+    static ref MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
     static ref TARGET_NAME: String = {
         let mut target_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
         let crate_name = std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
@@ -36,8 +59,7 @@ lazy_static! {
 
 // TODO: use MuttestError instead
 fn open_definitions_file() -> Result<Option<fs::File>, Error> {
-    match option_env!("MUTTEST_DIR") {
-        None => Ok(None),
+    match &*MUTTEST_DIR {
         Some(dir) => {
             let file_name = format!("mutable-definitions-{}.csv", &*TARGET_NAME);
             let mut file = fs::File::create(PathBuf::from(dir).join(file_name))?;
@@ -46,6 +68,7 @@ fn open_definitions_file() -> Result<Option<fs::File>, Error> {
             file.sync_all()?;
             Ok(Some(file))
         }
+        _ => Ok(None),
     }
 }
 
@@ -55,15 +78,6 @@ fn save_mutable(m_id: usize, mut_kind: &str, code: &str, loc: &str) {
         writeln!(f, "{m_id},{mut_kind},{},{loc}", code).expect("unable to write mutable file");
         f.flush().expect("unable to flush mutable file");
     }
-}
-
-#[proc_macro_attribute]
-pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as File);
-
-    let result = MuttestTransformer.fold_file(input);
-
-    result.into_token_stream().into()
 }
 
 fn display_span(span: Span) -> String {
@@ -92,12 +106,53 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
     None
 }
 
-/// reserves and returns a new mutable id
-fn new_mutable_id() -> usize {
-    MUTABLE_ID.fetch_add(1, Ordering::SeqCst)
+struct MuttestTransformer {
+    // TODO: is this the right name?
+    selftest: bool,
+    local_id: usize,
+    core_crate: &'static str,
 }
+impl MuttestTransformer {
+    fn new() -> Self {
+        Self {
+            selftest: false,
+            local_id: 0,
+            core_crate: "muttest",
+        }
+    }
+    fn new_selftest() -> Self {
+        Self {
+            selftest: true,
+            local_id: 0,
+            core_crate: "muttest_core",
+        }
+    }
 
-struct MuttestTransformer;
+    /// reserves and returns a new mutable id
+    fn new_mutable_id(&mut self) -> MutableId {
+        if self.selftest {
+            self.local_id += 1;
+            MutableId {
+                id: self.local_id,
+                crate_name: ::std::borrow::Cow::Borrowed(""),
+            }
+        } else {
+            MutableId {
+                id: MUTABLE_ID_NUM.fetch_add(1, Ordering::SeqCst),
+                crate_name: ::std::borrow::Cow::Borrowed(&*TARGET_NAME),
+            }
+        }
+    }
+
+    fn mutable_id_expr(&self, m_id: &MutableId, span: Span) -> Expr {
+        let id = m_id.id;
+        let crate_name: &str = m_id.crate_name.borrow();
+        let core_crate = Ident::new(self.core_crate, span);
+        parse_quote_spanned! {span =>
+            ::#core_crate::MutableId {id: #id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
+        }
+    }
+}
 
 impl Fold for MuttestTransformer {
     // TODO: skip consts & tests ...
@@ -115,16 +170,14 @@ impl Fold for MuttestTransformer {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(i), ..
             }) => {
-                let m_id = new_mutable_id();
-                save_mutable(m_id, "int", i.base10_digits(), &display_span(i.span()));
-                let crate_name = &*TARGET_NAME;
-                let m_id: Expr = parse_quote_spanned! {i.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
-                };
+                let m_id = self.new_mutable_id();
+                save_mutable(m_id.id, "int", i.base10_digits(), &display_span(i.span()));
+                let m_id = self.mutable_id_expr(&m_id, i.span());
+                let core_crate = Ident::new(self.core_crate, i.span());
                 parse_quote_spanned! {i.span()=>
                     ({
-                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
-                        ::muttest::mutable_int(&#m_id, #i)
+                        ::#core_crate::report_location(&#m_id, file!(), line!(), column!());
+                        ::#core_crate::mutable_int(&#m_id, #i)
                     },).0
                 }
             }
@@ -132,15 +185,13 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_bool_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = new_mutable_id();
-                save_mutable(m_id, "bool", &op_str, &display_span(op.span()));
-                let crate_name = &*TARGET_NAME;
-                let m_id: Expr = parse_quote_spanned! {op.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
-                };
+                let m_id = self.new_mutable_id();
+                save_mutable(m_id.id, "bool", &op_str, &display_span(op.span()));
+                let m_id = self.mutable_id_expr(&m_id, op.span());
+                let core_crate = Ident::new(self.core_crate, op.span());
                 parse_quote_spanned! {op.span()=>
                     ({
-                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
+                        ::#core_crate::report_location(&#m_id, file!(), line!(), column!());
                         // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
                             #left #op #right
@@ -152,19 +203,17 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_cmp_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = new_mutable_id();
-                save_mutable(m_id, "cmp", &op_str, &display_span(op.span()));
-                let crate_name = &*TARGET_NAME;
-                let m_id: Expr = parse_quote_spanned! {op.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
-                };
+                let m_id = self.new_mutable_id();
+                save_mutable(m_id.id, "cmp", &op_str, &display_span(op.span()));
+                let m_id = self.mutable_id_expr(&m_id, op.span());
+                let core_crate = Ident::new(self.core_crate, op.span());
                 parse_quote_spanned! {op.span()=>
                     ({
-                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
+                        ::#core_crate::report_location(&#m_id, file!(), line!(), column!());
                         let (left, right) = (#left, #right);
                         // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
-                            ::muttest::mutable_cmp(&#m_id, #op_str, &left, &right)
+                            ::#core_crate::mutable_cmp(&#m_id, #op_str, &left, &right)
                         }
                     },).0
                 }
@@ -173,8 +222,8 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_calc_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = new_mutable_id();
-                save_mutable(m_id, "calc", &op_str, &display_span(op.span()));
+                let m_id = self.new_mutable_id();
+                save_mutable(m_id.id, "calc", &op_str, &display_span(op.span()));
 
                 let mutations = [
                     ("+", "add"),
@@ -186,34 +235,32 @@ impl Fold for MuttestTransformer {
                 let op_symbols = mutations.map(|x| x.0);
                 let op_names = mutations.map(|x| Ident::new(x.1, op.span()));
 
-                let crate_name = &*TARGET_NAME;
-                let m_id: Expr = parse_quote_spanned! {op.span() =>
-                    ::muttest::MutableId {id: #m_id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
-                };
+                let m_id = self.mutable_id_expr(&m_id, op.span());
+                let core_crate = Ident::new(self.core_crate, op.span());
                 parse_quote_spanned! {op.span()=>
                     ({
-                        ::muttest::report_location(&#m_id, file!(), line!(), column!());
+                        ::#core_crate::report_location(&#m_id, file!(), line!(), column!());
                         // arguments are evaluated before executing the calculation
                         let (left, right) = (#left, #right);
-                        let left_type = ::muttest::phantom_for_type(&left);
-                        let right_type = ::muttest::phantom_for_type(&right);
+                        let left_type = ::#core_crate::phantom_for_type(&left);
+                        let right_type = ::#core_crate::phantom_for_type(&right);
                         // this carries the output type of the computation
                         // the assignment in the default-case defines the type of this phantom
                         let mut output_type = ::core::marker::PhantomData;
-                        let mut_op = ::muttest::mutable_bin_op(&#m_id, #op_str);
+                        let mut_op = ::#core_crate::mutable_bin_op(&#m_id, #op_str);
                         #[allow(unused_assignments)]
                         match mut_op {
                             "" => {
                                 let output = left #op right;
                                 // after the computation is performed its output type is stored into the variable
                                 // giving the compiler the necessary type hint required for the mutated cases
-                                output_type = ::muttest::phantom_for_type(&output);
+                                output_type = ::#core_crate::phantom_for_type(&output);
                                 // report the possible mutations
-                                ::muttest::report_possible_mutations(&#m_id,
+                                ::#core_crate::report_possible_mutations(&#m_id,
                                     &[
                                         #((
                                             #op_symbols,
-                                            ::muttest::get_binop!(#op_names, left_type, right_type, output_type)
+                                            ::#core_crate::get_binop!(::#core_crate::#op_names, left_type, right_type, output_type)
                                                 .is_impl()
                                         ),)*
                                     ]
@@ -222,7 +269,7 @@ impl Fold for MuttestTransformer {
                             },
                             // possible mutations
                             #(#op_symbols =>
-                                ::muttest::get_binop!(#op_names, left_type, right_type, output_type).run(left, right),
+                                ::#core_crate::get_binop!(::#core_crate::#op_names, left_type, right_type, output_type).run(left, right),
                             )*
                             // the base case needs to be first in order to give the compiler the correct type hints
                             _ => unreachable!(),

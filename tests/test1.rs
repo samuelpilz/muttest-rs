@@ -1,15 +1,15 @@
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn x() -> usize {
     let y = 1;
     1 + 2 + y
 }
 
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn z() -> bool {
     1 < 2
 }
 
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn a() {
     for _ in 1..5 + 1 {
         1;

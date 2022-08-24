@@ -1,21 +1,21 @@
 use std::ops::{Add, Sub};
 
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn s() -> String {
     "a".to_owned() + "b"
 }
 
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn ints() -> i32 {
     5 * 4
 }
 
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn a1() -> O1 {
     A + A
 }
 
-#[muttest::mutate]
+#[muttest_codegen::mutate_selftest]
 fn a2() -> O2 {
     A - A
 }
