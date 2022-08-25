@@ -21,7 +21,7 @@ pub fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T 
     );
     run_internal(m, action)
 }
-fn run_internal<T>(mutation: BTreeMap<MutableId, String>, action: impl Fn() -> T) -> T {
+fn run_internal<T>(mutation: BTreeMap<MutableId<'static>, String>, action: impl Fn() -> T) -> T {
     let l = MOCK_LOCK.lock();
     *crate::ACTIVE_MUTATION.write().unwrap() = mutation;
     let res = action();

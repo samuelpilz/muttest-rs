@@ -85,7 +85,10 @@ fn main() -> Result<(), Error> {
                 print!("call {}", &test_exe.name);
                 io::stdout().flush()?;
                 let result = Command::new(&test_exe.path)
-                    .env("MUTTEST_MUTATION", format!("{}:{}={m}", m_id.id, m_id.crate_name))
+                    .env(
+                        "MUTTEST_MUTATION",
+                        format!("{}:{}={m}", m_id.id, m_id.crate_name),
+                    )
                     // TODO: think about details here
                     .stdout(Stdio::null())
                     .spawn()?
@@ -304,7 +307,7 @@ pub enum Error {
     #[error("failed to read cargo metadata")]
     CargoMetadata(#[from] cargo_metadata::Error),
     #[error("{0}")]
-    CoreError(#[from] muttest_core::Error),
+    CoreError(#[from] CoreError),
 }
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {

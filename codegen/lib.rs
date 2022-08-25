@@ -129,7 +129,7 @@ impl MuttestTransformer {
     }
 
     /// reserves and returns a new mutable id
-    fn new_mutable_id(&mut self) -> MutableId {
+    fn new_mutable_id(&mut self) -> MutableId<'static> {
         if self.selftest {
             self.local_id += 1;
             MutableId {
@@ -181,6 +181,22 @@ impl Fold for MuttestTransformer {
                     },).0
                 }
             }
+            Expr::Lit(ExprLit {
+                lit: Lit::Str(s), ..
+            }) => {
+                let m_id = self.new_mutable_id();
+                save_mutable(m_id.id, "str", &s.value(), &display_span(s.span()));
+                let m_id = self.mutable_id_expr(&m_id, s.span());
+                let core_crate = Ident::new(self.core_crate, s.span());
+                parse_quote_spanned! {s.span()=>
+                    ({
+                        ::#core_crate::report_location(&#m_id, file!(), line!(), column!());
+                        static MUTATION: ::std::sync::RwLock<Option<&'static str>> = ::std::sync::RwLock::new(::std::option::Option::None);
+                        ::#core_crate::mutable_str(&#m_id, #s, &MUTATION)
+                    },).0
+                }
+            }
+            // TODO: also byteStr
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_bool_op(op) => {
