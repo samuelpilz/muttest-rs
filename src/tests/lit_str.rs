@@ -16,12 +16,12 @@
 
         #[test]
         fn empty_str_unchanged() {
-            assert_eq!(crate::mock::without_mutation(empty_str), "");
+            assert_eq!(super::without_mutation(empty_str), "");
         }
 
         #[test]
         fn empty_str_one() {
-            assert_eq!(crate::mock::with_mutation(1, "1", empty_str), "1");
+            assert_eq!(super::with_mutation(1, "1", empty_str), "1");
         }
 
         #[test]
@@ -32,10 +32,10 @@
 
         #[test]
         fn some_str_unchanged() {
-            assert_eq!(crate::mock::without_mutation(some_str), "mutation testing!");
+            assert_eq!(super::without_mutation(some_str), "mutation testing!");
         }
 
         #[test]
         fn some_str_empty() {
-            assert_eq!(crate::mock::with_mutation(1, "", some_str), "");
+            assert_eq!(super::with_mutation(1, "", some_str), "");
         }

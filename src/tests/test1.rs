@@ -18,7 +18,9 @@ fn a() {
 
 #[test]
 fn tests() {
-    a();
-    assert!(z());
-    assert_eq!(x(), 4);
+    super::without_mutation(|| {
+        a();
+        assert!(z());
+        assert_eq!(x(), 4);
+    });
 }

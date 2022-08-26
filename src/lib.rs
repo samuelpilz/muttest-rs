@@ -18,12 +18,11 @@ use std::{
 
 use lazy_static::lazy_static;
 
-pub mod mock;
 pub mod mutables;
 
 /// a module for reexport from `muttest` crate
 ///
-/// everything public but `mock` and `comm` are exported here
+/// everything public but and `comm` are exported here
 pub mod api {
     pub use crate::mutables::*;
     pub use crate::{
@@ -45,7 +44,7 @@ lazy_static! {
     static ref MUTABLE_DETAILS_FILE: Mutex<Option<fs::File>> = Mutex::new(None);
     static ref MUTABLE_DETAILS: Mutex<BTreeSet<(MutableId<'static>, &'static str)>> =
         Default::default();
-    pub static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, String>> = {
+    static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, String>> = {
         RwLock::new(parse_active_mutations(
             &std::env::var("MUTTEST_MUTATION").unwrap_or_default(),
         ))
@@ -98,7 +97,7 @@ pub fn report_detail<T: Display>(m_id: &MutableId<'static>, kind: &'static str, 
 }
 
 /// get the active mutation for a mutable
-pub fn get_active_mutation_for_mutable(m_id: &MutableId) -> Option<String> {
+fn get_active_mutation_for_mutable(m_id: &MutableId) -> Option<String> {
     ACTIVE_MUTATION
         .read()
         .expect("read-lock active mutations")

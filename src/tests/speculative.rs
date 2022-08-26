@@ -41,8 +41,10 @@ impl Sub for A {
 
 #[test]
 fn tests() {
-    assert_eq!(&s(), "ab");
-    assert!(matches!(a1(), O1));
-    assert!(matches!(a2(), O2));
-    assert_eq!(ints(), 20);
+    super::without_mutation(|| {
+        assert_eq!(&s(), "ab");
+        assert!(matches!(a1(), O1));
+        assert!(matches!(a2(), O2));
+        assert_eq!(ints(), 20);
+    });
 }
