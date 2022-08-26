@@ -1,5 +1,5 @@
 //! Rust Mutation Testing core library.
-//! 
+//!
 //! There are some internals here that are not meant for mutation testing users.
 
 use std::{
@@ -22,7 +22,7 @@ pub mod mock;
 pub mod mutables;
 
 /// a module for reexport from `muttest` crate
-/// 
+///
 /// everything public but `mock` and `comm` are exported here
 pub mod api {
     pub use crate::mutables::*;
@@ -158,3 +158,6 @@ impl fmt::Display for MutableLocation {
         write!(f, "{}:{}:{}", self.file, self.line, self.column)
     }
 }
+
+#[cfg(test)]
+mod tests;
