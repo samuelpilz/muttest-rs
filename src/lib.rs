@@ -1,3 +1,7 @@
+//! Rust Mutation Testing core library.
+//! 
+//! There are some internals here that are not meant for mutation testing users.
+
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -18,8 +22,9 @@ pub mod mock;
 pub mod mutables;
 
 /// a module for reexport from `muttest` crate
+/// 
+/// everything public but `mock` and `comm` are exported here
 pub mod api {
-    // everything public but `mock` and `comm`
     pub use crate::mutables::*;
     pub use crate::{
         get_binop, report_location, report_mutable_type, report_possible_mutations, MutableId,
@@ -94,7 +99,6 @@ pub fn report_detail<T: Display>(m_id: &MutableId<'static>, kind: &'static str, 
 
 /// get the active mutation for a mutable
 pub fn get_active_mutation_for_mutable(m_id: &MutableId) -> Option<String> {
-    // TODO: somehow consider m_id.crate_name
     ACTIVE_MUTATION
         .read()
         .expect("read-lock active mutations")

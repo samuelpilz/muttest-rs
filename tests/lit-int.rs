@@ -4,7 +4,13 @@ fn two_usize() -> usize {
 }
 
 #[test]
-fn test_unchanged() {
+fn two_usize_mutables() {
+    assert_eq!(two_usize::NUM_MUTABLES, 1);
+    assert_eq!(two_usize::MUTABLES_CSV.lines().count(), 2);
+}
+
+#[test]
+fn two_usize_unchanged() {
     assert_eq!(
         ::muttest_core::mock::without_mutation(two_usize),
         2
@@ -12,7 +18,7 @@ fn test_unchanged() {
 }
 
 #[test]
-fn test_1() {
+fn two_usize_1() {
     assert_eq!(
         ::muttest_core::mock::with_mutation(1, "1", two_usize),
         1
@@ -20,9 +26,11 @@ fn test_1() {
 }
 
 #[test]
-fn test_4() {
+fn two_usize_4() {
     assert_eq!(
         ::muttest_core::mock::with_mutation(1, "4", two_usize),
         4
     );
 }
+
+// TODO: also test invalid mutations

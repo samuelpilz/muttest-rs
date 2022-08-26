@@ -16,8 +16,8 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::{
-    fold::Fold, parse_macro_input, parse_quote_spanned, spanned::Spanned, BinOp, Expr, ExprBinary,
-    ExprLit, File, Item, ItemFn, Lit,
+    fold::Fold, parse_macro_input, parse_quote, parse_quote_spanned, spanned::Spanned, BinOp, Expr,
+    ExprBinary, ExprLit, File, Item, ItemFn, Lit,
 };
 
 #[proc_macro_attribute]
@@ -27,6 +27,20 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut transformer = MuttestTransformer::new_selftest();
 
     let result = transformer.fold_item_fn(input);
+
+    // write muttest "logs"
+    let mut mod_ident = result.sig.ident.clone();
+    mod_ident.set_span(Span::call_site());
+    let mutables_csv = &transformer.selftest.as_ref().unwrap().mutables;
+    let num_mutables = transformer.selftest.as_ref().unwrap().local_id;
+
+    let result: File = parse_quote! {
+        #result
+        mod #mod_ident {
+            pub const MUTABLES_CSV: &str = #mutables_csv;
+            pub const NUM_MUTABLES: usize = #num_mutables;
+        }
+    };
 
     result.into_token_stream().into()
 }
@@ -57,6 +71,8 @@ lazy_static! {
         Mutex::new(open_definitions_file().expect("unable to open definitions file"));
 }
 
+const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,loc";
+
 // TODO: use MuttestError instead
 fn open_definitions_file() -> Result<Option<fs::File>, Error> {
     match &*MUTTEST_DIR {
@@ -69,14 +85,6 @@ fn open_definitions_file() -> Result<Option<fs::File>, Error> {
             Ok(Some(file))
         }
         _ => Ok(None),
-    }
-}
-
-fn save_mutable(m_id: usize, mut_kind: &str, code: &str, loc: &str) {
-    let mut f = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
-    if let Some(f) = f.deref_mut() {
-        writeln!(f, "{m_id},{mut_kind},{},{loc}", code).expect("unable to write mutable file");
-        f.flush().expect("unable to flush mutable file");
     }
 }
 
@@ -107,39 +115,58 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
 }
 
 struct MuttestTransformer {
-    // TODO: is this the right name?
-    selftest: bool,
-    local_id: usize,
     core_crate: &'static str,
+    selftest: Option<SelftestData>,
+}
+struct SelftestData {
+    local_id: usize,
+    mutables: String,
 }
 impl MuttestTransformer {
     fn new() -> Self {
         Self {
-            selftest: false,
-            local_id: 0,
             core_crate: "muttest",
+            selftest: None,
         }
     }
     fn new_selftest() -> Self {
         Self {
-            selftest: true,
-            local_id: 0,
             core_crate: "muttest_core",
+            selftest: Some(SelftestData {
+                local_id: 0,
+                mutables: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n"),
+            }),
         }
     }
 
-    /// reserves and returns a new mutable id
-    fn new_mutable_id(&mut self) -> MutableId<'static> {
-        if self.selftest {
-            self.local_id += 1;
-            MutableId {
-                id: self.local_id,
-                crate_name: ::std::borrow::Cow::Borrowed(""),
+    /// register a new mutable
+    fn register_mutable(&mut self, mut_kind: &str, code: &str, loc: &str) -> MutableId<'static> {
+        match &mut self.selftest {
+            Some(selftest) => {
+                selftest.local_id += 1;
+                let id = selftest.local_id;
+
+                selftest.mutables += &format!("{id},{mut_kind},{},{loc}\n", code);
+
+                MutableId {
+                    id,
+                    crate_name: ::std::borrow::Cow::Borrowed(""),
+                }
             }
-        } else {
-            MutableId {
-                id: MUTABLE_ID_NUM.fetch_add(1, Ordering::SeqCst),
-                crate_name: ::std::borrow::Cow::Borrowed(&*TARGET_NAME),
+            None => {
+                let id = MUTABLE_ID_NUM.fetch_add(1, Ordering::SeqCst);
+
+                let mut f = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
+                if let Some(f) = f.deref_mut() {
+                    writeln!(f, "{id},{mut_kind},{},{loc}", code)
+                        .expect("unable to write mutable file");
+                    f.flush().expect("unable to flush mutable file");
+                }
+
+                MutableId {
+                    id,
+                    crate_name: ::std::borrow::Cow::Borrowed(&*TARGET_NAME),
+                }
             }
         }
     }
@@ -170,8 +197,8 @@ impl Fold for MuttestTransformer {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(i), ..
             }) => {
-                let m_id = self.new_mutable_id();
-                save_mutable(m_id.id, "int", i.base10_digits(), &display_span(i.span()));
+                let m_id = self.register_mutable("int", i.base10_digits(), &display_span(i.span()));
+
                 let m_id = self.mutable_id_expr(&m_id, i.span());
                 let core_crate = Ident::new(self.core_crate, i.span());
                 parse_quote_spanned! {i.span()=>
@@ -184,8 +211,11 @@ impl Fold for MuttestTransformer {
             Expr::Lit(ExprLit {
                 lit: Lit::Str(s), ..
             }) => {
-                let m_id = self.new_mutable_id();
-                save_mutable(m_id.id, "str", &s.value(), &display_span(s.span()));
+                let m_id = self.register_mutable(
+                    "str",
+                    &format!("{:?}", s.value()),
+                    &display_span(s.span()),
+                );
                 let m_id = self.mutable_id_expr(&m_id, s.span());
                 let core_crate = Ident::new(self.core_crate, s.span());
                 parse_quote_spanned! {s.span()=>
@@ -201,8 +231,7 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_bool_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = self.new_mutable_id();
-                save_mutable(m_id.id, "bool", &op_str, &display_span(op.span()));
+                let m_id = self.register_mutable("bool", &op_str, &display_span(op.span()));
                 let m_id = self.mutable_id_expr(&m_id, op.span());
                 let core_crate = Ident::new(self.core_crate, op.span());
                 parse_quote_spanned! {op.span()=>
@@ -219,8 +248,7 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_cmp_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = self.new_mutable_id();
-                save_mutable(m_id.id, "cmp", &op_str, &display_span(op.span()));
+                let m_id = self.register_mutable("cmp", &op_str, &display_span(op.span()));
                 let m_id = self.mutable_id_expr(&m_id, op.span());
                 let core_crate = Ident::new(self.core_crate, op.span());
                 parse_quote_spanned! {op.span()=>
@@ -238,8 +266,7 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_calc_op(op) => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = self.new_mutable_id();
-                save_mutable(m_id.id, "calc", &op_str, &display_span(op.span()));
+                let m_id = self.register_mutable("calc", &op_str, &display_span(op.span()));
 
                 let mutations = [
                     ("+", "add"),
