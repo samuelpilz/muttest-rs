@@ -1,19 +1,19 @@
 use proc_macro2::{Span, TokenStream};
-use quote::quote_spanned;
+use quote::{quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{display_span, MuttestTransformer},
+    transformer::{display_span, MuttestTransformer, Mutable},
     *,
 };
 
 pub struct MutableLitInt<'a> {
     pub base10_digits: &'a str,
     pub span: Span,
-    pub tokens: TokenStream,
+    pub tokens: &'a dyn ToTokens,
 }
 
-impl MutableLitInt<'_> {
-    pub fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+impl<'a> Mutable<'a> for MutableLitInt<'a> {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let m_id =
             transformer.register_new_mutable("int", &self.base10_digits, &display_span(span));

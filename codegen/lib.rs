@@ -1,6 +1,11 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{ControlFlow, Deref, DerefMut},
+};
 
-use muttest_core::{mutable::lit_int::MutableLitInt, transformer::*};
+use muttest_core::{
+    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
+    transformer::*,
+};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
@@ -72,7 +77,7 @@ impl DerefMut for FoldImpl<'_> {
     }
 }
 
-trait MatchMutable<'a>: Sized {
+trait MatchMutable<'a>: Sized + Mutable<'a> {
     fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self>;
 }
 
@@ -84,10 +89,49 @@ impl<'a> MatchMutable<'a> for MutableLitInt<'a> {
             }) => Some(MutableLitInt {
                 base10_digits: i.base10_digits(),
                 span: i.span(),
-                tokens: i.to_token_stream(),
+                tokens: i,
             }),
             _ => None,
         }
+    }
+}
+impl<'a> MatchMutable<'a> for MutableBinopCmp<'a> {
+    fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Binary(ExprBinary {
+                left, op, right, ..
+            }) if is_cmp_op(*op) => Some(Self {
+                left,
+                right,
+                op,
+                span: op.span(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+impl FoldImpl<'_> {
+    fn try_mutate_expr<'a, 'b: 'a, M: MatchMutable<'a>>(
+        &mut self,
+        mutable_name: &str,
+        expr: &'b Expr,
+    ) -> ControlFlow<Expr> {
+        if self.should_mutate(mutable_name) {
+            if let Some(m) = M::match_expr(expr) {
+                return ControlFlow::Break(
+                    syn::parse2(m.transform(self)).expect("transform syntax error"),
+                );
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn try_all_mutate_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
+        self.try_mutate_expr::<MutableLitInt>("lit_int", &e)?;
+        self.try_mutate_expr::<MutableBinopCmp>("binop_cmp", &e)?;
+
+        ControlFlow::Continue(())
     }
 }
 
@@ -103,13 +147,12 @@ impl Fold for FoldImpl<'_> {
     fn fold_expr(&mut self, e: Expr) -> Expr {
         let e = syn::fold::fold_expr(self, e);
 
-        if self.should_mutate("lit_int") {
-            if let Some(m) = MutableLitInt::match_expr(&e) {
-                return syn::parse2(m.transform(self)).expect("transform syntax error");
-            }
+        if let ControlFlow::Break(e) = self.try_all_mutate_expr(&e) {
+            return e;
         }
 
         match e {
+            // TODO: also byteStr
             Expr::Lit(ExprLit {
                 lit: Lit::Str(s), ..
             }) if self.should_mutate("lit_str") => {
@@ -128,7 +171,6 @@ impl Fold for FoldImpl<'_> {
                     },).0
                 }
             }
-            // TODO: also byteStr
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_bool_op(op) && self.should_mutate("binop_bool") => {
@@ -142,24 +184,6 @@ impl Fold for FoldImpl<'_> {
                         // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
                             #left #op #right
-                        }
-                    },).0
-                }
-            }
-            Expr::Binary(ExprBinary {
-                left, op, right, ..
-            }) if is_cmp_op(op) && self.should_mutate("binop_cmp") => {
-                let op_str = op.to_token_stream().to_string();
-                let m_id = self.register_new_mutable("cmp", &op_str, &display_span(op.span()));
-                let m_id = self.mutable_id_expr(&m_id, op.span());
-                let core_crate = self.core_crate_path(op.span());
-                parse_quote_spanned! {op.span()=>
-                    ({
-                        #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                        let (left, right) = (#left, #right);
-                        // for type-inference, keep the original expression in the first branch
-                        if false {left #op right} else {
-                            #core_crate::mutable::binop_cmp::mutable_cmp(&#m_id, #op_str, &left, &right)
                         }
                     },).0
                 }

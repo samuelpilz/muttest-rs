@@ -47,6 +47,10 @@ fn open_definitions_file() -> Result<Option<fs::File>, Error> {
     }
 }
 
+pub trait Mutable<'a> {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream;
+}
+
 pub struct MuttestTransformer {
     pub conf: TransformerConf,
     pub core_crate: Option<&'static str>,
