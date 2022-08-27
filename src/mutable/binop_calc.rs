@@ -1,4 +1,91 @@
-use crate::*;
+use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote_spanned, ToTokens};
+
+use crate::{
+    transformer::{display_span, Mutable, MuttestTransformer},
+    *,
+};
+
+pub struct MutableBinopCalc<'a> {
+    pub left: &'a dyn ToTokens,
+    pub right: &'a dyn ToTokens,
+    pub op: &'a dyn ToTokens,
+    pub span: Span,
+}
+
+impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+        let span = self.span;
+        let op = self.op.to_token_stream();
+        let op_str = op.to_string();
+        let m_id = transformer.register_new_mutable("calc", &op_str, &display_span(span));
+
+        let mutations = [
+            ("+", "add"),
+            ("-", "sub"),
+            ("*", "mul"),
+            ("/", "div"),
+            ("%", "rem"),
+        ];
+        let op_symbols = mutations.map(|x| x.0);
+        let op_names = mutations.map(|x| format_ident!("{}", span = span, x.1));
+
+        let m_id = transformer.mutable_id_expr(&m_id, span);
+        let core_crate = transformer.core_crate_path(span);
+        let (left, right) = (self.left, self.right);
+
+        quote_spanned! {span=>
+            ({
+                #core_crate::report_location(&#m_id, file!(), line!(), column!());
+                // arguments are evaluated before executing the calculation
+                let (left, right) = (#left, #right);
+                let left_type = #core_crate::phantom_for_type(&left);
+                let right_type = #core_crate::phantom_for_type(&right);
+                // this carries the output type of the computation
+                // the assignment in the default-case defines the type of this phantom
+                let mut output_type = ::core::marker::PhantomData;
+                let mut_op = #core_crate::mutable::binop_calc::mutable_binop_calc(&#m_id, #op_str);
+                #[allow(unused_assignments)]
+                match mut_op {
+                    "" => {
+                        let output = left #op right;
+                        // after the computation is performed its output type is stored into the variable
+                        // giving the compiler the necessary type hint required for the mutated cases
+                        output_type = #core_crate::phantom_for_type(&output);
+                        // report the possible mutations
+                        #core_crate::report_possible_mutations(&#m_id,
+                            &[
+                                #((
+                                    #op_symbols,
+                                    {
+                                        #[allow(unused_imports)]
+                                        use #core_crate::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                                        (&(left_type, right_type, output_type))
+                                            .get_impl()
+                                            .is_impl()
+                                    }
+                                ),)*
+                            ]
+                        );
+                        output
+                    },
+                    // possible mutations
+                    #(#op_symbols =>
+                        {
+                            #[allow(unused_imports)]
+                            use #core_crate::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                            (&(left_type, right_type, output_type))
+                                .get_impl()
+                                .run(left, right)
+                        }
+                    )*
+                    // TODO: report error and panic
+                    _ => unreachable!(),
+                }
+            },).0
+        }
+    }
+}
 
 pub fn mutable_binop_calc(m_id: &MutableId, _op_str: &'static str) -> &'static str {
     report_coverage(m_id);
@@ -73,22 +160,70 @@ binop_calc_traits!(rem, std::ops::Rem<R>, rem);
 mod tests {
     use std::ops::{Add, Sub};
 
-    #[muttest_codegen::mutate_isolated("binop-calc")]
+    #[muttest_codegen::mutate_isolated("binop_calc")]
+    fn mul_ints() -> i32 {
+        5 * 4
+    }
+
+    #[test]
+    fn mul_ints_mutables() {
+        assert_eq!(mul_ints::NUM_MUTABLES, 1);
+        assert_eq!(mul_ints::MUTABLES_CSV.lines().count(), 2);
+    }
+
+    #[test]
+    fn mul_ints_unchanged() {
+        assert_eq!(crate::tests::without_mutation(mul_ints), 20);
+    }
+
+    #[test]
+    fn mul_ints_plus() {
+        assert_eq!(crate::tests::with_mutation(1, "+", mul_ints), 9);
+    }
+    #[test]
+    fn mul_ints_minus() {
+        assert_eq!(crate::tests::with_mutation(1, "-", mul_ints), 1);
+    }
+
+    #[muttest_codegen::mutate_isolated("binop_calc")]
+    fn calc_three_ints() -> i64 {
+        3 + 2 * 4
+    }
+
+    #[test]
+    fn calc_three_ints_mutables() {
+        assert_eq!(calc_three_ints::NUM_MUTABLES, 2);
+        assert_eq!(calc_three_ints::MUTABLES_CSV.lines().count(), 3);
+        // TODO: assert that mutation 1 is `*` and mutation 2 is `-`
+    }
+    #[test]
+    fn calc_three_ints_unchanged() {
+        assert_eq!(crate::tests::without_mutation(calc_three_ints), 11);
+    }
+
+    #[test]
+    fn calc_three_ints_1_minus() {
+        assert_eq!(crate::tests::with_mutation(1, "-", calc_three_ints), 1);
+    }
+
+    #[test]
+    fn calc_three_ints_2_div() {
+        // tests implicit parentheses
+        assert_eq!(crate::tests::with_mutation(2, "/", calc_three_ints), 0);
+    }
+
+    // TODO: speculative test requires inspection into details
+    #[muttest_codegen::mutate_isolated("binop_calc")]
     fn s() -> String {
         "a".to_owned() + "b"
     }
 
-    #[muttest_codegen::mutate_isolated("binop-calc")]
-    fn ints() -> i32 {
-        5 * 4
-    }
-
-    #[muttest_codegen::mutate_isolated("binop-calc")]
+    #[muttest_codegen::mutate_isolated("binop_calc")]
     fn a1() -> O1 {
         A + A
     }
 
-    #[muttest_codegen::mutate_isolated("binop-calc")]
+    #[muttest_codegen::mutate_isolated("binop_calc")]
     fn a2() -> O2 {
         A - A
     }
@@ -118,7 +253,6 @@ mod tests {
             assert_eq!(&s(), "ab");
             assert!(matches!(a1(), O1));
             assert!(matches!(a2(), O2));
-            assert_eq!(ints(), 20);
         });
     }
 }
