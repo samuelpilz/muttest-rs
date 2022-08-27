@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{display_span, Mutable, MuttestTransformer},
+    transformer::{Mutable, MuttestTransformer, TransformSnippets},
     *,
 };
 
@@ -17,21 +17,21 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
 
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
-        let m_id =
-            transformer.register_new_mutable(Self::NAME, &self.base10_digits, &display_span(span));
-
-        let m_id = transformer.mutable_id_expr(&m_id, span);
-        let core_crate = transformer.core_crate_path(span);
-        let location = transformer.location_tokens(span);
         let lit = self.lit;
+
+        let TransformSnippets {
+            m_id,
+            core_crate,
+            loc,
+        } = transformer.new_mutable::<Self>(&self.base10_digits, span);
         quote_spanned! {span=>
-            #core_crate::mutable::lit_int::run(&#m_id, #lit, #location)
+            #core_crate::mutable::lit_int::run(&#m_id, #lit, #loc)
         }
     }
 }
 
-pub fn run<T: MutableInt>(m_id: &MutableId<'static>, x: T, location: MutableLocation) -> T {
-    location.report_for(m_id);
+pub fn run<T: MutableInt>(m_id: &MutableId<'static>, x: T, loc: MutableLocation) -> T {
+    m_id.report_at(loc);
     report_coverage(m_id);
     report_mutable_type(m_id, T::type_str());
     match get_active_mutation_for_mutable(m_id).as_deref() {

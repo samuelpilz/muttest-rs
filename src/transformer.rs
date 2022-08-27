@@ -107,8 +107,37 @@ impl MuttestTransformer {
         }
     }
 
+    pub fn new_mutable<'a, M: Mutable<'a>>(&mut self, code: &str, span: Span) -> TransformSnippets {
+        let m_id = self.register_new_mutable(M::NAME, code, &display_span(span));
+
+        let core_crate = match self.core_crate {
+            Some(cc) => format_ident!("{}", span = span, cc).into_token_stream(),
+            None => quote_spanned! {span => crate},
+        };
+
+        let id = m_id.id;
+        let crate_name: &str = m_id.crate_name.borrow();
+
+        let m_id = quote_spanned! {span =>
+            #core_crate::MutableId {id: #id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
+        };
+        let loc = quote_spanned! {span=>
+            #core_crate::MutableLocation {
+                file: file!(),
+                line: line!(),
+                column: column!(),
+            }
+        };
+
+        TransformSnippets {
+            m_id,
+            core_crate,
+            loc,
+        }
+    }
+
     /// register a new mutable
-    pub fn register_new_mutable(
+    fn register_new_mutable(
         &mut self,
         mut_kind: &str,
         code: &str,
@@ -143,34 +172,12 @@ impl MuttestTransformer {
             }
         }
     }
+}
 
-    pub fn mutable_id_expr(&self, m_id: &MutableId, span: Span) -> TokenStream {
-        let id = m_id.id;
-        let crate_name: &str = m_id.crate_name.borrow();
-        let core_crate = self.core_crate_path(span);
-
-        quote_spanned! {span =>
-            #core_crate::MutableId {id: #id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
-        }
-    }
-
-    // TODO: maybe this can be done with hygiene instead?
-    pub fn core_crate_path(&self, span: Span) -> TokenStream {
-        match self.core_crate {
-            Some(cc) => format_ident!("{}", span = span, cc).into_token_stream(),
-            None => quote_spanned! {span => crate},
-        }
-    }
-    pub fn location_tokens(&self, span: Span) -> TokenStream {
-        let core_crate = self.core_crate_path(span);
-        quote_spanned! {span=>
-            #core_crate::MutableLocation {
-                file: file!(),
-                line: line!(),
-                column: column!(),
-            }
-        }
-    }
+pub struct TransformSnippets {
+    pub m_id: TokenStream,
+    pub core_crate: TokenStream,
+    pub loc: TokenStream,
 }
 
 pub fn display_span(span: Span) -> String {

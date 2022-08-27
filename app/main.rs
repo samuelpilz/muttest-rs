@@ -145,7 +145,7 @@ impl Mutable {
     }
     fn mutations(&self) -> Vec<String> {
         match &*self.kind {
-            "int" => {
+            "lit_int" => {
                 let i = self.code.parse::<u128>().expect("unable to parse int");
                 let mut m = vec![];
                 if i != 0 {
@@ -154,14 +154,14 @@ impl Mutable {
                 m.push((i + 1).to_string());
                 m
             }
-            "calc" => self
+            "binop_calc" => self
                 .possible_mutations
                 .iter()
                 .flatten()
                 .filter(|&x| x != &self.code)
                 .map(ToOwned::to_owned)
                 .collect(),
-            "cmp" => ["<", "<=", ">=", ">"]
+            "binop_cmp" => ["<", "<=", ">=", ">"]
                 .into_iter()
                 .filter(|x| x != &self.code)
                 .map(ToOwned::to_owned)

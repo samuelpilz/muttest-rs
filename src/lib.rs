@@ -28,8 +28,8 @@ pub mod transformer;
 pub mod api {
     pub use crate::mutable;
     pub use crate::{
-        phantom_for_type, report_location, report_mutable_type, report_possible_mutations,
-        MutableId, MutableLocation,
+        phantom_for_type, report_mutable_type, report_possible_mutations, MutableId,
+        MutableLocation,
     };
 }
 
@@ -82,19 +82,6 @@ pub fn report_coverage(m_id: &MutableId) {
     }
 }
 
-pub fn report_detail<T: Display>(m_id: &MutableId<'static>, kind: &'static str, data: T) {
-    let is_new = MUTABLE_DETAILS.lock().unwrap().insert((m_id.clone(), kind));
-    if !is_new {
-        return;
-    }
-    let mut f = MUTABLE_DETAILS_FILE.lock().unwrap();
-    if let Some(f) = f.deref_mut() {
-        writeln!(f, "{m_id},{kind},{data}").expect("unable to write mutable context");
-        f.flush()
-            .expect("unable to flush possible mutations report");
-    }
-}
-
 /// get the active mutation for a mutable
 fn get_active_mutation_for_mutable(m_id: &MutableId) -> Option<String> {
     ACTIVE_MUTATION
@@ -126,6 +113,24 @@ impl FromStr for MutableId<'static> {
     }
 }
 
+impl MutableId<'static> {
+    fn report_detail<T: Display>(&self, kind: &'static str, data: T) {
+        let is_new = MUTABLE_DETAILS.lock().unwrap().insert((self.clone(), kind));
+        if !is_new {
+            return;
+        }
+        let mut f = MUTABLE_DETAILS_FILE.lock().unwrap();
+        if let Some(f) = f.deref_mut() {
+            writeln!(f, "{self},{kind},{data}").expect("unable to write mutable context");
+            f.flush()
+                .expect("unable to flush possible mutations report");
+        }
+    }
+
+    pub fn report_at(&self, loc: MutableLocation) {
+        self.report_detail("loc", loc)
+    }
+}
 // TODO: `report_*` functions as methods of MutableId
 
 pub fn report_possible_mutations(m_id: &MutableId<'static>, reports: &[(&str, bool)]) {
@@ -135,16 +140,11 @@ pub fn report_possible_mutations(m_id: &MutableId<'static>, reports: &[(&str, bo
         .map(|(m, _)| *m)
         .collect::<Vec<_>>();
     let mutations = mutations.join(":");
-    report_detail(m_id, "mutations", mutations);
+    m_id.report_detail("mutations", mutations);
 }
 
 pub fn report_mutable_type(m_id: &MutableId<'static>, ty: &str) {
-    report_detail(m_id, "type", ty);
-}
-
-// TODO: migrate all to other function
-pub fn report_location(m_id: &MutableId<'static>, file: &'static str, line: u32, column: u32) {
-    report_detail(m_id, "loc", MutableLocation { file, line, column })
+    m_id.report_detail("type", ty);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -157,11 +157,6 @@ pub struct MutableLocation {
 impl fmt::Display for MutableLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}:{}", self.file, self.line, self.column)
-    }
-}
-impl MutableLocation {
-    pub fn report_for(self, m_id: &MutableId<'static>) {
-        report_location(m_id, self.file, self.line, self.column)
     }
 }
 

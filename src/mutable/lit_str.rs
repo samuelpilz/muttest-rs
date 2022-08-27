@@ -7,7 +7,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{display_span, Mutable, MuttestTransformer},
+    transformer::{Mutable, MuttestTransformer, TransformSnippets},
     *,
 };
 
@@ -22,21 +22,19 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
 
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
-        let m_id = transformer.register_new_mutable(
-            Self::NAME,
-            &format!("{:?}", self.value),
-            &display_span(span),
-        );
-
-        let m_id = transformer.mutable_id_expr(&m_id, span);
-        let core_crate = transformer.core_crate_path(span);
         let lit = self.lit;
+
+        let TransformSnippets {
+            m_id,
+            core_crate,
+            loc,
+        } = transformer.new_mutable::<Self>(&self.value, span);
         quote_spanned! {span=>
-            ({
-                #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                static MUTABLE: ::std::sync::RwLock<Option<&'static str>> = ::std::sync::RwLock::new(::std::option::Option::None);
-                #core_crate::mutable::lit_str::mutable_str(&#m_id, #lit, &MUTABLE)
-            },).0
+            #core_crate::mutable::lit_str::mutable_str(&#m_id, #lit, #loc, {
+                static MUTABLE: ::std::sync::RwLock<::std::option::Option<&str>> =
+                    ::std::sync::RwLock::new(::std::option::Option::None);
+                &MUTABLE
+            })
         }
     }
 }
@@ -44,8 +42,10 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
 pub fn mutable_str(
     m_id: &MutableId<'static>,
     s: &'static str,
+    loc: MutableLocation,
     mutation: &RwLock<Option<&'static str>>,
 ) -> &'static str {
+    m_id.report_at(loc);
     report_coverage(m_id);
     match get_active_mutation_for_mutable(m_id).as_deref() {
         None => s,

@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{display_span, Mutable, MuttestTransformer},
+    transformer::{Mutable, MuttestTransformer, TransformSnippets},
     *,
 };
 
@@ -20,7 +20,13 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
-        let m_id = transformer.register_new_mutable(Self::NAME, &op_str, &display_span(span));
+        let (left, right) = (self.left, self.right);
+
+        let TransformSnippets {
+            m_id,
+            core_crate,
+            loc,
+        } = transformer.new_mutable::<Self>(&op_str, span);
 
         let mutations = [
             ("+", "add"),
@@ -32,13 +38,8 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
         let op_symbols = mutations.map(|x| x.0);
         let op_names = mutations.map(|x| format_ident!("{}", span = span, x.1));
 
-        let m_id = transformer.mutable_id_expr(&m_id, span);
-        let core_crate = transformer.core_crate_path(span);
-        let (left, right) = (self.left, self.right);
-
         quote_spanned! {span=>
             ({
-                #core_crate::report_location(&#m_id, file!(), line!(), column!());
                 // arguments are evaluated before executing the calculation
                 let (left, right) = (#left, #right);
                 let left_type = #core_crate::phantom_for_type(&left);
@@ -46,7 +47,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                 // this carries the output type of the computation
                 // the assignment in the default-case defines the type of this phantom
                 let mut output_type = ::core::marker::PhantomData;
-                let mut_op = #core_crate::mutable::binop_calc::mutable_binop_calc(&#m_id, #op_str);
+                let mut_op = #core_crate::mutable::binop_calc::mutable_binop_calc(&#m_id, #loc);
                 #[allow(unused_assignments)]
                 match mut_op {
                     "" => {
@@ -89,7 +90,8 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
     }
 }
 
-pub fn mutable_binop_calc(m_id: &MutableId, _op_str: &'static str) -> &'static str {
+pub fn mutable_binop_calc(m_id: &MutableId<'static>, loc: MutableLocation) -> &'static str {
+    m_id.report_at(loc);
     report_coverage(m_id);
     match get_active_mutation_for_mutable(m_id).as_deref() {
         None => "",

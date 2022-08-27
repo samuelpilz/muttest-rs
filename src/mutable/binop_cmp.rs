@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{display_span, Mutable, MuttestTransformer},
+    transformer::{Mutable, MuttestTransformer, TransformSnippets},
     *,
 };
 
@@ -20,17 +20,20 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
-        let m_id = transformer.register_new_mutable(Self::NAME, &op_str, &display_span(span));
-        let m_id = transformer.mutable_id_expr(&m_id, span);
-        let core_crate = transformer.core_crate_path(span);
         let (left, right) = (self.left, self.right);
+
+        let TransformSnippets {
+            m_id,
+            core_crate,
+            loc,
+        } = transformer.new_mutable::<Self>(&op_str, span);
+
         quote_spanned! {span=>
             ({
-                #core_crate::report_location(&#m_id, file!(), line!(), column!());
                 let (left, right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
                 if false {left #op right} else {
-                    #core_crate::mutable::binop_cmp::mutable_cmp(&#m_id, #op_str, &left, &right)
+                    #core_crate::mutable::binop_cmp::mutable_cmp(&#m_id, #op_str, &left, &right, #loc)
                 }
             },).0
         }
@@ -38,11 +41,13 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
 }
 
 pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
-    m_id: &MutableId,
+    m_id: &MutableId<'static>,
     op_str: &str,
     left: &T,
     right: &T1,
+    loc: MutableLocation,
 ) -> bool {
+    m_id.report_at(loc);
     report_coverage(m_id);
     let ord = left.partial_cmp(right);
     // TODO: record behavior for weak mutation testing
