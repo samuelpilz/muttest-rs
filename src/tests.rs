@@ -7,10 +7,10 @@ use crate::{MutableId, ACTIVE_MUTATION};
 lazy_static! {
     static ref MOCK_LOCK: Mutex<()> = Mutex::new(());
 }
-fn without_mutation<T>(action: impl Fn() -> T) -> T {
+pub fn without_mutation<T>(action: impl Fn() -> T) -> T {
     run_mutation(None, action)
 }
-fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T {
+pub fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T {
     run_mutation(
         Some((
             MutableId {
@@ -52,9 +52,6 @@ fn example_selftest_fn() -> usize {
 fn example_selftest_test() {
     assert_eq!(example_selftest_fn(), 1);
 }
-
-mod lit_int;
-mod lit_str;
 
 // TODO: maybe restructure these tests to match the structure of mutables & transformer
 mod speculative;

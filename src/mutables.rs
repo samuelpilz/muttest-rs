@@ -1,54 +1,14 @@
 use std::{
-    fmt,
     marker::PhantomData,
-    ops::{Deref, DerefMut},
-    sync::RwLock,
 };
 
 use super::*;
 
-pub fn mutable_int<T: MutableInt>(m_id: &MutableId<'static>, x: T) -> T {
-    report_coverage(m_id);
-    report_mutable_type(m_id, T::type_str());
-    match get_active_mutation_for_mutable(m_id).as_deref() {
-        None => x,
-        Some(p) if p.chars().all(|c| c.is_numeric()) => T::parse(p),
-        Some("+1") => x.increment(),
-        _ => todo!(),
-    }
-}
+mod lit_int;
+mod lit_str;
 
-pub fn mutable_str(
-    m_id: &MutableId<'static>,
-    s: &'static str,
-    mutation: &RwLock<Option<&'static str>>,
-) -> &'static str {
-    report_coverage(m_id);
-    match get_active_mutation_for_mutable(m_id).as_deref() {
-        None => s,
-        Some(s_mut) => {
-            let r_lock = mutation.read().unwrap();
-            match r_lock.deref() {
-                Some(s_lock) if s_lock == &s_mut => return s_lock,
-                _ => {}
-            }
-            // update the content of the lock
-            std::mem::drop(r_lock);
-            let mut w_lock = mutation.write().unwrap();
-            match w_lock.deref_mut() {
-                // check if someone else has done the update
-                Some(s_lock) if s_lock == &s_mut => return s_lock,
-                _ => {}
-            }
-            // yes, this leaks. but only once per mutation.
-            let boxed_str: Box<str> = Box::from(s_mut);
-            let leaked = Box::leak(boxed_str);
-            println!("mutated: {leaked:?}");
-            *w_lock = Some(leaked);
-            leaked
-        }
-    }
-}
+pub use lit_str::*;
+pub use lit_int::*;
 
 pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
     m_id: &MutableId,
@@ -92,28 +52,6 @@ pub fn mutable_bin_op(m_id: &MutableId, _op_str: &'static str) -> &'static str {
 pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
     PhantomData
 }
-
-pub trait MutableInt: Copy + fmt::Display {
-    fn type_str() -> &'static str;
-    fn parse(s: &str) -> Self;
-    fn increment(self) -> Self;
-}
-macro_rules! mutable_ints {
-    ($($t:ty),*) => {
-        $(impl MutableInt for $t {
-            fn type_str() -> &'static str {
-                stringify!($t)
-            }
-            fn increment(self) -> Self {
-                self + 1
-            }
-            fn parse(s: &str) -> Self {
-                s.parse().expect("unable to parse number")
-            }
-        })*
-    };
-}
-mutable_ints!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
 macro_rules! binop_mutation {
     ($m:ident, $t:path, $f:ident) => {
