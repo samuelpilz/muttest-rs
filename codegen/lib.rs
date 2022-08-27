@@ -1,14 +1,17 @@
 use std::ops::{ControlFlow, Deref, DerefMut};
 
 use muttest_core::{
-    mutable::{binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
+    mutable::{
+        binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt,
+        lit_str::MutableLitStr,
+    },
     transformer::*,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
-    fold::Fold, parse_macro_input, parse_quote, parse_quote_spanned, spanned::Spanned, BinOp, Expr,
+    fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr,
     ExprBinary, ExprLit, File, Item, ItemFn, Lit, LitStr,
 };
 
@@ -83,11 +86,25 @@ impl<'a> MatchMutable<'a> for MutableLitInt<'a> {
     fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Lit(ExprLit {
-                lit: Lit::Int(i), ..
-            }) => Some(MutableLitInt {
-                base10_digits: i.base10_digits(),
-                span: i.span(),
-                tokens: i,
+                lit: Lit::Int(l), ..
+            }) => Some(Self {
+                base10_digits: l.base10_digits(),
+                span: l.span(),
+                lit: l,
+            }),
+            _ => None,
+        }
+    }
+}
+impl<'a> MatchMutable<'a> for MutableLitStr<'a> {
+    fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Str(l), ..
+            }) => Some(Self {
+                value: l.value(),
+                span: l.span(),
+                lit: l,
             }),
             _ => None,
         }
@@ -142,6 +159,8 @@ impl FoldImpl<'_> {
 
     fn try_all_mutate_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
         self.try_mutate_expr::<MutableLitInt>("lit_int", &e)?;
+        // TODO: also byteStr
+        self.try_mutate_expr::<MutableLitStr>("lit_str", &e)?;
         self.try_mutate_expr::<MutableBinopCmp>("binop_cmp", &e)?;
         self.try_mutate_expr::<MutableBinopCalc>("binop_calc", &e)?;
 
@@ -161,48 +180,9 @@ impl Fold for FoldImpl<'_> {
     fn fold_expr(&mut self, e: Expr) -> Expr {
         let e = syn::fold::fold_expr(self, e);
 
-        if let ControlFlow::Break(e) = self.try_all_mutate_expr(&e) {
-            return e;
-        }
-
-        match e {
-            // TODO: also byteStr
-            Expr::Lit(ExprLit {
-                lit: Lit::Str(s), ..
-            }) if self.should_mutate("lit_str") => {
-                let m_id = self.register_new_mutable(
-                    "str",
-                    &format!("{:?}", s.value()),
-                    &display_span(s.span()),
-                );
-                let m_id = self.mutable_id_expr(&m_id, s.span());
-                let core_crate = self.core_crate_path(s.span());
-                parse_quote_spanned! {s.span()=>
-                    ({
-                        #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                        static MUTABLE: ::std::sync::RwLock<Option<&'static str>> = ::std::sync::RwLock::new(::std::option::Option::None);
-                        #core_crate::mutable::lit_str::mutable_str(&#m_id, #s, &MUTABLE)
-                    },).0
-                }
-            }
-            Expr::Binary(ExprBinary {
-                left, op, right, ..
-            }) if is_bool_op(op) && self.should_mutate("binop_bool") => {
-                let op_str = op.to_token_stream().to_string();
-                let m_id = self.register_new_mutable("bool", &op_str, &display_span(op.span()));
-                let m_id = self.mutable_id_expr(&m_id, op.span());
-                let core_crate = self.core_crate_path(op.span());
-                parse_quote_spanned! {op.span()=>
-                    ({
-                        #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                        // for type-inference, keep the original expression in the first branch
-                        if false {left #op right} else {
-                            #left #op #right
-                        }
-                    },).0
-                }
-            }
-            _ => e,
+        match self.try_all_mutate_expr(&e) {
+            ControlFlow::Break(e) => e,
+            ControlFlow::Continue(_) => e,
         }
     }
 }

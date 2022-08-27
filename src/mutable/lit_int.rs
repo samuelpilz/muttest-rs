@@ -2,14 +2,14 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{display_span, MuttestTransformer, Mutable},
+    transformer::{display_span, Mutable, MuttestTransformer},
     *,
 };
 
 pub struct MutableLitInt<'a> {
     pub base10_digits: &'a str,
     pub span: Span,
-    pub tokens: &'a dyn ToTokens,
+    pub lit: &'a dyn ToTokens,
 }
 
 impl<'a> Mutable<'a> for MutableLitInt<'a> {
@@ -20,11 +20,11 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
 
         let m_id = transformer.mutable_id_expr(&m_id, span);
         let core_crate = transformer.core_crate_path(span);
-        let tokens = self.tokens;
+        let lit = self.lit;
         quote_spanned! {span=>
             ({
                 #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                #core_crate::mutable::lit_int::mutable_int(&#m_id, #tokens)
+                #core_crate::mutable::lit_int::mutable_int(&#m_id, #lit)
             },).0
         }
     }

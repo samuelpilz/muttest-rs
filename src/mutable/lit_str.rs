@@ -3,7 +3,38 @@ use std::{
     sync::RwLock,
 };
 
-use crate::*;
+use proc_macro2::{Span, TokenStream};
+use quote::{quote_spanned, ToTokens};
+
+use crate::{
+    transformer::{display_span, Mutable, MuttestTransformer},
+    *,
+};
+
+pub struct MutableLitStr<'a> {
+    pub value: String,
+    pub span: Span,
+    pub lit: &'a dyn ToTokens,
+}
+
+impl<'a> Mutable<'a> for MutableLitStr<'a> {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+        let span = self.span;
+        let m_id =
+            transformer.register_new_mutable("str", &format!("{:?}", self.value), &display_span(span));
+
+        let m_id = transformer.mutable_id_expr(&m_id, span);
+        let core_crate = transformer.core_crate_path(span);
+        let lit = self.lit;
+        quote_spanned! {span=>
+            ({
+                #core_crate::report_location(&#m_id, file!(), line!(), column!());
+                static MUTABLE: ::std::sync::RwLock<Option<&'static str>> = ::std::sync::RwLock::new(::std::option::Option::None);
+                #core_crate::mutable::lit_str::mutable_str(&#m_id, #lit, &MUTABLE)
+            },).0
+        }
+    }
+}
 
 pub fn mutable_str(
     m_id: &MutableId<'static>,
@@ -73,7 +104,10 @@ mod tests {
 
     #[test]
     fn some_str_unchanged() {
-        assert_eq!(crate::tests::without_mutation(some_str), "mutation testing!");
+        assert_eq!(
+            crate::tests::without_mutation(some_str),
+            "mutation testing!"
+        );
     }
 
     #[test]
