@@ -16,21 +16,20 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let m_id =
-            transformer.register_new_mutable("int", &self.base10_digits, &display_span(span));
+            transformer.register_new_mutable("lit_int", &self.base10_digits, &display_span(span));
 
         let m_id = transformer.mutable_id_expr(&m_id, span);
         let core_crate = transformer.core_crate_path(span);
+        let location = transformer.location_tokens(span);
         let lit = self.lit;
         quote_spanned! {span=>
-            ({
-                #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                #core_crate::mutable::lit_int::mutable_int(&#m_id, #lit)
-            },).0
+            #core_crate::mutable::lit_int::run(&#m_id, #lit, #location)
         }
     }
 }
 
-pub fn mutable_int<T: MutableInt>(m_id: &MutableId<'static>, x: T) -> T {
+pub fn run<T: MutableInt>(m_id: &MutableId<'static>, x: T, location: MutableLocation) -> T {
+    location.report_for(m_id);
     report_coverage(m_id);
     report_mutable_type(m_id, T::type_str());
     match get_active_mutation_for_mutable(m_id).as_deref() {

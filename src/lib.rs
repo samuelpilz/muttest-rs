@@ -29,7 +29,7 @@ pub mod api {
     pub use crate::mutable;
     pub use crate::{
         phantom_for_type, report_location, report_mutable_type, report_possible_mutations,
-        MutableId,
+        MutableId, MutableLocation,
     };
 }
 
@@ -126,6 +126,8 @@ impl FromStr for MutableId<'static> {
     }
 }
 
+// TODO: `report_*` functions as methods of MutableId
+
 pub fn report_possible_mutations(m_id: &MutableId<'static>, reports: &[(&str, bool)]) {
     let mutations = reports
         .iter()
@@ -140,24 +142,29 @@ pub fn report_mutable_type(m_id: &MutableId<'static>, ty: &str) {
     report_detail(m_id, "type", ty);
 }
 
+// TODO: migrate all to other function
 pub fn report_location(m_id: &MutableId<'static>, file: &'static str, line: u32, column: u32) {
     report_detail(m_id, "loc", MutableLocation { file, line, column })
 }
 
 #[derive(Debug, Clone, Copy)]
 #[allow(unused)]
-struct MutableLocation {
-    file: &'static str,
-    line: u32,
-    column: u32,
+pub struct MutableLocation {
+    pub file: &'static str,
+    pub line: u32,
+    pub column: u32,
 }
 impl fmt::Display for MutableLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}:{}", self.file, self.line, self.column)
     }
 }
+impl MutableLocation {
+    pub fn report_for(self, m_id: &MutableId<'static>) {
+        report_location(m_id, self.file, self.line, self.column)
+    }
+}
 
 pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
     PhantomData
 }
-

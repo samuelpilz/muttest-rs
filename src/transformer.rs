@@ -3,7 +3,7 @@ use std::{
     fs,
     io::Write,
     ops::DerefMut,
-    path::{PathBuf, Path},
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
         Mutex,
@@ -160,8 +160,17 @@ impl MuttestTransformer {
             None => quote_spanned! {span => crate},
         }
     }
+    pub fn location_tokens(&self, span: Span) -> TokenStream {
+        let core_crate = self.core_crate_path(span);
+        quote_spanned! {span=>
+            #core_crate::MutableLocation {
+                file: file!(),
+                line: line!(),
+                column: column!(),
+            }
+        }
+    }
 }
-
 
 pub fn display_span(span: Span) -> String {
     let start = span.start();
