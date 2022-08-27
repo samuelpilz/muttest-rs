@@ -18,10 +18,15 @@ pub struct MutableLitStr<'a> {
 }
 
 impl<'a> Mutable<'a> for MutableLitStr<'a> {
+    const NAME: &'static str = "lit_str";
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
-        let m_id =
-            transformer.register_new_mutable("str", &format!("{:?}", self.value), &display_span(span));
+        let m_id = transformer.register_new_mutable(
+            Self::NAME,
+            &format!("{:?}", self.value),
+            &display_span(span),
+        );
 
         let m_id = transformer.mutable_id_expr(&m_id, span);
         let core_crate = transformer.core_crate_path(span);

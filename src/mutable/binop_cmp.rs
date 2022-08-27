@@ -14,11 +14,13 @@ pub struct MutableBinopCmp<'a> {
 }
 
 impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
+    const NAME: &'static str = "binop_cmp";
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
-        let m_id = transformer.register_new_mutable("cmp", &op_str, &display_span(span));
+        let m_id = transformer.register_new_mutable(Self::NAME, &op_str, &display_span(span));
         let m_id = transformer.mutable_id_expr(&m_id, span);
         let core_crate = transformer.core_crate_path(span);
         let (left, right) = (self.left, self.right);

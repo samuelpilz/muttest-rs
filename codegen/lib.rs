@@ -2,8 +2,8 @@ use std::ops::{ControlFlow, Deref, DerefMut};
 
 use muttest_core::{
     mutable::{
-        binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt,
-        lit_str::MutableLitStr, binop_bool::MutableBinopBool,
+        binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp,
+        lit_int::MutableLitInt, lit_str::MutableLitStr,
     },
     transformer::*,
 };
@@ -11,8 +11,8 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
-    fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr,
-    ExprBinary, ExprLit, File, Item, ItemFn, Lit, LitStr,
+    fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
+    File, Item, ItemFn, Lit, LitStr,
 };
 
 /// isolated mutation for testing purposes
@@ -159,10 +159,9 @@ impl<'a> MatchMutable<'a> for MutableBinopBool<'a> {
 impl FoldImpl<'_> {
     fn try_mutate_expr<'a, 'b: 'a, M: MatchMutable<'a>>(
         &mut self,
-        mutable_name: &str,
         expr: &'b Expr,
     ) -> ControlFlow<Expr> {
-        if self.should_mutate(mutable_name) {
+        if self.should_mutate(M::NAME) {
             if let Some(m) = M::match_expr(expr) {
                 return ControlFlow::Break(
                     syn::parse2(m.transform(self)).expect("transform syntax error"),
@@ -173,12 +172,12 @@ impl FoldImpl<'_> {
     }
 
     fn try_all_mutate_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
-        self.try_mutate_expr::<MutableLitInt>("lit_int", &e)?;
+        self.try_mutate_expr::<MutableLitInt>(&e)?;
         // TODO: also byteStr
-        self.try_mutate_expr::<MutableLitStr>("lit_str", &e)?;
-        self.try_mutate_expr::<MutableBinopCmp>("binop_cmp", &e)?;
-        self.try_mutate_expr::<MutableBinopCalc>("binop_calc", &e)?;
-        self.try_mutate_expr::<MutableBinopBool>("binop_bool", &e)?;
+        self.try_mutate_expr::<MutableLitStr>(&e)?;
+        self.try_mutate_expr::<MutableBinopCmp>(&e)?;
+        self.try_mutate_expr::<MutableBinopCalc>(&e)?;
+        self.try_mutate_expr::<MutableBinopBool>(&e)?;
 
         ControlFlow::Continue(())
     }

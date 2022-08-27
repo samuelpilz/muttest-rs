@@ -13,10 +13,12 @@ pub struct MutableLitInt<'a> {
 }
 
 impl<'a> Mutable<'a> for MutableLitInt<'a> {
+    const NAME: &'static str = "lit_int";
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let m_id =
-            transformer.register_new_mutable("lit_int", &self.base10_digits, &display_span(span));
+            transformer.register_new_mutable(Self::NAME, &self.base10_digits, &display_span(span));
 
         let m_id = transformer.mutable_id_expr(&m_id, span);
         let core_crate = transformer.core_crate_path(span);

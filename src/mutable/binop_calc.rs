@@ -14,11 +14,13 @@ pub struct MutableBinopCalc<'a> {
 }
 
 impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
+    const NAME: &'static str = "binop_calc";
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
-        let m_id = transformer.register_new_mutable("calc", &op_str, &display_span(span));
+        let m_id = transformer.register_new_mutable(Self::NAME, &op_str, &display_span(span));
 
         let mutations = [
             ("+", "add"),
