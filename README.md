@@ -27,9 +27,9 @@ A large number of surviving mutants hint at test suite defects.
 * cannot mutate consts
 * we skip unsafe
 
-## Acknowledgements and related Work
+## Acknowledgements and Prior Work
 
-* Roland H. Untch *et.al.*: (Mutation Analysis Using Mutant Schemata)[https://doi.org/10.1145/174146.154265]
+* Roland H. Untch, Andrew Jefferson Offutt, and Mary Jean Harrold: (Mutation Analysis Using Mutant Schemata)[https://doi.org/10.1145/174146.154265]
   * Mutant Schema Generation (MSG): using program transformation for mutation testing on Fortran programs
 * dtolnay: (Autoref-based stable specialization)[https://github.com/dtolnay/case-studies/blob/master/autoref-specialization/README.md]
 * llogiq: [`mutagen`](https://github.com/llogiq/mutagen)
