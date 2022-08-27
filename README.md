@@ -29,10 +29,10 @@ A large number of surviving mutants hint at test suite defects.
 
 ## Acknowledgements and Prior Work
 
-* Roland H. Untch, Andrew Jefferson Offutt, and Mary Jean Harrold: (Mutation Analysis Using Mutant Schemata)[https://doi.org/10.1145/174146.154265]
+* Roland H. Untch, Andrew Jefferson Offutt, and Mary Jean Harrold: [Mutation Analysis Using Mutant Schemata](https://doi.org/10.1145/174146.154265)
   * Mutant Schema Generation (MSG): using program transformation for mutation testing on Fortran programs
-* dtolnay: (Autoref-based stable specialization)[https://github.com/dtolnay/case-studies/blob/master/autoref-specialization/README.md]
+* dtolnay: [Autoref-based stable specialization](https://github.com/dtolnay/case-studies/blob/master/autoref-specialization/README.md)
 * llogiq: [`mutagen`](https://github.com/llogiq/mutagen)
   * Using proc-macros for MSG in Rust
-  * Using dead branches to help the compiler with type inference ((in this blog post)[https://llogiq.github.io/2018/04/11/shift.html])
-  * (opportunistic mutations)[https://llogiq.github.io/2018/03/03/opportune.html]
+  * Using dead branches to help the compiler with type inference ([in this blog post](https://llogiq.github.io/2018/04/11/shift.html))
+  * [opportunistic mutations](https://llogiq.github.io/2018/03/03/opportune.html)
