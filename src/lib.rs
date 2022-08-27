@@ -22,13 +22,14 @@ use lazy_static::lazy_static;
 pub mod mutable;
 #[cfg(test)]
 mod tests;
+pub mod transformer;
 
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
     pub use crate::{
-        phantom_for_type, report_location, report_mutable_type,
-        report_possible_mutations, MutableId,
+        phantom_for_type, report_location, report_mutable_type, report_possible_mutations,
+        MutableId,
     };
 }
 
@@ -55,8 +56,6 @@ lazy_static! {
 pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
-    #[error("failed to read csv file {0}. {1}")]
-    Csv(PathBuf, csv::Error),
 }
 
 fn parse_active_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
@@ -161,3 +160,4 @@ impl fmt::Display for MutableLocation {
 pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
     PhantomData
 }
+

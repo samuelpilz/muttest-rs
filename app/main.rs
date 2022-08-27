@@ -3,7 +3,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{self, Write},
-    process::{Command, Stdio},
+    process::{Command, Stdio}, path::PathBuf,
 };
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
@@ -227,7 +227,7 @@ fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult,
     Ok(result)
 }
 
-fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutable>, CoreError> {
+fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutable>, Error> {
     let mut mutables = BTreeMap::new();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
@@ -245,9 +245,9 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutab
         let file_path = muttest_dir.join(&file_name);
         let mut reader = csv::ReaderBuilder::new()
             .from_path(&file_path)
-            .map_err(|e| CoreError::Csv(file_path.as_std_path().to_owned(), e))?;
+            .map_err(|e| Error::Csv(file_path.as_std_path().to_owned(), e))?;
         for md in reader.deserialize::<MutableDefinition>() {
-            let md = md.map_err(|e| CoreError::Csv(file_path.as_std_path().to_owned(), e))?;
+            let md = md.map_err(|e| Error::Csv(file_path.as_std_path().to_owned(), e))?;
             let id = MutableId {
                 id: md.id,
                 crate_name: Cow::Owned(mutated_package.to_owned()),
@@ -274,9 +274,9 @@ fn read_mutable_details(
     let details_file = muttest_dir.join("mutable-details.csv");
     let mut reader = csv::ReaderBuilder::new()
         .from_path(&details_file)
-        .map_err(|e| CoreError::Csv(details_file.as_std_path().to_owned(), e))?;
+        .map_err(|e| Error::Csv(details_file.as_std_path().to_owned(), e))?;
     for md in reader.deserialize::<MutableDetails>() {
-        let md = md.map_err(|e| CoreError::Csv(details_file.as_std_path().to_owned(), e))?;
+        let md = md.map_err(|e| Error::Csv(details_file.as_std_path().to_owned(), e))?;
 
         let id = md.id.parse().unwrap();
         if let Some(m) = mutables.get_mut(&id) {
@@ -308,6 +308,8 @@ pub enum Error {
     CargoMetadata(#[from] cargo_metadata::Error),
     #[error("{0}")]
     CoreError(#[from] CoreError),
+    #[error("failed to read csv file {0}. {1}")]
+    Csv(PathBuf, csv::Error),
 }
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {

@@ -1,17 +1,9 @@
 use std::{
-    borrow::Borrow,
-    fs,
-    io::Write,
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
 };
 
-use lazy_static::lazy_static;
-use muttest_core::{Error, MutableId, MUTTEST_DIR};
+use muttest_core::transformer::*;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
@@ -30,8 +22,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         let s = parse_macro_input!(attr as LitStr);
         transformer.conf.mutables = MutablesConf::One(s.value())
     }
-
-    let result = transformer.fold_item_fn(input);
+    let result = FoldImpl(&mut transformer).fold_item_fn(input);
 
     // write muttest "logs"
     let mut mod_ident = result.sig.ident.clone();
@@ -55,8 +46,7 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
     let mut transformer = MuttestTransformer::new_selftest();
-
-    let result = transformer.fold_file(input);
+    let result = FoldImpl(&mut transformer).fold_file(input);
 
     result.into_token_stream().into()
 }
@@ -66,42 +56,9 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
     let mut transformer = MuttestTransformer::new();
-
-    let result = transformer.fold_file(input);
+    let result = FoldImpl(&mut transformer).fold_file(input);
 
     result.into_token_stream().into()
-}
-
-lazy_static! {
-    static ref MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
-    static ref TARGET_NAME: String = {
-        let mut target_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
-        let crate_name = std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
-        if crate_name != target_name {
-            target_name.push_str(":");
-            target_name.push_str(&crate_name);
-        }
-        target_name
-    };
-    static ref MUTABLE_DEFINITIONS_FILE: Mutex<Option<fs::File>> =
-        Mutex::new(open_definitions_file().expect("unable to open definitions file"));
-}
-
-const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,loc";
-
-// TODO: use MuttestError instead
-fn open_definitions_file() -> Result<Option<fs::File>, Error> {
-    match &*MUTTEST_DIR {
-        Some(dir) => {
-            let file_name = format!("mutable-definitions-{}.csv", &*TARGET_NAME);
-            let mut file = fs::File::create(PathBuf::from(dir).join(file_name))?;
-            writeln!(&mut file, "id,kind,code,loc")?;
-            file.flush()?;
-            file.sync_all()?;
-            Ok(Some(file))
-        }
-        _ => Ok(None),
-    }
 }
 
 fn display_span(span: Span) -> String {
@@ -130,116 +87,21 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
     None
 }
 
-struct MuttestTransformer {
-    conf: TransformerConf,
-    core_crate: Option<&'static str>,
-    isolated: Option<TransformerData>,
+struct FoldImpl<'a>(&'a mut MuttestTransformer);
+impl Deref for FoldImpl<'_> {
+    type Target = MuttestTransformer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
-struct TransformerConf {
-    mutables: MutablesConf,
-}
-enum MutablesConf {
-    All,
-    One(String),
-}
-struct TransformerData {
-    local_id: usize,
-    mutables_csv: String,
-}
-impl MuttestTransformer {
-    fn new() -> Self {
-        Self {
-            conf: TransformerConf {
-                mutables: MutablesConf::All,
-            },
-            core_crate: Some("muttest"),
-            isolated: None,
-        }
-    }
-    fn new_isolated() -> Self {
-        Self {
-            conf: TransformerConf {
-                mutables: MutablesConf::All,
-            },
-            core_crate: None,
-            isolated: Some(TransformerData {
-                local_id: 0,
-                mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n"),
-            }),
-        }
-    }
-    fn new_selftest() -> Self {
-        Self {
-            conf: TransformerConf {
-                mutables: MutablesConf::All,
-            },
-            core_crate: None,
-            isolated: None,
-        }
-    }
-
-    /// register a new mutable
-    fn register_mutable(&mut self, mut_kind: &str, code: &str, loc: &str) -> MutableId<'static> {
-        match &mut self.isolated {
-            Some(data) => {
-                data.local_id += 1;
-                let id = data.local_id;
-
-                data.mutables_csv += &format!("{id},{mut_kind},{},{loc}\n", code);
-
-                MutableId {
-                    id,
-                    crate_name: ::std::borrow::Cow::Borrowed(""),
-                }
-            }
-            None => {
-                let id = MUTABLE_ID_NUM.fetch_add(1, Ordering::SeqCst);
-
-                let mut f = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
-                if let Some(f) = f.deref_mut() {
-                    writeln!(f, "{id},{mut_kind},{},{loc}", code)
-                        .expect("unable to write mutable file");
-                    f.flush().expect("unable to flush mutable file");
-                }
-
-                MutableId {
-                    id,
-                    crate_name: ::std::borrow::Cow::Borrowed(&*TARGET_NAME),
-                }
-            }
-        }
-    }
-
-    fn mutable_id_expr(&self, m_id: &MutableId, span: Span) -> Expr {
-        let id = m_id.id;
-        let crate_name: &str = m_id.crate_name.borrow();
-        let core_crate = self.core_crate_path(span);
-
-        parse_quote_spanned! {span =>
-            #core_crate::MutableId {id: #id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
-        }
-    }
-
-    // TODO: maybe this can be done with hygiene instead?
-    fn core_crate_path(&self, span: Span) -> syn::Path {
-        match self.core_crate {
-            Some(cc) => {
-                let cc = Ident::new(cc, span);
-                parse_quote_spanned! {span => ::#cc}
-            }
-            None => parse_quote_spanned! {span => crate},
-        }
-    }
-
-    fn should_mutate(&self, mutable: &str) -> bool {
-        match &self.conf.mutables {
-            MutablesConf::One(m) => m == mutable,
-            MutablesConf::All => true,
-        }
+impl DerefMut for FoldImpl<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
-impl Fold for MuttestTransformer {
+impl Fold for FoldImpl<'_> {
     // TODO: skip consts & tests ...
     fn fold_item(&mut self, i: Item) -> Item {
         match i {
@@ -255,7 +117,8 @@ impl Fold for MuttestTransformer {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(i), ..
             }) if self.should_mutate("lit_int") => {
-                let m_id = self.register_mutable("int", i.base10_digits(), &display_span(i.span()));
+                let m_id =
+                    self.register_new_mutable("int", i.base10_digits(), &display_span(i.span()));
 
                 let m_id = self.mutable_id_expr(&m_id, i.span());
                 let core_crate = self.core_crate_path(i.span());
@@ -269,7 +132,7 @@ impl Fold for MuttestTransformer {
             Expr::Lit(ExprLit {
                 lit: Lit::Str(s), ..
             }) if self.should_mutate("lit_str") => {
-                let m_id = self.register_mutable(
+                let m_id = self.register_new_mutable(
                     "str",
                     &format!("{:?}", s.value()),
                     &display_span(s.span()),
@@ -289,7 +152,7 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_bool_op(op) && self.should_mutate("binop_bool") => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = self.register_mutable("bool", &op_str, &display_span(op.span()));
+                let m_id = self.register_new_mutable("bool", &op_str, &display_span(op.span()));
                 let m_id = self.mutable_id_expr(&m_id, op.span());
                 let core_crate = self.core_crate_path(op.span());
                 parse_quote_spanned! {op.span()=>
@@ -306,7 +169,7 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_cmp_op(op) && self.should_mutate("binop_cmp") => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = self.register_mutable("cmp", &op_str, &display_span(op.span()));
+                let m_id = self.register_new_mutable("cmp", &op_str, &display_span(op.span()));
                 let m_id = self.mutable_id_expr(&m_id, op.span());
                 let core_crate = self.core_crate_path(op.span());
                 parse_quote_spanned! {op.span()=>
@@ -324,7 +187,7 @@ impl Fold for MuttestTransformer {
                 left, op, right, ..
             }) if is_calc_op(op) && self.should_mutate("binop_calc") => {
                 let op_str = op.to_token_stream().to_string();
-                let m_id = self.register_mutable("calc", &op_str, &display_span(op.span()));
+                let m_id = self.register_new_mutable("calc", &op_str, &display_span(op.span()));
 
                 let mutations = [
                     ("+", "add"),
