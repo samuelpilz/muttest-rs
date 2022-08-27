@@ -10,7 +10,7 @@ lazy_static = "1.4.0"
 thiserror = "1.0.30"
 serde = "1"
 quote = "1"
-proc-macro2 = "1"
+proc-macro2 = {version = "1", features = ["span-locations"]}
 
 [dev-dependencies]
 muttest-codegen = { path = "codegen" }

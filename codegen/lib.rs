@@ -1,9 +1,6 @@
-use std::{
-    ops::{Deref, DerefMut},
-    path::{Path, PathBuf},
-};
+use std::ops::{Deref, DerefMut};
 
-use muttest_core::transformer::*;
+use muttest_core::{mutable::lit_int::MutableLitInt, transformer::*};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
@@ -61,32 +58,6 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     result.into_token_stream().into()
 }
 
-fn display_span(span: Span) -> String {
-    let start = span.start();
-    let end = span.end();
-    format!(
-        "{}@{}:{}-{}:{}",
-        source_file_path(span)
-            .as_deref()
-            .unwrap_or_else(|| Path::new("<unknown-file>"))
-            .display(),
-        start.line,
-        start.column,
-        end.line,
-        end.column
-    )
-}
-
-#[cfg(procmacro2_semver_exempt)]
-fn source_file_path(span: Span) -> Option<PathBuf> {
-    Some(span.source_file().path())
-}
-#[cfg(not(procmacro2_semver_exempt))]
-#[allow(unused_variables)]
-fn source_file_path(span: Span) -> Option<PathBuf> {
-    None
-}
-
 struct FoldImpl<'a>(&'a mut MuttestTransformer);
 impl Deref for FoldImpl<'_> {
     type Target = MuttestTransformer;
@@ -98,6 +69,25 @@ impl Deref for FoldImpl<'_> {
 impl DerefMut for FoldImpl<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+trait MatchMutable<'a>: Sized {
+    fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self>;
+}
+
+impl<'a> MatchMutable<'a> for MutableLitInt<'a> {
+    fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(i), ..
+            }) => Some(MutableLitInt {
+                base10_digits: i.base10_digits(),
+                span: i.span(),
+                tokens: i.to_token_stream(),
+            }),
+            _ => None,
+        }
     }
 }
 
@@ -113,22 +103,13 @@ impl Fold for FoldImpl<'_> {
     fn fold_expr(&mut self, e: Expr) -> Expr {
         let e = syn::fold::fold_expr(self, e);
 
-        match e {
-            Expr::Lit(ExprLit {
-                lit: Lit::Int(i), ..
-            }) if self.should_mutate("lit_int") => {
-                let m_id =
-                    self.register_new_mutable("int", i.base10_digits(), &display_span(i.span()));
-
-                let m_id = self.mutable_id_expr(&m_id, i.span());
-                let core_crate = self.core_crate_path(i.span());
-                parse_quote_spanned! {i.span()=>
-                    ({
-                        #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                        #core_crate::mutable::lit_int::mutable_int(&#m_id, #i)
-                    },).0
-                }
+        if self.should_mutate("lit_int") {
+            if let Some(m) = MutableLitInt::match_expr(&e) {
+                return syn::parse2(m.transform(self)).expect("transform syntax error");
             }
+        }
+
+        match e {
             Expr::Lit(ExprLit {
                 lit: Lit::Str(s), ..
             }) if self.should_mutate("lit_str") => {
@@ -246,7 +227,7 @@ impl Fold for FoldImpl<'_> {
                                         .run(left, right)
                                 }
                             )*
-                            // the base case needs to be first in order to give the compiler the correct type hints
+                            // TODO: report error and panic
                             _ => unreachable!(),
                         }
                     },).0

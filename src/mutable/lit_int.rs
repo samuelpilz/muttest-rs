@@ -1,4 +1,34 @@
-use crate::*;
+use proc_macro2::{Span, TokenStream};
+use quote::quote_spanned;
+
+use crate::{
+    transformer::{display_span, MuttestTransformer},
+    *,
+};
+
+pub struct MutableLitInt<'a> {
+    pub base10_digits: &'a str,
+    pub span: Span,
+    pub tokens: TokenStream,
+}
+
+impl MutableLitInt<'_> {
+    pub fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+        let span = self.span;
+        let m_id =
+            transformer.register_new_mutable("int", &self.base10_digits, &display_span(span));
+
+        let m_id = transformer.mutable_id_expr(&m_id, span);
+        let core_crate = transformer.core_crate_path(span);
+        let tokens = self.tokens;
+        quote_spanned! {span=>
+            ({
+                #core_crate::report_location(&#m_id, file!(), line!(), column!());
+                #core_crate::mutable::lit_int::mutable_int(&#m_id, #tokens)
+            },).0
+        }
+    }
+}
 
 pub fn mutable_int<T: MutableInt>(m_id: &MutableId<'static>, x: T) -> T {
     report_coverage(m_id);

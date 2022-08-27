@@ -3,7 +3,7 @@ use std::{
     fs,
     io::Write,
     ops::DerefMut,
-    path::PathBuf,
+    path::{PathBuf, Path},
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
         Mutex,
@@ -156,4 +156,31 @@ impl MuttestTransformer {
             None => quote_spanned! {span => crate},
         }
     }
+}
+
+
+pub fn display_span(span: Span) -> String {
+    let start = span.start();
+    let end = span.end();
+    format!(
+        "{}@{}:{}-{}:{}",
+        source_file_path(span)
+            .as_deref()
+            .unwrap_or_else(|| Path::new("<unknown-file>"))
+            .display(),
+        start.line,
+        start.column,
+        end.line,
+        end.column
+    )
+}
+
+#[cfg(procmacro2_semver_exempt)]
+pub fn source_file_path(span: Span) -> Option<PathBuf> {
+    Some(span.source_file().path())
+}
+#[cfg(not(procmacro2_semver_exempt))]
+#[allow(unused_variables)]
+pub fn source_file_path(span: Span) -> Option<PathBuf> {
+    None
 }
