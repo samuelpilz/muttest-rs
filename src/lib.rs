@@ -10,6 +10,7 @@ use std::{
     fmt::Display,
     fs,
     io::{self, Write},
+    marker::PhantomData,
     ops::DerefMut,
     path::PathBuf,
     str::FromStr,
@@ -18,19 +19,20 @@ use std::{
 
 use lazy_static::lazy_static;
 
-pub mod mutables;
+pub mod mutable;
+#[cfg(test)]
+mod tests;
 
 /// a module for reexport from `muttest` crate
 ///
 /// everything public but and `comm` are exported here
 pub mod api {
-    pub use crate::mutables::*;
+    pub use crate::mutable;
     pub use crate::{
-        get_binop, report_location, report_mutable_type, report_possible_mutations, MutableId,
+        phantom_for_type, report_location, report_mutable_type,
+        report_possible_mutations, MutableId,
     };
 }
-
-pub use mutables::*;
 
 lazy_static! {
     pub static ref MUTTEST_DIR: Option<PathBuf> = {
@@ -158,5 +160,6 @@ impl fmt::Display for MutableLocation {
     }
 }
 
-#[cfg(test)]
-mod tests;
+pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
+    PhantomData
+}

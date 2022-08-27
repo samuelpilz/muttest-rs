@@ -55,7 +55,6 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let result = transformer.fold_file(input);
 
     result.into_token_stream().into()
-
 }
 
 #[proc_macro_attribute]
@@ -235,7 +234,7 @@ impl Fold for MuttestTransformer {
                 parse_quote_spanned! {i.span()=>
                     ({
                         #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                        #core_crate::mutable_int(&#m_id, #i)
+                        #core_crate::mutable::lit_int::mutable_int(&#m_id, #i)
                     },).0
                 }
             }
@@ -252,8 +251,8 @@ impl Fold for MuttestTransformer {
                 parse_quote_spanned! {s.span()=>
                     ({
                         #core_crate::report_location(&#m_id, file!(), line!(), column!());
-                        static MUTATION: ::std::sync::RwLock<Option<&'static str>> = ::std::sync::RwLock::new(::std::option::Option::None);
-                        #core_crate::mutable_str(&#m_id, #s, &MUTATION)
+                        static MUTABLE: ::std::sync::RwLock<Option<&'static str>> = ::std::sync::RwLock::new(::std::option::Option::None);
+                        #core_crate::mutable::lit_str::mutable_str(&#m_id, #s, &MUTABLE)
                     },).0
                 }
             }
@@ -288,7 +287,7 @@ impl Fold for MuttestTransformer {
                         let (left, right) = (#left, #right);
                         // for type-inference, keep the original expression in the first branch
                         if false {left #op right} else {
-                            #core_crate::mutable_cmp(&#m_id, #op_str, &left, &right)
+                            #core_crate::mutable::binop_cmp::mutable_cmp(&#m_id, #op_str, &left, &right)
                         }
                     },).0
                 }
@@ -321,7 +320,7 @@ impl Fold for MuttestTransformer {
                         // this carries the output type of the computation
                         // the assignment in the default-case defines the type of this phantom
                         let mut output_type = ::core::marker::PhantomData;
-                        let mut_op = #core_crate::mutable_bin_op(&#m_id, #op_str);
+                        let mut_op = #core_crate::mutable::binop_calc::mutable_binop_calc(&#m_id, #op_str);
                         #[allow(unused_assignments)]
                         match mut_op {
                             "" => {
@@ -334,8 +333,10 @@ impl Fold for MuttestTransformer {
                                     &[
                                         #((
                                             #op_symbols,
-                                            #core_crate::get_binop!(#core_crate::#op_names, left_type, right_type, output_type)
-                                                .is_impl()
+                                            #core_crate::mutable::binop_calc::get_binop_calc!(
+                                                #core_crate::mutable::binop_calc::#op_names,
+                                                left_type, right_type, output_type
+                                            ).is_impl()
                                         ),)*
                                     ]
                                 );
@@ -343,7 +344,10 @@ impl Fold for MuttestTransformer {
                             },
                             // possible mutations
                             #(#op_symbols =>
-                                #core_crate::get_binop!(#core_crate::#op_names, left_type, right_type, output_type).run(left, right),
+                                #core_crate::mutable::binop_calc::get_binop_calc!(
+                                    #core_crate::mutable::binop_calc::#op_names,
+                                    left_type, right_type, output_type
+                                ).run(left, right),
                             )*
                             // the base case needs to be first in order to give the compiler the correct type hints
                             _ => unreachable!(),

@@ -1,42 +1,6 @@
-use std::{
-    marker::PhantomData,
-};
+use crate::*;
 
-use super::*;
-
-mod lit_int;
-mod lit_str;
-
-pub use lit_str::*;
-pub use lit_int::*;
-
-pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
-    m_id: &MutableId,
-    op_str: &str,
-    left: &T,
-    right: &T1,
-) -> bool {
-    report_coverage(m_id);
-    let ord = left.partial_cmp(right);
-    // TODO: record behavior for weak mutation testing
-    // save_msg(&format!("CMP {m_id}; {ord:?}"));
-    if let Some(ord) = ord {
-        match get_active_mutation_for_mutable(m_id)
-            .as_deref()
-            .unwrap_or(op_str)
-        {
-            "<" => ord.is_lt(),
-            "<=" => ord.is_le(),
-            ">=" => ord.is_ge(),
-            ">" => ord.is_gt(),
-            _ => todo!(),
-        }
-    } else {
-        false
-    }
-}
-
-pub fn mutable_bin_op(m_id: &MutableId, _op_str: &'static str) -> &'static str {
+pub fn mutable_binop_calc(m_id: &MutableId, _op_str: &'static str) -> &'static str {
     report_coverage(m_id);
     match get_active_mutation_for_mutable(m_id).as_deref() {
         None => "",
@@ -49,11 +13,7 @@ pub fn mutable_bin_op(m_id: &MutableId, _op_str: &'static str) -> &'static str {
     }
 }
 
-pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
-    PhantomData
-}
-
-macro_rules! binop_mutation {
+macro_rules! binop_calc_traits {
     ($m:ident, $t:path, $f:ident) => {
         pub mod $m {
             use core::marker::PhantomData;
@@ -103,14 +63,16 @@ macro_rules! binop_mutation {
     };
 }
 
-binop_mutation!(add, std::ops::Add<R>, add);
-binop_mutation!(sub, std::ops::Sub<R>, sub);
-binop_mutation!(mul, std::ops::Mul<R>, mul);
-binop_mutation!(div, std::ops::Div<R>, div);
-binop_mutation!(rem, std::ops::Rem<R>, rem);
+binop_calc_traits!(add, std::ops::Add<R>, add);
+binop_calc_traits!(sub, std::ops::Sub<R>, sub);
+binop_calc_traits!(mul, std::ops::Mul<R>, mul);
+binop_calc_traits!(div, std::ops::Div<R>, div);
+binop_calc_traits!(rem, std::ops::Rem<R>, rem);
+
+pub use crate::get_binop_calc;
 
 #[macro_export]
-macro_rules! get_binop {
+macro_rules! get_binop_calc {
     ($op_mod:path, $left:expr, $right:expr, $o:expr) => {{
         #[allow(unused_imports)]
         use $op_mod::{IsNo, IsYes};
