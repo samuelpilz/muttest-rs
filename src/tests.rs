@@ -1,12 +1,9 @@
 use std::{borrow::Cow, sync::Mutex};
 
-use lazy_static::lazy_static;
-
 use crate::{MutableId, ACTIVE_MUTATION};
 
-lazy_static! {
-    static ref MOCK_LOCK: Mutex<()> = Mutex::new(());
-}
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 pub fn without_mutation<T>(action: impl Fn() -> T) -> T {
     run_mutation(None, action)
 }
@@ -23,7 +20,7 @@ pub fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T 
     )
 }
 fn run_mutation<T>(mutation: Option<(MutableId<'static>, String)>, action: impl Fn() -> T) -> T {
-    let l = MOCK_LOCK.lock();
+    let l = TEST_LOCK.lock();
 
     // update ACTIVE_MUTATION
     let mut m_map = ACTIVE_MUTATION.write().unwrap();
@@ -37,7 +34,7 @@ fn run_mutation<T>(mutation: Option<(MutableId<'static>, String)>, action: impl 
     // perform action
     let res = action();
 
-    // release
+    // release test lock
     std::mem::drop(l);
     res
 }

@@ -24,8 +24,6 @@ pub mod mutable;
 mod tests;
 
 /// a module for reexport from `muttest` crate
-///
-/// everything public but and `comm` are exported here
 pub mod api {
     pub use crate::mutable;
     pub use crate::{
