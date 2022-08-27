@@ -3,7 +3,8 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{self, Write},
-    process::{Command, Stdio}, path::PathBuf,
+    path::PathBuf,
+    process::{Command, Stdio},
 };
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};

@@ -1,5 +1,5 @@
-pub use muttest_core::api::*;
 pub use muttest_codegen::mutate;
+pub use muttest_core::api::*;
 
 // ensure that this is inferrable
 // see: https://github.com/llogiq/mutagen/issues/164
