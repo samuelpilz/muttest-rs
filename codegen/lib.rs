@@ -17,22 +17,26 @@ use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, parse_quote_spanned, spanned::Spanned, BinOp, Expr,
-    ExprBinary, ExprLit, File, Item, ItemFn, Lit,
+    ExprBinary, ExprLit, File, Item, ItemFn, Lit, LitStr,
 };
 
 /// isolated mutation for testing purposes
 #[proc_macro_attribute]
-pub fn mutate_isolated(_attr: TokenStream, input: TokenStream) -> TokenStream {
+pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ItemFn);
 
     let mut transformer = MuttestTransformer::new_isolated();
+    if !attr.is_empty() {
+        let s = parse_macro_input!(attr as LitStr);
+        transformer.conf.mutables = MutablesConf::One(s.value())
+    }
 
     let result = transformer.fold_item_fn(input);
 
     // write muttest "logs"
     let mut mod_ident = result.sig.ident.clone();
     mod_ident.set_span(Span::call_site());
-    let mutables_csv = &transformer.isolated.as_ref().unwrap().mutables;
+    let mutables_csv = &transformer.isolated.as_ref().unwrap().mutables_csv;
     let num_mutables = transformer.isolated.as_ref().unwrap().local_id;
 
     let result: File = parse_quote! {
@@ -127,31 +131,48 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
 }
 
 struct MuttestTransformer {
+    conf: TransformerConf,
     core_crate: Option<&'static str>,
-    isolated: Option<MutateData>,
+    isolated: Option<TransformerData>,
 }
-struct MutateData {
+struct TransformerConf {
+    mutables: MutablesConf,
+}
+enum MutablesConf {
+    All,
+    One(String),
+}
+struct TransformerData {
     local_id: usize,
-    mutables: String,
+    mutables_csv: String,
 }
 impl MuttestTransformer {
     fn new() -> Self {
         Self {
+            conf: TransformerConf {
+                mutables: MutablesConf::All,
+            },
             core_crate: Some("muttest"),
             isolated: None,
         }
     }
     fn new_isolated() -> Self {
         Self {
+            conf: TransformerConf {
+                mutables: MutablesConf::All,
+            },
             core_crate: None,
-            isolated: Some(MutateData {
+            isolated: Some(TransformerData {
                 local_id: 0,
-                mutables: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n"),
+                mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n"),
             }),
         }
     }
     fn new_selftest() -> Self {
         Self {
+            conf: TransformerConf {
+                mutables: MutablesConf::All,
+            },
             core_crate: None,
             isolated: None,
         }
@@ -164,7 +185,7 @@ impl MuttestTransformer {
                 data.local_id += 1;
                 let id = data.local_id;
 
-                data.mutables += &format!("{id},{mut_kind},{},{loc}\n", code);
+                data.mutables_csv += &format!("{id},{mut_kind},{},{loc}\n", code);
 
                 MutableId {
                     id,
@@ -209,6 +230,13 @@ impl MuttestTransformer {
             None => parse_quote_spanned! {span => crate},
         }
     }
+
+    fn should_mutate(&self, mutable: &str) -> bool {
+        match &self.conf.mutables {
+            MutablesConf::One(m) => m == mutable,
+            MutablesConf::All => true,
+        }
+    }
 }
 
 impl Fold for MuttestTransformer {
@@ -226,7 +254,7 @@ impl Fold for MuttestTransformer {
         match e {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(i), ..
-            }) => {
+            }) if self.should_mutate("lit_int") => {
                 let m_id = self.register_mutable("int", i.base10_digits(), &display_span(i.span()));
 
                 let m_id = self.mutable_id_expr(&m_id, i.span());
@@ -240,7 +268,7 @@ impl Fold for MuttestTransformer {
             }
             Expr::Lit(ExprLit {
                 lit: Lit::Str(s), ..
-            }) => {
+            }) if self.should_mutate("lit_str") => {
                 let m_id = self.register_mutable(
                     "str",
                     &format!("{:?}", s.value()),
@@ -259,7 +287,7 @@ impl Fold for MuttestTransformer {
             // TODO: also byteStr
             Expr::Binary(ExprBinary {
                 left, op, right, ..
-            }) if is_bool_op(op) => {
+            }) if is_bool_op(op) && self.should_mutate("binop_bool") => {
                 let op_str = op.to_token_stream().to_string();
                 let m_id = self.register_mutable("bool", &op_str, &display_span(op.span()));
                 let m_id = self.mutable_id_expr(&m_id, op.span());
@@ -276,7 +304,7 @@ impl Fold for MuttestTransformer {
             }
             Expr::Binary(ExprBinary {
                 left, op, right, ..
-            }) if is_cmp_op(op) => {
+            }) if is_cmp_op(op) && self.should_mutate("binop_cmp") => {
                 let op_str = op.to_token_stream().to_string();
                 let m_id = self.register_mutable("cmp", &op_str, &display_span(op.span()));
                 let m_id = self.mutable_id_expr(&m_id, op.span());
@@ -294,7 +322,7 @@ impl Fold for MuttestTransformer {
             }
             Expr::Binary(ExprBinary {
                 left, op, right, ..
-            }) if is_calc_op(op) => {
+            }) if is_calc_op(op) && self.should_mutate("binop_calc") => {
                 let op_str = op.to_token_stream().to_string();
                 let m_id = self.register_mutable("calc", &op_str, &display_span(op.span()));
 
@@ -333,10 +361,13 @@ impl Fold for MuttestTransformer {
                                     &[
                                         #((
                                             #op_symbols,
-                                            #core_crate::mutable::binop_calc::get_binop_calc!(
-                                                #core_crate::mutable::binop_calc::#op_names,
-                                                left_type, right_type, output_type
-                                            ).is_impl()
+                                            {
+                                                #[allow(unused_imports)]
+                                                use #core_crate::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                                                (&(left_type, right_type, output_type))
+                                                    .get_impl()
+                                                    .is_impl()
+                                            }
                                         ),)*
                                     ]
                                 );
@@ -344,10 +375,13 @@ impl Fold for MuttestTransformer {
                             },
                             // possible mutations
                             #(#op_symbols =>
-                                #core_crate::mutable::binop_calc::get_binop_calc!(
-                                    #core_crate::mutable::binop_calc::#op_names,
-                                    left_type, right_type, output_type
-                                ).run(left, right),
+                                {
+                                    #[allow(unused_imports)]
+                                    use #core_crate::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                                    (&(left_type, right_type, output_type))
+                                        .get_impl()
+                                        .run(left, right)
+                                }
                             )*
                             // the base case needs to be first in order to give the compiler the correct type hints
                             _ => unreachable!(),

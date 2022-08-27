@@ -40,15 +40,10 @@ pub fn mutable_str(
 #[cfg(test)]
 mod tests {
 
-    #[muttest_codegen::mutate_isolated]
+    #[muttest_codegen::mutate_isolated("lit_str")]
     fn empty_str() -> &'static str {
         ""
     }
-    #[muttest_codegen::mutate_isolated]
-    fn some_str() -> &'static str {
-        "mutation testing!"
-    }
-
     #[test]
     fn empty_str_mutables() {
         assert_eq!(empty_str::NUM_MUTABLES, 1);
@@ -63,6 +58,11 @@ mod tests {
     #[test]
     fn empty_str_one() {
         assert_eq!(crate::tests::with_mutation(1, "1", empty_str), "1");
+    }
+
+    #[muttest_codegen::mutate_isolated("lit_str")]
+    fn some_str() -> &'static str {
+        "mutation testing!"
     }
 
     #[test]

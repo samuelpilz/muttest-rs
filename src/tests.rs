@@ -19,6 +19,8 @@ pub fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T 
         action,
     )
 }
+
+// TODO: gather mutable-details and coverage data
 fn run_mutation<T>(mutation: Option<(MutableId<'static>, String)>, action: impl Fn() -> T) -> T {
     let l = TEST_LOCK.lock();
 

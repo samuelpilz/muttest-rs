@@ -30,7 +30,7 @@ mutable_ints!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
 #[cfg(test)]
 mod tests {
-    #[muttest_codegen::mutate_isolated]
+    #[muttest_codegen::mutate_isolated("lit_int")]
     fn two_usize() -> usize {
         2
     }

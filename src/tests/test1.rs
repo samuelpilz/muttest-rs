@@ -5,11 +5,6 @@ fn x() -> usize {
 }
 
 #[muttest_codegen::mutate_isolated]
-fn z() -> bool {
-    1 < 2
-}
-
-#[muttest_codegen::mutate_isolated]
 fn a() {
     for _ in 1..5 + 1 {
         1;
@@ -20,7 +15,6 @@ fn a() {
 fn tests() {
     super::without_mutation(|| {
         a();
-        assert!(z());
         assert_eq!(x(), 4);
     });
 }
