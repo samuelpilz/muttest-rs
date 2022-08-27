@@ -3,7 +3,7 @@ use std::ops::{ControlFlow, Deref, DerefMut};
 use muttest_core::{
     mutable::{
         binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt,
-        lit_str::MutableLitStr,
+        lit_str::MutableLitStr, binop_bool::MutableBinopBool,
     },
     transformer::*,
 };
@@ -140,6 +140,21 @@ impl<'a> MatchMutable<'a> for MutableBinopCalc<'a> {
         }
     }
 }
+impl<'a> MatchMutable<'a> for MutableBinopBool<'a> {
+    fn match_expr<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Binary(ExprBinary {
+                left, op, right, ..
+            }) if is_bool_op(*op) => Some(Self {
+                left,
+                right,
+                op,
+                span: op.span(),
+            }),
+            _ => None,
+        }
+    }
+}
 
 impl FoldImpl<'_> {
     fn try_mutate_expr<'a, 'b: 'a, M: MatchMutable<'a>>(
@@ -163,6 +178,7 @@ impl FoldImpl<'_> {
         self.try_mutate_expr::<MutableLitStr>("lit_str", &e)?;
         self.try_mutate_expr::<MutableBinopCmp>("binop_cmp", &e)?;
         self.try_mutate_expr::<MutableBinopCalc>("binop_calc", &e)?;
+        self.try_mutate_expr::<MutableBinopBool>("binop_bool", &e)?;
 
         ControlFlow::Continue(())
     }

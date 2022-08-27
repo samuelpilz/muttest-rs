@@ -1,3 +1,4 @@
+pub mod binop_bool;
 pub mod binop_calc;
 pub mod binop_cmp;
 pub mod lit_int;
