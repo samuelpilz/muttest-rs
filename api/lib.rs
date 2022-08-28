@@ -9,3 +9,7 @@ fn _ensure_this_is_inferrable() {
     let x = [0u8];
     assert_eq!((&x[..]).as_ref(), []);
 }
+
+// TODO: make this feature-gated
+#[allow(dead_code)]
+const RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!("MUTTEST_DIR");
