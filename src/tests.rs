@@ -4,10 +4,10 @@ use crate::{MutableId, ACTIVE_MUTATION};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-pub fn without_mutation<T>(action: impl Fn() -> T) -> T {
+pub fn without_mutation<T>(action: impl FnOnce() -> T) -> T {
     run_mutation(None, action)
 }
-pub fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T {
+pub fn with_mutation<T>(id: usize, mutation: &str, action: impl FnOnce() -> T) -> T {
     run_mutation(
         Some((
             MutableId {
@@ -21,7 +21,7 @@ pub fn with_mutation<T>(id: usize, mutation: &str, action: impl Fn() -> T) -> T 
 }
 
 // TODO: gather mutable-details and coverage data
-fn run_mutation<T>(mutation: Option<(MutableId<'static>, String)>, action: impl Fn() -> T) -> T {
+fn run_mutation<T>(mutation: Option<(MutableId<'static>, String)>, action: impl FnOnce() -> T) -> T {
     let l = TEST_LOCK.lock();
 
     // update ACTIVE_MUTATION
@@ -52,6 +52,5 @@ fn example_selftest_test() {
     assert_eq!(example_selftest_fn(), 1);
 }
 
-// TODO: maybe restructure these tests to match the structure of mutables & transformer
-mod speculative;
+// TODO: restructure these tests to match the structure of mutables & transformer
 mod test1;
