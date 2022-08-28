@@ -28,19 +28,47 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         } = transformer.new_mutable::<Self>("<TODO>", span);
 
         let MutableExtreme {
-            vis,
-            sig,
-            block,
-            ..
+            vis, sig, block, ..
         } = self;
         quote_spanned! {span=>
             #vis #sig {
                 match #core_crate::mutable::extreme::run(&#m_id, #loc) {
                     ::std::ops::ControlFlow::Continue(_) => #block
-                    ::std::ops::ControlFlow::Break(_) => {},
+                    ::std::ops::ControlFlow::Break(_) => {
+                        #[allow(unused_imports)]
+                        use #core_crate::mutable::extreme::{NotDefault, YesDefault};
+                        let ret_type = ::core::marker::PhantomData;
+                        if false {
+                            #core_crate::mutable::extreme::phantom_unwrap(ret_type)
+                        } else {
+                            (&ret_type).get_default()
+                        }
+                    },
                 }
             }
         }
+    }
+}
+
+pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
+    panic!()
+}
+
+// TODO: private names for these functions?
+pub trait NotDefault<T> {
+    fn get_default(&self) -> T;
+}
+pub trait YesDefault<T> {
+    fn get_default(&self) -> T;
+}
+impl<T> NotDefault<T> for &PhantomData<T> {
+    fn get_default(&self) -> T {
+        panic!();
+    }
+}
+impl<T: Default> YesDefault<T> for PhantomData<T> {
+    fn get_default(&self) -> T {
+        T::default()
     }
 }
 
@@ -77,6 +105,31 @@ mod tests {
         let mut b = false;
         crate::tests::with_mutation(1, "default", || set_true(&mut b));
         assert_eq!(b, false);
+    }
+
+    #[muttest_codegen::mutate_isolated("extreme")]
+    fn post_increment(x: &mut i8) -> i8 {
+        let ret = *x;
+        *x += 1;
+        ret
+    }
+
+    struct NoDefault;
+
+    #[muttest_codegen::mutate_isolated("extreme")]
+    fn no_default(x: &mut i8) -> NoDefault {
+        NoDefault
+        // TODO: test that asserts correct details
+    }
+    #[muttest_codegen::mutate_isolated("extreme")]
+    fn return_no_default(x: &mut i8) -> NoDefault {
+        return NoDefault
+        // TODO: test that asserts correct details
+    }
+
+    #[muttest_codegen::mutate_isolated("extreme")]
+    fn impl_default(x: &mut i8) -> impl Default {
+        4usize
     }
 
     // TODO: more tests

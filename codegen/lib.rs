@@ -12,7 +12,7 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
-    File, ItemConst, ItemFn, Lit, LitStr, ReturnType,
+    File, ItemConst, ItemFn, Lit, LitStr,
 };
 
 /// isolated mutation for testing purposes
@@ -159,10 +159,6 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopBool<'a> {
 }
 impl<'a> MatchMutable<'a, ItemFn> for MutableExtreme<'a> {
     fn try_match<'b: 'a>(item_fn: &'b ItemFn) -> Option<Self> {
-        // TODO: also implement for non-unit functions
-        if !matches!(item_fn.sig.output, ReturnType::Default) {
-            return None;
-        }
         let ItemFn {
             vis, sig, block, ..
         } = item_fn;
