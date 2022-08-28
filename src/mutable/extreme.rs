@@ -8,6 +8,7 @@ use crate::{
     *,
 };
 
+// TODO: mutate (some) blocks instead of `ItemFn`s
 pub struct MutableExtreme<'a> {
     pub vis: &'a dyn ToTokens,
     pub sig: &'a dyn ToTokens,
@@ -35,10 +36,9 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         quote_spanned! {span=>
             #vis #sig {
                 match #core_crate::mutable::extreme::run(&#m_id, #loc) {
-                    ::std::ops::ControlFlow::Continue(_) => {}
-                    ::std::ops::ControlFlow::Break(r) => return r,
+                    ::std::ops::ControlFlow::Continue(_) => #block
+                    ::std::ops::ControlFlow::Break(_) => {},
                 }
-                #block
             }
         }
     }
