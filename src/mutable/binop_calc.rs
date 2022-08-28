@@ -56,6 +56,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                         // giving the compiler the necessary type hint required for the mutated cases
                         output_type = #core_crate::phantom_for_type(&output);
                         // report the possible mutations
+                        // TODO: this is only called if original code returns (maybe add reporter for mutable-termination?)
                         #core_crate::report_possible_mutations(&#m_id,
                             &[
                                 #((

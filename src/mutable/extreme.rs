@@ -25,24 +25,43 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
             m_id,
             core_crate,
             loc,
-        } = transformer.new_mutable::<Self>("<TODO>", span);
+        } = transformer.new_mutable::<Self>("", span);
+        // TODO: add reasonable code for that
+        // TODO: or should code be optional?
 
         let MutableExtreme {
             vis, sig, block, ..
         } = self;
         quote_spanned! {span=>
             #vis #sig {
+                let ret_type = ::core::marker::PhantomData;
                 match #core_crate::mutable::extreme::run(&#m_id, #loc) {
-                    ::std::ops::ControlFlow::Continue(_) => #block
+                    ::std::ops::ControlFlow::Continue(_) => {
+                        // help the type-checker
+                        match 0 {
+                            // type-check the original code first
+                            1 => #block,
+                            2 => #core_crate::mutable::extreme::phantom_unwrap(ret_type),
+                            3 => return #core_crate::mutable::extreme::phantom_unwrap(ret_type),
+                            // report the type first, then execute the block
+                            _ => {
+                                #core_crate::report_possible_mutations(&#m_id,
+                                    &[("default",
+                                        {
+                                            #[allow(unused_imports)]
+                                            use #core_crate::mutable::extreme::{NotDefault, YesDefault};
+                                            (&ret_type).is_default()
+                                        }
+                                    )]
+                                );
+                                #block
+                            }
+                        }
+                    }
                     ::std::ops::ControlFlow::Break(_) => {
                         #[allow(unused_imports)]
                         use #core_crate::mutable::extreme::{NotDefault, YesDefault};
-                        let ret_type = ::core::marker::PhantomData;
-                        if false {
-                            #core_crate::mutable::extreme::phantom_unwrap(ret_type)
-                        } else {
-                            (&ret_type).get_default()
-                        }
+                        (&ret_type).get_default()
                     },
                 }
             }
@@ -50,23 +69,34 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
     }
 }
 
+#[derive(Debug)]
+struct NoDefault;
+
 pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
     panic!()
 }
 
 // TODO: private names for these functions?
 pub trait NotDefault<T> {
+    fn is_default(&self) -> bool;
     fn get_default(&self) -> T;
 }
 pub trait YesDefault<T> {
+    fn is_default(&self) -> bool;
     fn get_default(&self) -> T;
 }
 impl<T> NotDefault<T> for &PhantomData<T> {
+    fn is_default(&self) -> bool {
+        false
+    }
     fn get_default(&self) -> T {
         panic!();
     }
 }
 impl<T: Default> YesDefault<T> for PhantomData<T> {
+    fn is_default(&self) -> bool {
+        true
+    }
     fn get_default(&self) -> T {
         T::default()
     }
@@ -114,6 +144,7 @@ mod tests {
         ret
     }
 
+    #[derive(Debug)]
     struct NoDefault;
 
     #[muttest_codegen::mutate_isolated("extreme")]
@@ -122,9 +153,13 @@ mod tests {
         // TODO: test that asserts correct details
     }
     #[muttest_codegen::mutate_isolated("extreme")]
-    fn return_no_default(x: &mut i8) -> NoDefault {
-        return NoDefault
-        // TODO: test that asserts correct details
+    fn return_no_default_impl_debug(x: &mut i8) -> impl std::fmt::Debug {
+        return NoDefault;
+    }
+
+    #[muttest_codegen::mutate_isolated("extreme")]
+    fn no_default_impl_debug(x: &mut i8) -> impl std::fmt::Debug {
+        NoDefault
     }
 
     #[muttest_codegen::mutate_isolated("extreme")]
