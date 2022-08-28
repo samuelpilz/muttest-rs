@@ -56,6 +56,7 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    // TODO: maybe only transform if env-vars set
     let input = parse_macro_input!(input as File);
 
     let mut transformer = MuttestTransformer::new();

@@ -42,10 +42,9 @@ Mutables are identified by numeric id and their crate name.
 
 The proc-macro and muttest runner communicate via files in the `target/muttest` folder.
 
-* `mutable-definitions-<crate>.csv`
-* `mutable-details.csv`
-* `cover-<x>.csv`
-
+* `mutable-definitions-<crate>.csv`: information gathered by syntax analysis
+* `mutable-details.csv`: static information gathered by the compiler
+* `cover-<x>.csv`: run-time information
 
 ## Structure of this repository
 
