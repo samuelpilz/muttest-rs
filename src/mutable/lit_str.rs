@@ -88,12 +88,12 @@ mod tests {
 
     #[test]
     fn empty_str_unchanged() {
-        assert_eq!(crate::tests::without_mutation(empty_str), "");
+        assert_eq!(crate::tests::without_mutation(empty_str).res, "");
     }
 
     #[test]
     fn empty_str_one() {
-        assert_eq!(crate::tests::with_mutation(1, "1", empty_str), "1");
+        assert_eq!(crate::tests::with_mutation(1, "1", empty_str).res, "1");
     }
 
     #[muttest_codegen::mutate_isolated("lit_str")]
@@ -110,13 +110,13 @@ mod tests {
     #[test]
     fn some_str_unchanged() {
         assert_eq!(
-            crate::tests::without_mutation(some_str),
+            crate::tests::without_mutation(some_str).res,
             "mutation testing!"
         );
     }
 
     #[test]
     fn some_str_empty() {
-        assert_eq!(crate::tests::with_mutation(1, "", some_str), "");
+        assert_eq!(crate::tests::with_mutation(1, "", some_str).res, "");
     }
 }

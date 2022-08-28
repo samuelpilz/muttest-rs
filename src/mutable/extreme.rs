@@ -45,7 +45,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
                             3 => return #core_crate::mutable::extreme::phantom_unwrap(ret_type),
                             // report the type first, then execute the block
                             _ => {
-                                #core_crate::report_possible_mutations(&#m_id,
+                                (#m_id).report_possible_mutations(
                                     &[("default",
                                         {
                                             #[allow(unused_imports)]
@@ -148,24 +148,32 @@ mod tests {
     struct NoDefault;
 
     #[muttest_codegen::mutate_isolated("extreme")]
-    fn no_default(x: &mut i8) -> NoDefault {
+    fn no_default() -> NoDefault {
         NoDefault
-        // TODO: test that asserts correct details
     }
+    #[test]
+    fn no_default_no_mutation() {
+        let res = crate::tests::without_mutation(no_default);
+        assert_eq!(
+            res.details
+                .get(&(crate::tests::mutable_id(1), "mutations"))
+                .map(|x| &**x),
+            Some("")
+        )
+    }
+
     #[muttest_codegen::mutate_isolated("extreme")]
-    fn return_no_default_impl_debug(x: &mut i8) -> impl std::fmt::Debug {
+    fn return_no_default_impl_debug() -> impl std::fmt::Debug {
         return NoDefault;
     }
 
     #[muttest_codegen::mutate_isolated("extreme")]
-    fn no_default_impl_debug(x: &mut i8) -> impl std::fmt::Debug {
+    fn no_default_impl_debug() -> impl std::fmt::Debug {
         NoDefault
     }
 
     #[muttest_codegen::mutate_isolated("extreme")]
-    fn impl_default(x: &mut i8) -> impl Default {
+    fn impl_default() -> impl Default {
         4usize
     }
-
-    // TODO: more tests
 }

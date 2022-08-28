@@ -180,9 +180,10 @@ impl FoldImpl<'_> {
             return ControlFlow::Continue(());
         }
         if let Some(m) = M::try_match(expr) {
-            return ControlFlow::Break(
-                syn::parse2(m.transform(self)).expect("transform syntax error"),
-            );
+            return ControlFlow::Break(match syn::parse2(m.transform(self)) {
+                Ok(m) => m,
+                Err(e) => panic!("mutable `{}` transform syntax error: {}", M::NAME, e),
+            });
         }
         ControlFlow::Continue(())
     }

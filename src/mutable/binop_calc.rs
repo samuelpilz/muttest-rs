@@ -57,7 +57,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                         output_type = #core_crate::phantom_for_type(&output);
                         // report the possible mutations
                         // TODO: this is only called if original code returns (maybe add reporter for mutable-termination?)
-                        #core_crate::report_possible_mutations(&#m_id,
+                        (#m_id).report_possible_mutations(
                             &[
                                 #((
                                     #op_symbols,
@@ -178,16 +178,16 @@ mod tests {
 
     #[test]
     fn mul_ints_unchanged() {
-        assert_eq!(crate::tests::without_mutation(mul_ints), 20);
+        assert_eq!(crate::tests::without_mutation(mul_ints).res, 20);
     }
 
     #[test]
     fn mul_ints_plus() {
-        assert_eq!(crate::tests::with_mutation(1, "+", mul_ints), 9);
+        assert_eq!(crate::tests::with_mutation(1, "+", mul_ints).res, 9);
     }
     #[test]
     fn mul_ints_minus() {
-        assert_eq!(crate::tests::with_mutation(1, "-", mul_ints), 1);
+        assert_eq!(crate::tests::with_mutation(1, "-", mul_ints).res, 1);
     }
 
     #[muttest_codegen::mutate_isolated("binop_calc")]
@@ -203,18 +203,18 @@ mod tests {
     }
     #[test]
     fn calc_three_ints_unchanged() {
-        assert_eq!(crate::tests::without_mutation(calc_three_ints), 11);
+        assert_eq!(crate::tests::without_mutation(calc_three_ints).res, 11);
     }
 
     #[test]
     fn calc_three_ints_1_minus() {
-        assert_eq!(crate::tests::with_mutation(1, "-", calc_three_ints), 1);
+        assert_eq!(crate::tests::with_mutation(1, "-", calc_three_ints).res, 1);
     }
 
     #[test]
     fn calc_three_ints_2_div() {
         // tests implicit parentheses
-        assert_eq!(crate::tests::with_mutation(2, "/", calc_three_ints), 0);
+        assert_eq!(crate::tests::with_mutation(2, "/", calc_three_ints).res, 0);
     }
 
     // TODO: speculative test requires inspection into details

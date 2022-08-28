@@ -83,16 +83,16 @@ mod tests {
 
     #[test]
     fn lt_ints_unchanged() {
-        assert_eq!(true, crate::tests::without_mutation(lt_ints));
+        assert_eq!(true, crate::tests::without_mutation(lt_ints).res);
     }
 
     #[test]
     fn lt_ints_gt() {
-        assert_eq!(false, crate::tests::with_mutation(1, ">", lt_ints));
+        assert_eq!(false, crate::tests::with_mutation(1, ">", lt_ints).res);
     }
 
     #[test]
     fn lt_ints_ge() {
-        assert_eq!(false, crate::tests::with_mutation(1, ">=", lt_ints));
+        assert_eq!(false, crate::tests::with_mutation(1, ">=", lt_ints).res);
     }
 }

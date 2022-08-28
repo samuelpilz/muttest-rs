@@ -27,10 +27,7 @@ pub mod transformer;
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::{
-        phantom_for_type, report_mutable_type, report_possible_mutations, MutableId,
-        MutableLocation,
-    };
+    pub use crate::{phantom_for_type, MutableId, MutableLocation};
 }
 
 lazy_static! {
@@ -74,6 +71,7 @@ fn parse_active_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
     mutations
 }
 
+// TODO: move coverage to mutable_id
 pub fn report_coverage(m_id: &MutableId) {
     let mut f = COVERAGE_FILE.lock().unwrap();
     if let Some(f) = f.deref_mut() {
@@ -115,36 +113,39 @@ impl FromStr for MutableId<'static> {
 
 impl MutableId<'static> {
     fn report_detail<T: Display>(&self, kind: &'static str, data: T) {
-        let is_new = MUTABLE_DETAILS.lock().unwrap().insert((self.clone(), kind));
-        if !is_new {
-            return;
-        }
-        let mut f = MUTABLE_DETAILS_FILE.lock().unwrap();
-        if let Some(f) = f.deref_mut() {
-            writeln!(f, "{self},{kind},{data}").expect("unable to write mutable context");
-            f.flush()
-                .expect("unable to flush possible mutations report");
+        if !self.crate_name.is_empty() {
+            let is_new = MUTABLE_DETAILS.lock().unwrap().insert((self.clone(), kind));
+            if !is_new {
+                return;
+            }
+            let mut f = MUTABLE_DETAILS_FILE.lock().unwrap();
+            if let Some(f) = f.deref_mut() {
+                writeln!(f, "{self},{kind},{data}").expect("unable to write mutable context");
+                f.flush()
+                    .expect("unable to flush possible mutations report");
+            }
+        } else {
+            #[cfg(test)]
+            tests::DETAILS
+                .lock()
+                .unwrap()
+                .insert((self.clone(), kind), data.to_string());
         }
     }
 
     pub fn report_at(&self, loc: MutableLocation) {
         self.report_detail("loc", loc)
     }
-}
-// TODO: `report_*` functions as methods of MutableId
 
-pub fn report_possible_mutations(m_id: &MutableId<'static>, reports: &[(&str, bool)]) {
-    let mutations = reports
-        .iter()
-        .filter(|(_, ok)| *ok)
-        .map(|(m, _)| *m)
-        .collect::<Vec<_>>();
-    let mutations = mutations.join(":");
-    m_id.report_detail("mutations", mutations);
-}
-
-pub fn report_mutable_type(m_id: &MutableId<'static>, ty: &str) {
-    m_id.report_detail("type", ty);
+    pub fn report_possible_mutations(&self, reports: &[(&str, bool)]) {
+        let mutations = reports
+            .iter()
+            .filter(|(_, ok)| *ok)
+            .map(|(m, _)| *m)
+            .collect::<Vec<_>>();
+        let mutations = mutations.join(":");
+        self.report_detail("mutations", mutations);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

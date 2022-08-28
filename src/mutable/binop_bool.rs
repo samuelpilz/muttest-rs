@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn true_and_false_unchanged() {
-        assert_eq!(crate::tests::without_mutation(true_and_false), false);
+        assert_eq!(crate::tests::without_mutation(true_and_false).res, false);
     }
 
     // TODO: tests
