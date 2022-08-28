@@ -9,7 +9,11 @@ use std::{
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use muttest_core::MutableId;
+use muttest_core::{
+    mutable::{binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
+    transformer::Mutable,
+    MutableId,
+};
 use serde::Deserialize;
 
 #[derive(Debug, Parser)]
@@ -75,7 +79,7 @@ fn main() -> Result<(), Error> {
     // TODO: read coverage data and possible mutations
 
     // evaluate mutations
-    for (m_id, mutable @ Mutable { code, kind, .. }) in &mutables {
+    for (m_id, mutable @ MutableData { code, kind, .. }) in &mutables {
         let mutations = mutable.mutations();
         println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}");
 
@@ -123,14 +127,14 @@ struct TestExe {
 }
 
 #[derive(Debug, Deserialize, Default)]
-struct Mutable {
+struct MutableData {
     kind: String,
     code: String,
     loc: Option<String>,
     ty: Option<String>,
     possible_mutations: Option<Vec<String>>,
 }
-impl Mutable {
+impl MutableData {
     fn from_def(
         MutableDefinition {
             kind, code, loc, ..
@@ -145,7 +149,7 @@ impl Mutable {
     }
     fn mutations(&self) -> Vec<String> {
         match &*self.kind {
-            "lit_int" => {
+            MutableLitInt::NAME => {
                 let i = self.code.parse::<u128>().expect("unable to parse int");
                 let mut m = vec![];
                 if i != 0 {
@@ -154,14 +158,14 @@ impl Mutable {
                 m.push((i + 1).to_string());
                 m
             }
-            "binop_calc" => self
+            MutableBinopCalc::NAME => self
                 .possible_mutations
                 .iter()
                 .flatten()
                 .filter(|&x| x != &self.code)
                 .map(ToOwned::to_owned)
                 .collect(),
-            "binop_cmp" => ["<", "<=", ">=", ">"]
+            MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
                 .into_iter()
                 .filter(|x| x != &self.code)
                 .map(ToOwned::to_owned)
@@ -228,7 +232,7 @@ fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult,
     Ok(result)
 }
 
-fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutable>, Error> {
+fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, MutableData>, Error> {
     let mut mutables = BTreeMap::new();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
@@ -253,7 +257,7 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutab
                 id: md.id,
                 crate_name: Cow::Owned(mutated_package.to_owned()),
             };
-            mutables.insert(id, Mutable::from_def(md));
+            mutables.insert(id, MutableData::from_def(md));
         }
     }
     Ok(mutables)
@@ -270,7 +274,7 @@ fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), CoreError> {
 // TODO: generic function for csv reader
 fn read_mutable_details(
     muttest_dir: &Utf8Path,
-    mutables: &mut BTreeMap<MutableId, Mutable>,
+    mutables: &mut BTreeMap<MutableId, MutableData>,
 ) -> Result<(), Error> {
     let details_file = muttest_dir.join("mutable-details.csv");
     let mut reader = csv::ReaderBuilder::new()
