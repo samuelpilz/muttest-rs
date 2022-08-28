@@ -10,9 +10,9 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    mutable::{binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
+    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
     transformer::Mutable,
-    MutableId,
+    MutableId, ENV_VAR_DETAILS_FILE, ENV_VAR_MUTTEST_DIR,
 };
 use serde::Deserialize;
 
@@ -61,14 +61,15 @@ fn main() -> Result<(), Error> {
 
     println!("Mutables {mutables:?}");
 
-    let details_filepath = muttest_dir.join("mutable-details.csv");
-    setup_mutable_details(&details_filepath)?;
+    let details_path = muttest_dir.join("mutable-details.csv");
+    setup_mutable_details(&details_path)?;
 
     // run test suites without mutations for coverage
     for test_exe in &compilation_result.test_exes {
         println!("call {}", &test_exe.name);
         Command::new(&test_exe.path)
-            .env("MUTTEST_DIR", &muttest_dir)
+            .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
+            .env(ENV_VAR_DETAILS_FILE, &details_path)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
@@ -96,6 +97,7 @@ fn main() -> Result<(), Error> {
                     )
                     // TODO: think about details here
                     .stdout(Stdio::null())
+                    .stderr(Stdio::inherit())
                     .spawn()?
                     .wait()?;
                 let exit_code = match result.code() {
@@ -158,19 +160,19 @@ impl MutableData {
                 m.push((i + 1).to_string());
                 m
             }
-            MutableBinopCalc::NAME => self
+            MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
+                .into_iter()
+                .filter(|x| x != &self.code)
+                .map(ToOwned::to_owned)
+                .collect(),
+            // fallback to mutable's description of possible mutations
+            _ => self
                 .possible_mutations
                 .iter()
                 .flatten()
                 .filter(|&x| x != &self.code)
                 .map(ToOwned::to_owned)
                 .collect(),
-            MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
-                .into_iter()
-                .filter(|x| x != &self.code)
-                .map(ToOwned::to_owned)
-                .collect(),
-            _ => vec![],
         }
     }
 }

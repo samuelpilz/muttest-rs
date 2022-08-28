@@ -13,3 +13,8 @@ fn _ensure_this_is_inferrable() {
 // TODO: make this feature-gated
 #[allow(dead_code)]
 const RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!("MUTTEST_DIR");
+#[cfg(test)]
+#[test]
+fn correct_recompile_env_var() {
+    assert_eq!(muttest_core::ENV_VAR_MUTTEST_DIR, "MUTTEST_DIR")
+}

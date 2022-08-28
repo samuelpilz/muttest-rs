@@ -30,20 +30,25 @@ pub mod api {
     pub use crate::{phantom_for_type, MutableId, MutableLocation};
 }
 
+pub const ENV_VAR_MUTTEST_DIR: &str = "MUTTEST_DIR";
+pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
+pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
+
 lazy_static! {
     pub static ref MUTTEST_DIR: Option<PathBuf> = {
-        match std::env::var("MUTTEST_DIR") {
+        match std::env::var(ENV_VAR_MUTTEST_DIR) {
             Ok(d) => Some(PathBuf::from(d)),
             Err(VarError::NotPresent) => None,
             Err(e) => panic!("{}", e),
         }
     };
     static ref COVERAGE_FILE: Mutex<Option<fs::File>> = Mutex::new(None);
-    static ref MUTABLE_DETAILS_FILE: Mutex<Option<fs::File>> = Mutex::new(None);
+    static ref MUTABLE_DETAILS_FILE: Mutex<Option<fs::File>> =
+        Mutex::new(open_details_file().expect("unable to open details file"));
     static ref MUTABLE_DETAILS: Mutex<BTreeSet<(MutableId<'static>, &'static str)>> =
         Default::default();
     static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, String>> = {
-        RwLock::new(parse_active_mutations(
+        RwLock::new(parse_mutations(
             &std::env::var("MUTTEST_MUTATION").unwrap_or_default(),
         ))
     };
@@ -53,9 +58,11 @@ lazy_static! {
 pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
+    #[error("unicode error env var {0}")]
+    EnvVarUnicode(&'static str),
 }
 
-fn parse_active_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
+fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
     let mut mutations = BTreeMap::new();
 
     // TODO: report errors
@@ -69,6 +76,21 @@ fn parse_active_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
     }
 
     mutations
+}
+
+fn open_details_file() -> Result<Option<fs::File>, Error> {
+    match std::env::var(ENV_VAR_DETAILS_FILE) {
+        Ok(file) => {
+            let file = fs::File::options()
+                .read(true)
+                .write(true)
+                .append(true)
+                .open(file)?;
+            Ok(Some(file))
+        }
+        Err(VarError::NotPresent) => Ok(None),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(ENV_VAR_DETAILS_FILE)),
+    }
 }
 
 // TODO: move coverage to mutable_id
