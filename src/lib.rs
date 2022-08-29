@@ -272,11 +272,18 @@ impl DerefMut for CollectorFile {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MutableData {
+    pub kind: String,
+    pub code: String,
+    // TODO: maybe have two loc fields (one from defs, one from details)
+    pub location: String,
+    pub possible_mutations: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
-    // TODO: make one struct-valued map instead of 3 maps
-    pub locations: BTreeMap<MutableId<'static>, String>,
-    pub possible_mutations: BTreeMap<MutableId<'static>, String>,
+    pub mutables: BTreeMap<MutableId<'static>, MutableData>,
     pub coverage: BTreeSet<MutableId<'static>>,
 }
 
@@ -289,10 +296,11 @@ impl CollectedData {
             let id = md.id.parse::<MutableId>()?;
             match &*md.kind {
                 "mutations" => {
-                    self.possible_mutations.insert(id, md.data);
+                    self.mutables.entry(id).or_default().possible_mutations =
+                        Some(md.data.split(":").map(ToOwned::to_owned).collect());
                 }
                 "loc" => {
-                    self.locations.insert(id, md.data);
+                    self.mutables.entry(id).or_default().location = md.data;
                 }
                 k => debug_assert!(false, "unknown detail kind '{}'", k),
             }
@@ -301,7 +309,7 @@ impl CollectedData {
     }
     pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(), Error> {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
-        for md in reader.deserialize::<MutableDetail>() {
+        for md in reader.deserialize::<MutableCoverage>() {
             let id = md?.id.parse::<MutableId>()?;
             self.coverage.insert(id);
         }
@@ -314,6 +322,11 @@ pub struct MutableDetail {
     pub id: String,
     pub kind: String,
     pub data: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MutableCoverage {
+    id: String,
 }
 
 #[derive(Debug, Clone, Copy)]

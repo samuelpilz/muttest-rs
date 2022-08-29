@@ -1,13 +1,8 @@
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
-    mem,
-    sync::Mutex, io::Read,
-};
+use std::{borrow::Cow, collections::BTreeSet, mem, sync::Mutex};
 
 use lazy_static::lazy_static;
 
-use crate::{CollectorFile, MutableDataCollector, MutableDetail, MutableId, ACTIVE_MUTATION, CollectedData};
+use crate::{CollectedData, CollectorFile, MutableDataCollector, MutableId, ACTIVE_MUTATION};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -78,7 +73,6 @@ pub fn mutable_id(id: usize) -> MutableId<'static> {
     }
 }
 
-
 impl MutableDataCollector {
     fn new_for_test() -> Self {
         MutableDataCollector {
@@ -115,8 +109,10 @@ impl MutableDataCollector {
         }
 
         let mut data = CollectedData::default();
-        data.read_details_csv(&*details_csv);
-        data.read_coverage_csv(&*coverage_csv);
+        data.read_details_csv(&*details_csv)
+            .expect("unable to read csv data");
+        data.read_coverage_csv(&*coverage_csv)
+            .expect("unable to read csv data");
 
         data
     }

@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::BTreeMap,
-    fs,
+    fs::{self, File},
     io::{self, Write},
     path::PathBuf,
     process::{Command, Stdio},
@@ -12,7 +11,7 @@ use clap::Parser;
 use muttest_core::{
     mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
     transformer::Mutable,
-    MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
+    CollectedData, MutableData, MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
 };
 use serde::Deserialize;
 
@@ -57,9 +56,9 @@ fn main() -> Result<(), Error> {
     println!("{compilation_result:?}");
 
     // read created mutables
-    let mut mutables = read_mutable_defs(&muttest_dir)?;
+    let mut data = read_mutable_defs(&muttest_dir)?;
 
-    println!("Mutables {mutables:?}");
+    println!("mutable definitions {data:?}");
 
     let details_path = muttest_dir.join("mutable-details.csv");
     setup_mutable_details(&details_path)?;
@@ -75,13 +74,13 @@ fn main() -> Result<(), Error> {
             .wait()?;
     }
 
-    read_mutable_details(&muttest_dir, &mut mutables)?;
-
-    // TODO: read coverage data and possible mutations
+    data.read_details_csv(File::open(details_path)?)?;
 
     // evaluate mutations
-    for (m_id, mutable @ MutableData { code, kind, .. }) in &mutables {
-        let mutations = mutable.mutations();
+    let m_ids = data.mutables.keys().cloned().collect::<Vec<_>>();
+    for m_id in m_ids {
+        let mutable @ MutableData { code, kind, .. } = &data.mutables[&m_id];
+        let mutations = mutations_for_mutable(&mutable);
         println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}");
 
         for m in mutations {
@@ -128,55 +127,6 @@ struct TestExe {
     name: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
-struct MutableData {
-    kind: String,
-    code: String,
-    loc: Option<String>,
-    ty: Option<String>,
-    possible_mutations: Option<Vec<String>>,
-}
-impl MutableData {
-    fn from_def(
-        MutableDefinition {
-            kind, code, loc, ..
-        }: MutableDefinition,
-    ) -> Self {
-        Self {
-            kind,
-            code,
-            loc: Some(loc).filter(String::is_empty),
-            ..Self::default()
-        }
-    }
-    fn mutations(&self) -> Vec<String> {
-        match &*self.kind {
-            MutableLitInt::NAME => {
-                let i = self.code.parse::<u128>().expect("unable to parse int");
-                let mut m = vec![];
-                if i != 0 {
-                    m.push((i - 1).to_string());
-                }
-                m.push((i + 1).to_string());
-                m
-            }
-            MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
-                .into_iter()
-                .filter(|x| x != &self.code)
-                .map(ToOwned::to_owned)
-                .collect(),
-            // fallback to mutable's description of possible mutations
-            _ => self
-                .possible_mutations
-                .iter()
-                .flatten()
-                .filter(|&x| x != &self.code)
-                .map(ToOwned::to_owned)
-                .collect(),
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct MutableDefinition {
     id: usize,
@@ -184,13 +134,6 @@ struct MutableDefinition {
     code: String,
     loc: String,
 }
-#[derive(Debug, Deserialize)]
-struct MutableDetails {
-    id: String,
-    kind: String,
-    data: String,
-}
-
 /// execute `cargo test --no-run --message-format=json` and collect output
 fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
     let mut result = CompilationResult::default();
@@ -234,8 +177,8 @@ fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult,
     Ok(result)
 }
 
-fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, MutableData>, Error> {
-    let mut mutables = BTreeMap::new();
+fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<CollectedData, Error> {
+    let mut data = CollectedData::default();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
         let file_name = file.file_name().into_string().unwrap();
@@ -259,50 +202,52 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<MutableId, Mutab
                 id: md.id,
                 crate_name: Cow::Owned(mutated_package.to_owned()),
             };
-            mutables.insert(id, MutableData::from_def(md));
+            data.mutables.insert(
+                id,
+                MutableData {
+                    kind: md.kind,
+                    code: md.code,
+                    location: md.loc,
+                    ..MutableData::default()
+                },
+            );
         }
     }
-    Ok(mutables)
+    Ok(data)
 }
 
 fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), CoreError> {
     let mut details_file = fs::File::create(details_filepath)?;
     writeln!(&mut details_file, "id,kind,data")?;
     details_file.flush()?;
-    details_file.sync_all()?;
     Ok(())
 }
 
-// TODO: generic function for csv reader
-fn read_mutable_details(
-    muttest_dir: &Utf8Path,
-    mutables: &mut BTreeMap<MutableId, MutableData>,
-) -> Result<(), Error> {
-    let details_file = muttest_dir.join("mutable-details.csv");
-    let mut reader = csv::ReaderBuilder::new()
-        .from_path(&details_file)
-        .map_err(|e| Error::Csv(details_file.as_std_path().to_owned(), e))?;
-    for md in reader.deserialize::<MutableDetails>() {
-        let md = md.map_err(|e| Error::Csv(details_file.as_std_path().to_owned(), e))?;
-
-        let id = md.id.parse().unwrap();
-        if let Some(m) = mutables.get_mut(&id) {
-            match &*md.kind {
-                "type" => m.ty = Some(md.data),
-                "mutations" => {
-                    m.possible_mutations = Some(md.data.split(":").map(ToOwned::to_owned).collect())
-                }
-                "loc" => {
-                    m.loc.get_or_insert(md.data);
-                }
-                _ => {}
+pub fn mutations_for_mutable(mutable: &MutableData) -> Vec<String> {
+    match &*mutable.kind {
+        MutableLitInt::NAME => {
+            let i = mutable.code.parse::<u128>().expect("unable to parse int");
+            let mut m = vec![];
+            if i != 0 {
+                m.push((i - 1).to_string());
             }
+            m.push((i + 1).to_string());
+            m
         }
-        // mutables.insert((mutated_package.to_owned(), md.id), Mutable::from_def(md));
+        MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
+            .into_iter()
+            .filter(|x| x != &mutable.code)
+            .map(ToOwned::to_owned)
+            .collect(),
+        // fallback to mutable's description of possible mutations
+        _ => mutable
+            .possible_mutations
+            .iter()
+            .flatten()
+            .filter(|&x| x != &mutable.code)
+            .map(ToOwned::to_owned)
+            .collect(),
     }
-    // TODO: read details file and add to mutables
-
-    Ok(())
 }
 
 type CoreError = muttest_core::Error;

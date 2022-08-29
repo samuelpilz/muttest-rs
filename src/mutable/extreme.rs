@@ -154,10 +154,10 @@ mod tests {
         let res = crate::tests::without_mutation(no_default);
         assert_eq!(
             res.data
-                .possible_mutations
+                .mutables
                 .get(&mutable_id(1))
-                .map(|x| &**x),
-            Some("")
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec![])
         )
     }
 
