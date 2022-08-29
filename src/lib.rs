@@ -296,8 +296,13 @@ impl CollectedData {
             let id = md.id.parse::<MutableId>()?;
             match &*md.kind {
                 "mutations" => {
-                    self.mutables.entry(id).or_default().possible_mutations =
-                        Some(md.data.split(":").map(ToOwned::to_owned).collect());
+                    self.mutables.entry(id).or_default().possible_mutations = Some(
+                        md.data
+                            .split(":")
+                            .filter(|x| !x.is_empty())
+                            .map(ToOwned::to_owned)
+                            .collect(),
+                    );
                 }
                 "loc" => {
                     self.mutables.entry(id).or_default().location = md.data;

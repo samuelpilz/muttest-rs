@@ -114,6 +114,8 @@ pub fn run(m_id: &MutableId<'static>, loc: MutableLocation) -> ControlFlow<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::any::Any;
+
     use crate::tests::mutable_id;
 
     #[muttest_codegen::mutate_isolated("extreme")]
@@ -142,7 +144,23 @@ mod tests {
         ret
     }
 
-    #[derive(Debug)]
+    #[test]
+    fn post_increment_unchanged() {
+        let mut x = 1;
+        let res = crate::tests::without_mutation(|| post_increment(&mut x));
+        assert_eq!(res.res, 1);
+        assert_eq!(x, 2);
+    }
+
+    #[test]
+    fn post_increment_mutate_default() {
+        let mut x = 1;
+        let res = crate::tests::with_mutation(1, "default", || post_increment(&mut x));
+        assert_eq!(res.res, 0);
+        assert_eq!(x, 1);
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
     struct NoDefault;
 
     #[muttest_codegen::mutate_isolated("extreme")]
@@ -165,14 +183,57 @@ mod tests {
     fn return_no_default_impl_debug() -> impl std::fmt::Debug {
         return NoDefault;
     }
+    #[test]
+    fn return_no_default_no_mutation() {
+        let res = crate::tests::without_mutation(return_no_default_impl_debug);
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec![])
+        )
+    }
 
     #[muttest_codegen::mutate_isolated("extreme")]
     fn no_default_impl_debug() -> impl std::fmt::Debug {
         NoDefault
     }
+    #[test]
+    fn no_default_impl_debug_unchanged_no_mutation() {
+        let res = crate::tests::without_mutation(no_default_impl_debug);
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec![])
+        );
+        let res: Box<dyn Any> = Box::new(res.res);
+        assert_eq!(NoDefault, *res.downcast::<NoDefault>().unwrap());
+    }
 
     #[muttest_codegen::mutate_isolated("extreme")]
-    fn impl_default() -> impl Default {
+    fn impl_default() -> impl Default + Sized {
         4usize
+    }
+    #[test]
+    fn impl_default_unchanged_one_mutation() {
+        let res = crate::tests::without_mutation(impl_default);
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec!["default".to_owned()])
+        );
+        let res: Box<dyn Any> = Box::new(res.res);
+        assert_eq!(*res.downcast::<usize>().unwrap(), 4);
+    }
+    #[test]
+    fn impl_default_mutate_default() {
+        let res = crate::tests::with_mutation(1, "default", impl_default);
+        let res: Box<dyn Any> = Box::new(res.res);
+        assert_eq!(*res.downcast::<usize>().unwrap(), 0);
     }
 }
