@@ -33,7 +33,14 @@ pub mod api {
     pub use crate::{phantom_for_type, MutableId, MutableLocation};
 }
 
-pub const ENV_VAR_MUTTEST_DIR: &str = "MUTTEST_DIR";
+#[macro_export]
+macro_rules! env_var_muttest_dir {
+    () => {
+        "MUTTEST_DIR"
+    };
+}
+
+pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
 pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
 
 lazy_static! {
@@ -292,12 +299,10 @@ impl CollectedData {
         }
         Ok(())
     }
-    pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(),Error> {
+    pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(), Error> {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
         for md in reader.deserialize::<MutableDetail>() {
-            let id = md?
-                .id
-                .parse::<MutableId>()?;
+            let id = md?.id.parse::<MutableId>()?;
             self.coverage.insert(id);
         }
         Ok(())
