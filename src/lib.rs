@@ -1,3 +1,4 @@
+#![cfg_attr(test, feature(const_btree_new))] // unstable features only required for unit tests
 //! Rust Mutation Testing core library.
 //!
 //! There are some internals here that are not meant for mutation testing users.
@@ -8,7 +9,7 @@ use std::{
     env::VarError,
     fmt,
     fmt::Display,
-    fs,
+    fs::File,
     io::{self, Write},
     marker::PhantomData,
     ops::DerefMut,
@@ -20,9 +21,10 @@ use std::{
 use lazy_static::lazy_static;
 
 pub mod mutable;
+pub mod transformer;
+
 #[cfg(test)]
 mod tests;
-pub mod transformer;
 
 /// a module for reexport from `muttest` crate
 pub mod api {
@@ -33,6 +35,7 @@ pub mod api {
 pub const ENV_VAR_MUTTEST_DIR: &str = "MUTTEST_DIR";
 pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
 pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
+pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
 
 lazy_static! {
     pub static ref MUTTEST_DIR: Option<PathBuf> = {
@@ -42,16 +45,13 @@ lazy_static! {
             Err(e) => panic!("{}", e),
         }
     };
-    static ref COVERAGE_FILE: Mutex<Option<fs::File>> = Mutex::new(None);
-    static ref MUTABLE_DETAILS_FILE: Mutex<Option<fs::File>> =
-        Mutex::new(open_details_file().expect("unable to open details file"));
-    static ref MUTABLE_DETAILS: Mutex<BTreeSet<(MutableId<'static>, &'static str)>> =
-        Default::default();
     static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, String>> = {
         RwLock::new(parse_mutations(
-            &std::env::var("MUTTEST_MUTATION").unwrap_or_default(),
+            &std::env::var(ENV_VAR_MUTTEST_MUTATION).unwrap_or_default(),
         ))
     };
+    static ref DATA_COLLECTOR: MutableDataCollector = MutableDataCollector::new_from_envvar_files()
+        .expect("unable to open mutable-data-collector files");
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -78,39 +78,6 @@ fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
     mutations
 }
 
-fn open_details_file() -> Result<Option<fs::File>, Error> {
-    match std::env::var(ENV_VAR_DETAILS_FILE) {
-        Ok(file) => {
-            let file = fs::File::options()
-                .read(true)
-                .write(true)
-                .append(true)
-                .open(file)?;
-            Ok(Some(file))
-        }
-        Err(VarError::NotPresent) => Ok(None),
-        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(ENV_VAR_DETAILS_FILE)),
-    }
-}
-
-// TODO: move coverage to mutable_id
-pub fn report_coverage(m_id: &MutableId) {
-    let mut f = COVERAGE_FILE.lock().unwrap();
-    if let Some(f) = f.deref_mut() {
-        writeln!(f, "{m_id}").expect("unable to write log");
-        f.flush().expect("unable to flush coverage report");
-    }
-}
-
-/// get the active mutation for a mutable
-fn get_active_mutation_for_mutable(m_id: &MutableId) -> Option<String> {
-    ACTIVE_MUTATION
-        .read()
-        .expect("read-lock active mutations")
-        .get(m_id)
-        .cloned()
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MutableId<'a> {
     pub id: usize,
@@ -134,39 +101,128 @@ impl FromStr for MutableId<'static> {
 }
 
 impl MutableId<'static> {
-    fn report_detail<T: Display>(&self, kind: &'static str, data: T) {
-        if !self.crate_name.is_empty() {
-            let is_new = MUTABLE_DETAILS.lock().unwrap().insert((self.clone(), kind));
-            if !is_new {
-                return;
-            }
-            let mut f = MUTABLE_DETAILS_FILE.lock().unwrap();
-            if let Some(f) = f.deref_mut() {
-                writeln!(f, "{self},{kind},{data}").expect("unable to write mutable context");
-                f.flush()
-                    .expect("unable to flush possible mutations report");
-            }
-        } else {
-            #[cfg(test)]
-            tests::DETAILS
-                .lock()
-                .unwrap()
-                .insert((self.clone(), kind), data.to_string());
+    /// reports this mutable's location
+    ///
+    /// This function should be called as early as possible
+    pub fn report_at(&self, loc: MutableLocation) {
+        self.get_collector().write_location(self, loc)
+    }
+
+    /// reports possible mutations
+    ///
+    /// The argument is a list of pairs of possible mutations.
+    /// The bool value in each item indicates whether the mutation is possible
+    /// This design makes the code-generation easier
+    pub fn report_possible_mutations(&self, mutations: &[(&str, bool)]) {
+        self.get_collector()
+            .write_possible_mutations(self, mutations)
+    }
+
+    /// get the active mutation for a mutable
+    ///
+    /// calling this function also triggers logging its coverage
+    fn get_active_mutation(&self) -> Option<String> {
+        self.get_collector().write_coverage(self);
+
+        ACTIVE_MUTATION
+            .read()
+            .expect("read-lock active mutations")
+            .get(self)
+            .cloned()
+    }
+
+    fn get_collector(&self) -> &'static MutableDataCollector {
+        #[cfg(test)]
+        if self.crate_name.is_empty() {
+            return &tests::DATA_COLLECTOR;
+        }
+        &*DATA_COLLECTOR
+    }
+}
+
+struct MutableDataCollector {
+    coverage: Mutex<BTreeSet<MutableId<'static>>>,
+    locations: Mutex<BTreeSet<MutableId<'static>>>,
+    possible_mutations: Mutex<BTreeSet<MutableId<'static>>>,
+    details_file: Mutex<Option<File>>,
+    coverage_file: Mutex<Option<File>>,
+}
+
+impl MutableDataCollector {
+    fn new_from_envvar_files() -> Result<Self, Error> {
+        let details_file = open_collector_file(ENV_VAR_DETAILS_FILE)?;
+        let coverage_file = open_collector_file(ENV_VAR_COVERAGE_FILE)?;
+        Ok(MutableDataCollector {
+            coverage: Mutex::new(Default::default()),
+            locations: Mutex::new(Default::default()),
+            possible_mutations: Mutex::new(Default::default()),
+            details_file: Mutex::new(details_file),
+            coverage_file: Mutex::new(coverage_file),
+        })
+    }
+
+    fn write_location(&self, m_id: &MutableId<'static>, loc: MutableLocation) {
+        let is_new = self.locations.lock().unwrap().insert(m_id.clone());
+        if !is_new {
+            return;
+        }
+        self.write_detail(m_id, "loc", loc);
+    }
+
+    fn write_possible_mutations(&self, m_id: &MutableId<'static>, mutations: &[(&str, bool)]) {
+        let is_new = self.possible_mutations.lock().unwrap().insert(m_id.clone());
+        if !is_new {
+            return;
+        }
+
+        self.write_detail(
+            m_id,
+            "mutations",
+            mutations
+                .iter()
+                .filter(|(_, ok)| *ok)
+                .map(|(m, _)| *m)
+                .collect::<Vec<_>>()
+                .join(":"),
+        );
+    }
+
+    fn write_detail<T: Display>(&self, m_id: &MutableId<'static>, kind: &'static str, data: T) {
+        // TODO: where to go to testlib?
+        let mut f = self.details_file.lock().unwrap();
+        if let Some(f) = f.deref_mut() {
+            writeln!(f, "{m_id},{kind},{data}").expect("unable to write mutable detail");
+            f.flush().expect("unable to flush mutable detail");
         }
     }
 
-    pub fn report_at(&self, loc: MutableLocation) {
-        self.report_detail("loc", loc)
-    }
+    fn write_coverage(&self, m_id: &MutableId<'static>) {
+        let is_new = self.coverage.lock().unwrap().insert(m_id.clone());
+        if !is_new {
+            return;
+        }
 
-    pub fn report_possible_mutations(&self, reports: &[(&str, bool)]) {
-        let mutations = reports
-            .iter()
-            .filter(|(_, ok)| *ok)
-            .map(|(m, _)| *m)
-            .collect::<Vec<_>>();
-        let mutations = mutations.join(":");
-        self.report_detail("mutations", mutations);
+        let mut f = self.coverage_file.lock().unwrap();
+        if let Some(f) = f.deref_mut() {
+            writeln!(f, "{m_id}").expect("unable to write mutable detail");
+            f.flush().expect("unable to flush mutable detail");
+        }
+    }
+}
+
+fn open_collector_file(env_var_name: &'static str) -> Result<Option<File>, Error> {
+    match std::env::var(env_var_name) {
+        Ok(file) => {
+            let file = File::options()
+                .read(true)
+                .write(true)
+                .append(true)
+                .open(file)?;
+            // TODO: fully read the file
+            Ok(Some(file))
+        }
+        Err(VarError::NotPresent) => Ok(None),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
     }
 }
 

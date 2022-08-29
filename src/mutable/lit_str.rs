@@ -46,8 +46,8 @@ pub fn mutable_str(
     mutation: &RwLock<Option<&'static str>>,
 ) -> &'static str {
     m_id.report_at(loc);
-    report_coverage(m_id);
-    match get_active_mutation_for_mutable(m_id).as_deref() {
+
+    match m_id.get_active_mutation().as_deref() {
         None => s,
         Some(s_mut) => {
             let r_lock = mutation.read().unwrap();

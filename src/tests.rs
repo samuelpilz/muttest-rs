@@ -1,17 +1,69 @@
-use std::{borrow::Cow, collections::BTreeMap, mem, ops::DerefMut, sync::Mutex};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    sync::Mutex,
+};
 
-use lazy_static::lazy_static;
-
-use crate::{MutableId, ACTIVE_MUTATION};
+use crate::{MutableDataCollector, MutableId, ACTIVE_MUTATION};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-lazy_static! {
-    pub static ref DETAILS: Mutex<MutableData> = Default::default();
-    pub static ref COVERAGE: Mutex<MutableData> = Default::default();
+pub(crate) static DATA_COLLECTOR: MutableDataCollector = MutableDataCollector::new_for_test();
+
+impl MutableDataCollector {
+    const fn new_for_test() -> Self {
+        MutableDataCollector {
+            coverage: Mutex::new(BTreeSet::new()),
+            locations: Mutex::new(BTreeSet::new()),
+            possible_mutations: Mutex::new(BTreeSet::new()),
+            details_file: Mutex::new(None),
+            coverage_file: Mutex::new(None),
+        }
+    }
+
+    fn extract_and_clear(&self) -> CollectedData {
+        let data = CollectedData::default();
+
+        // lock everything together to ensure isolation
+        {
+            let mut coverage = self.coverage.lock().unwrap();
+            let mut locations = self.locations.lock().unwrap();
+            let mut possible_mutations = self.possible_mutations.lock().unwrap();
+            let mut details_file = self.details_file.lock().unwrap();
+            let mut coverage_file = self.coverage_file.lock().unwrap();
+
+            coverage.clear();
+            locations.clear();
+            possible_mutations.clear();
+            *details_file = None;
+            *coverage_file = None;
+        }
+
+        data
+    }
+
+    fn assert_clear(&self) {
+        // lock everything together to ensure isolation
+        let coverage = self.coverage.lock().unwrap();
+        let locations = self.locations.lock().unwrap();
+        let possible_mutations = self.possible_mutations.lock().unwrap();
+        let details_file = self.details_file.lock().unwrap();
+        let coverage_file = self.coverage_file.lock().unwrap();
+
+        assert!(coverage.is_empty());
+        assert!(locations.is_empty());
+        assert!(possible_mutations.is_empty());
+        assert!(details_file.is_none());
+        assert!(coverage_file.is_none());
+    }
 }
 
-type MutableData = BTreeMap<(MutableId<'static>, &'static str), String>;
+#[derive(Default)]
+pub struct CollectedData {
+    pub coverage: BTreeSet<usize>,
+    pub locations: BTreeMap<usize, String>,
+    pub possible_mutations: BTreeMap<usize, String>,
+}
 
 /// returns a MutableId struct with an id to be used in tests
 pub fn mutable_id(id: usize) -> MutableId<'static> {
@@ -23,8 +75,7 @@ pub fn mutable_id(id: usize) -> MutableId<'static> {
 
 pub struct IsolatedFnCall<T> {
     pub res: T,
-    pub details: MutableData,
-    pub coverage: MutableData,
+    pub data: CollectedData,
 }
 
 pub fn without_mutation<T>(action: impl FnOnce() -> T) -> IsolatedFnCall<T> {
@@ -54,8 +105,7 @@ fn run_mutation<T>(
 ) -> IsolatedFnCall<T> {
     let l = TEST_LOCK.lock();
 
-    let mut details = MutableData::new();
-    let mut coverage = MutableData::new();
+    DATA_COLLECTOR.assert_clear();
 
     // update ACTIVE_MUTATION
     let mut m_map = ACTIVE_MUTATION.write().unwrap();
@@ -66,25 +116,15 @@ fn run_mutation<T>(
     // release lock on ACTIVE_MUTATION
     std::mem::drop(m_map);
 
-    // insert the new maps
-    mem::swap(DETAILS.lock().unwrap().deref_mut(), &mut details);
-    mem::swap(COVERAGE.lock().unwrap().deref_mut(), &mut coverage);
-
     // perform action
     let res = action();
 
-    // get the new maps
-    mem::swap(DETAILS.lock().unwrap().deref_mut(), &mut details);
-    mem::swap(COVERAGE.lock().unwrap().deref_mut(), &mut coverage);
+    let data = DATA_COLLECTOR.extract_and_clear();
 
     // release test lock
     std::mem::drop(l);
 
-    IsolatedFnCall {
-        res,
-        details,
-        coverage,
-    }
+    IsolatedFnCall { res, data }
 }
 
 // this shows how a mutation testing for the `muttest-core` lib itself could work in theory
@@ -97,6 +137,3 @@ fn example_selftest_fn() -> usize {
 fn example_selftest_test() {
     assert_eq!(example_selftest_fn(), 1);
 }
-
-// TODO: restructure these tests to match the structure of mutables & transformer
-mod test1;

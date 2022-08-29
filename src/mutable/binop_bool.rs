@@ -44,13 +44,9 @@ pub fn run(
     left: bool,
     loc: MutableLocation,
 ) -> Option<bool> {
-    m_id.report_at(loc);
-    report_coverage(m_id);
+    m_id.report_at(loc); // static info
 
-    match get_active_mutation_for_mutable(m_id)
-        .as_deref()
-        .unwrap_or(op_str)
-    {
+    match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
         "&&" if left => None,
         "&&" => Some(false),
         "||" if left => Some(true),

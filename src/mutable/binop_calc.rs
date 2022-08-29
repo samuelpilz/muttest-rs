@@ -46,7 +46,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                 let right_type = #core_crate::phantom_for_type(&right);
                 // this carries the output type of the computation
                 // the assignment in the default-case defines the type of this phantom
-                let mut output_type = ::core::marker::PhantomData;
+                let mut output_type = ::std::marker::PhantomData;
                 let mut_op = #core_crate::mutable::binop_calc::mutable_binop_calc(&#m_id, #loc);
                 #[allow(unused_assignments)]
                 match mut_op {
@@ -93,8 +93,8 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
 
 pub fn mutable_binop_calc(m_id: &MutableId<'static>, loc: MutableLocation) -> &'static str {
     m_id.report_at(loc);
-    report_coverage(m_id);
-    match get_active_mutation_for_mutable(m_id).as_deref() {
+
+    match m_id.get_active_mutation().as_deref() {
         None => "",
         Some("-") => "-",
         Some("+") => "+",

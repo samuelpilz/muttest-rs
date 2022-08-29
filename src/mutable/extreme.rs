@@ -34,7 +34,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         } = self;
         quote_spanned! {span=>
             #vis #sig {
-                let ret_type = ::core::marker::PhantomData;
+                let ret_type = ::std::marker::PhantomData;
                 match #core_crate::mutable::extreme::run(&#m_id, #loc) {
                     ::std::ops::ControlFlow::Continue(_) => {
                         // help the type-checker
@@ -104,12 +104,8 @@ impl<T: Default> YesDefault<T> for PhantomData<T> {
 
 pub fn run(m_id: &MutableId<'static>, loc: MutableLocation) -> ControlFlow<()> {
     m_id.report_at(loc);
-    report_coverage(m_id);
 
-    match get_active_mutation_for_mutable(m_id)
-        .as_deref()
-        .unwrap_or_default()
-    {
+    match m_id.get_active_mutation().as_deref().unwrap_or_default() {
         "" => ControlFlow::Continue(()),
         "default" => ControlFlow::Break(()),
         _ => todo!(),
@@ -152,14 +148,10 @@ mod tests {
         NoDefault
     }
     #[test]
+    #[ignore]
     fn no_default_no_mutation() {
         let res = crate::tests::without_mutation(no_default);
-        assert_eq!(
-            res.details
-                .get(&(crate::tests::mutable_id(1), "mutations"))
-                .map(|x| &**x),
-            Some("")
-        )
+        assert_eq!(res.data.possible_mutations.get(&1).map(|x| &**x), Some(""))
     }
 
     #[muttest_codegen::mutate_isolated("extreme")]
