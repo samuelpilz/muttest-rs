@@ -83,6 +83,11 @@ fn main() -> Result<(), Error> {
         let mutations = mutations_for_mutable(&mutable);
         println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}");
 
+        let mutations = match mutations {
+            Some(m) => m,
+            None => continue,
+        };
+
         for m in mutations {
             println!("mutation {m}");
             // run test suites without mutations for coverage
@@ -223,8 +228,8 @@ fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), CoreError> {
     Ok(())
 }
 
-pub fn mutations_for_mutable(mutable: &MutableData) -> Vec<String> {
-    match &*mutable.kind {
+pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
+    Some(match &*mutable.kind {
         MutableLitInt::NAME => {
             let i = mutable.code.parse::<u128>().expect("unable to parse int");
             let mut m = vec![];
@@ -242,12 +247,12 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Vec<String> {
         // fallback to mutable's description of possible mutations
         _ => mutable
             .possible_mutations
+            .as_ref()?
             .iter()
-            .flatten()
             .filter(|&x| x != &mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
-    }
+    })
 }
 
 type CoreError = muttest_core::Error;
