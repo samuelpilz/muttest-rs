@@ -8,9 +8,10 @@ autoexamples = false
 [dependencies]
 lazy_static = "1.4.0"
 thiserror = "1.0.30"
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 quote = "1"
-proc-macro2 = {version = "1", features = ["span-locations"]}
+proc-macro2 = { version = "1", features = ["span-locations"] }
+csv = "1.1"
 
 [dev-dependencies]
 muttest-codegen = { path = "codegen" }

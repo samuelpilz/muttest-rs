@@ -114,6 +114,8 @@ pub fn run(m_id: &MutableId<'static>, loc: MutableLocation) -> ControlFlow<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::tests::mutable_id;
+
     #[muttest_codegen::mutate_isolated("extreme")]
     fn set_true(marker: &mut bool) {
         *marker = true;
@@ -148,10 +150,15 @@ mod tests {
         NoDefault
     }
     #[test]
-    #[ignore]
     fn no_default_no_mutation() {
         let res = crate::tests::without_mutation(no_default);
-        assert_eq!(res.data.possible_mutations.get(&1).map(|x| &**x), Some(""))
+        assert_eq!(
+            res.data
+                .possible_mutations
+                .get(&mutable_id(1))
+                .map(|x| &**x),
+            Some("")
+        )
     }
 
     #[muttest_codegen::mutate_isolated("extreme")]

@@ -12,7 +12,7 @@ use clap::Parser;
 use muttest_core::{
     mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
     transformer::Mutable,
-    MutableId, ENV_VAR_DETAILS_FILE, ENV_VAR_MUTTEST_DIR,
+    MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
 };
 use serde::Deserialize;
 
@@ -69,7 +69,7 @@ fn main() -> Result<(), Error> {
         println!("call {}", &test_exe.name);
         Command::new(&test_exe.path)
             .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
-            .env(ENV_VAR_DETAILS_FILE, &details_path)
+            .env(MutableDataCollector::ENV_VAR_DETAILS_FILE, &details_path)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;

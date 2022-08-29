@@ -1,76 +1,19 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    sync::Mutex,
+    mem,
+    sync::Mutex, io::Read,
 };
 
-use crate::{MutableDataCollector, MutableId, ACTIVE_MUTATION};
+use lazy_static::lazy_static;
+
+use crate::{CollectorFile, MutableDataCollector, MutableDetail, MutableId, ACTIVE_MUTATION, CollectedData};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-pub(crate) static DATA_COLLECTOR: MutableDataCollector = MutableDataCollector::new_for_test();
-
-impl MutableDataCollector {
-    const fn new_for_test() -> Self {
-        MutableDataCollector {
-            coverage: Mutex::new(BTreeSet::new()),
-            locations: Mutex::new(BTreeSet::new()),
-            possible_mutations: Mutex::new(BTreeSet::new()),
-            details_file: Mutex::new(None),
-            coverage_file: Mutex::new(None),
-        }
-    }
-
-    fn extract_and_clear(&self) -> CollectedData {
-        let data = CollectedData::default();
-
-        // lock everything together to ensure isolation
-        {
-            let mut coverage = self.coverage.lock().unwrap();
-            let mut locations = self.locations.lock().unwrap();
-            let mut possible_mutations = self.possible_mutations.lock().unwrap();
-            let mut details_file = self.details_file.lock().unwrap();
-            let mut coverage_file = self.coverage_file.lock().unwrap();
-
-            coverage.clear();
-            locations.clear();
-            possible_mutations.clear();
-            *details_file = None;
-            *coverage_file = None;
-        }
-
-        data
-    }
-
-    fn assert_clear(&self) {
-        // lock everything together to ensure isolation
-        let coverage = self.coverage.lock().unwrap();
-        let locations = self.locations.lock().unwrap();
-        let possible_mutations = self.possible_mutations.lock().unwrap();
-        let details_file = self.details_file.lock().unwrap();
-        let coverage_file = self.coverage_file.lock().unwrap();
-
-        assert!(coverage.is_empty());
-        assert!(locations.is_empty());
-        assert!(possible_mutations.is_empty());
-        assert!(details_file.is_none());
-        assert!(coverage_file.is_none());
-    }
-}
-
-#[derive(Default)]
-pub struct CollectedData {
-    pub coverage: BTreeSet<usize>,
-    pub locations: BTreeMap<usize, String>,
-    pub possible_mutations: BTreeMap<usize, String>,
-}
-
-/// returns a MutableId struct with an id to be used in tests
-pub fn mutable_id(id: usize) -> MutableId<'static> {
-    MutableId {
-        id,
-        crate_name: Cow::Borrowed(""),
-    }
+lazy_static! {
+    pub(crate) static ref DATA_COLLECTOR: MutableDataCollector =
+        MutableDataCollector::new_for_test();
 }
 
 pub struct IsolatedFnCall<T> {
@@ -125,6 +68,94 @@ fn run_mutation<T>(
     std::mem::drop(l);
 
     IsolatedFnCall { res, data }
+}
+
+/// returns a MutableId struct with an id to be used in tests
+pub fn mutable_id(id: usize) -> MutableId<'static> {
+    MutableId {
+        id,
+        crate_name: Cow::Borrowed(""),
+    }
+}
+
+
+impl MutableDataCollector {
+    fn new_for_test() -> Self {
+        MutableDataCollector {
+            coverage: Mutex::new(BTreeSet::new()),
+            locations: Mutex::new(BTreeSet::new()),
+            possible_mutations: Mutex::new(BTreeSet::new()),
+            details_file: Mutex::new(CollectorFile::InMemory(
+                Self::DETAILS_FILE_HEADER.as_bytes().to_vec(),
+            )),
+            coverage_file: Mutex::new(CollectorFile::InMemory(
+                Self::COVERAGE_FILE_HEADER.as_bytes().to_vec(),
+            )),
+        }
+    }
+
+    fn extract_and_clear(&self) -> CollectedData {
+        let mut details_csv = Self::DETAILS_FILE_HEADER.as_bytes().to_vec();
+        let mut coverage_csv = Self::COVERAGE_FILE_HEADER.as_bytes().to_vec();
+
+        // lock everything together to ensure isolation
+        {
+            let mut coverage = self.coverage.lock().unwrap();
+            let mut locations = self.locations.lock().unwrap();
+            let mut possible_mutations = self.possible_mutations.lock().unwrap();
+            let mut details_file = self.details_file.lock().unwrap();
+            let mut coverage_file = self.coverage_file.lock().unwrap();
+
+            coverage.clear();
+            locations.clear();
+            possible_mutations.clear();
+            mem::swap(details_file.unwrap_vec_mut(), &mut details_csv);
+            mem::swap(coverage_file.unwrap_vec_mut(), &mut coverage_csv);
+            // TODO: reset coverage files
+        }
+
+        let mut data = CollectedData::default();
+        data.read_details_csv(&*details_csv);
+        data.read_coverage_csv(&*coverage_csv);
+
+        data
+    }
+
+    fn assert_clear(&self) {
+        // lock everything together to ensure isolation
+        let coverage = self.coverage.lock().unwrap();
+        let locations = self.locations.lock().unwrap();
+        let possible_mutations = self.possible_mutations.lock().unwrap();
+        let details_file = self.details_file.lock().unwrap();
+        let coverage_file = self.coverage_file.lock().unwrap();
+
+        assert!(coverage.is_empty());
+        assert!(locations.is_empty());
+        assert!(possible_mutations.is_empty());
+        assert_eq!(
+            &*details_file.unwrap_vec(),
+            Self::DETAILS_FILE_HEADER.as_bytes()
+        );
+        assert_eq!(
+            &*coverage_file.unwrap_vec(),
+            Self::COVERAGE_FILE_HEADER.as_bytes()
+        );
+    }
+}
+
+impl CollectorFile {
+    fn unwrap_vec(&self) -> &[u8] {
+        match self {
+            CollectorFile::InMemory(v) => v,
+            _ => panic!("expect in-memory file"),
+        }
+    }
+    fn unwrap_vec_mut(&mut self) -> &mut Vec<u8> {
+        match self {
+            CollectorFile::InMemory(v) => v,
+            _ => panic!("expect in-memory file"),
+        }
+    }
 }
 
 // this shows how a mutation testing for the `muttest-core` lib itself could work in theory

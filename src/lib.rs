@@ -1,4 +1,4 @@
-#![cfg_attr(test, feature(const_btree_new))] // unstable features only required for unit tests
+#![cfg_attr(test, feature(const_btree_new))]
 //! Rust Mutation Testing core library.
 //!
 //! There are some internals here that are not meant for mutation testing users.
@@ -10,15 +10,16 @@ use std::{
     fmt,
     fmt::Display,
     fs::File,
-    io::{self, Write},
+    io::{self, Read, Sink, Write},
     marker::PhantomData,
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     str::FromStr,
     sync::{Mutex, RwLock},
 };
 
 use lazy_static::lazy_static;
+use serde::Deserialize;
 
 pub mod mutable;
 pub mod transformer;
@@ -33,8 +34,6 @@ pub mod api {
 }
 
 pub const ENV_VAR_MUTTEST_DIR: &str = "MUTTEST_DIR";
-pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
-pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
 pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
 
 lazy_static! {
@@ -60,6 +59,10 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("unicode error env var {0}")]
     EnvVarUnicode(&'static str),
+    #[error("failed to read csv file: {0}")]
+    Csv(#[from] csv::Error),
+    #[error("not a valid MutableId: '{0}'")]
+    MutableIdFormat(String),
 }
 
 fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
@@ -89,12 +92,17 @@ impl fmt::Display for MutableId<'_> {
     }
 }
 impl FromStr for MutableId<'static> {
-    type Err = &'static str;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let id = s.split_once(":").ok_or("invalid id format")?;
+        let id = s
+            .split_once(":")
+            .ok_or_else(|| Error::MutableIdFormat(s.to_owned()))?;
         Ok(MutableId {
-            id: id.0.parse::<usize>().map_err(|_| "invalid id format")?,
+            id: id
+                .0
+                .parse::<usize>()
+                .map_err(|_| Error::MutableIdFormat(s.to_owned()))?,
             crate_name: Cow::Owned(id.1.to_owned()),
         })
     }
@@ -140,18 +148,25 @@ impl MutableId<'static> {
     }
 }
 
-struct MutableDataCollector {
+pub struct MutableDataCollector {
     coverage: Mutex<BTreeSet<MutableId<'static>>>,
     locations: Mutex<BTreeSet<MutableId<'static>>>,
     possible_mutations: Mutex<BTreeSet<MutableId<'static>>>,
-    details_file: Mutex<Option<File>>,
-    coverage_file: Mutex<Option<File>>,
+    details_file: Mutex<CollectorFile>,
+    coverage_file: Mutex<CollectorFile>,
 }
 
 impl MutableDataCollector {
+    pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
+    pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
+
+    pub const DETAILS_FILE_HEADER: &str = "id,kind,data\n";
+    pub const COVERAGE_FILE_HEADER: &str = "id\n";
+
     fn new_from_envvar_files() -> Result<Self, Error> {
-        let details_file = open_collector_file(ENV_VAR_DETAILS_FILE)?;
-        let coverage_file = open_collector_file(ENV_VAR_COVERAGE_FILE)?;
+        let details_file = CollectorFile::open_collector_file(Self::ENV_VAR_DETAILS_FILE)?;
+        // TODO: fully read details the file (reading coverage does not make much sense)
+        let coverage_file = CollectorFile::open_collector_file(Self::ENV_VAR_COVERAGE_FILE)?;
         Ok(MutableDataCollector {
             coverage: Mutex::new(Default::default()),
             locations: Mutex::new(Default::default()),
@@ -188,12 +203,9 @@ impl MutableDataCollector {
     }
 
     fn write_detail<T: Display>(&self, m_id: &MutableId<'static>, kind: &'static str, data: T) {
-        // TODO: where to go to testlib?
         let mut f = self.details_file.lock().unwrap();
-        if let Some(f) = f.deref_mut() {
-            writeln!(f, "{m_id},{kind},{data}").expect("unable to write mutable detail");
-            f.flush().expect("unable to flush mutable detail");
-        }
+        writeln!(f, "{m_id},{kind},{data}").expect("unable to write mutable detail");
+        f.flush().expect("unable to flush mutable detail");
     }
 
     fn write_coverage(&self, m_id: &MutableId<'static>) {
@@ -203,27 +215,100 @@ impl MutableDataCollector {
         }
 
         let mut f = self.coverage_file.lock().unwrap();
-        if let Some(f) = f.deref_mut() {
-            writeln!(f, "{m_id}").expect("unable to write mutable detail");
-            f.flush().expect("unable to flush mutable detail");
+        writeln!(f, "{m_id}").expect("unable to write mutable detail");
+        f.flush().expect("unable to flush mutable detail");
+    }
+}
+enum CollectorFile {
+    None(Sink),
+    File(File),
+    #[cfg(test)]
+    InMemory(Vec<u8>),
+}
+impl CollectorFile {
+    fn open_collector_file(env_var_name: &'static str) -> Result<Self, Error> {
+        match std::env::var(env_var_name) {
+            Ok(file) => {
+                let file = File::options()
+                    .read(true)
+                    .write(true)
+                    .append(true)
+                    .open(file)?;
+                Ok(Self::File(file))
+            }
+            Err(VarError::NotPresent) => Ok(Self::None(std::io::sink())),
+            Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
+        }
+    }
+}
+impl Deref for CollectorFile {
+    type Target = dyn Write;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CollectorFile::None(s) => s,
+            CollectorFile::File(f) => f,
+            #[cfg(test)]
+            CollectorFile::InMemory(v) => v,
         }
     }
 }
 
-fn open_collector_file(env_var_name: &'static str) -> Result<Option<File>, Error> {
-    match std::env::var(env_var_name) {
-        Ok(file) => {
-            let file = File::options()
-                .read(true)
-                .write(true)
-                .append(true)
-                .open(file)?;
-            // TODO: fully read the file
-            Ok(Some(file))
+impl DerefMut for CollectorFile {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            CollectorFile::None(s) => s,
+            CollectorFile::File(f) => f,
+            #[cfg(test)]
+            CollectorFile::InMemory(v) => v,
         }
-        Err(VarError::NotPresent) => Ok(None),
-        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CollectedData {
+    // TODO: make one struct-valued map instead of 3 maps
+    pub locations: BTreeMap<MutableId<'static>, String>,
+    pub possible_mutations: BTreeMap<MutableId<'static>, String>,
+    pub coverage: BTreeSet<MutableId<'static>>,
+}
+
+impl CollectedData {
+    pub fn read_details_csv(&mut self, details: impl Read) -> Result<(), Error> {
+        let mut reader = csv::ReaderBuilder::new().from_reader(details);
+        for md in reader.deserialize::<MutableDetail>() {
+            let md = md?;
+
+            let id = md.id.parse::<MutableId>()?;
+            match &*md.kind {
+                "mutations" => {
+                    self.possible_mutations.insert(id, md.data);
+                }
+                "loc" => {
+                    self.locations.insert(id, md.data);
+                }
+                k => debug_assert!(false, "unknown detail kind '{}'", k),
+            }
+        }
+        Ok(())
+    }
+    pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(),Error> {
+        let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
+        for md in reader.deserialize::<MutableDetail>() {
+            let id = md?
+                .id
+                .parse::<MutableId>()?;
+            self.coverage.insert(id);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MutableDetail {
+    pub id: String,
+    pub kind: String,
+    pub data: String,
 }
 
 #[derive(Debug, Clone, Copy)]
