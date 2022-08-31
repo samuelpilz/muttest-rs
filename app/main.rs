@@ -9,7 +9,7 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr},
+    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr, binop_eq::MutableBinopEq},
     transformer::Mutable,
     CollectedData, MutableData, MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
 };
@@ -270,6 +270,11 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
             m.push((i + 1).to_string());
             m
         }
+        MutableBinopEq::NAME => ["!=", "=="]
+            .into_iter()
+            .filter(|x| x != &mutable.code)
+            .map(ToOwned::to_owned)
+            .collect(),
         MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
             .into_iter()
             .filter(|x| x != &mutable.code)

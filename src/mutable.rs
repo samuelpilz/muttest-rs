@@ -4,3 +4,4 @@ pub mod binop_cmp;
 pub mod extreme;
 pub mod lit_int;
 pub mod lit_str;
+pub mod binop_eq;

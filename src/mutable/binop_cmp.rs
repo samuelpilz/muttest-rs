@@ -35,14 +35,14 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
                 let (left, right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
                 if false {left #op right} else {
-                    #core_crate::mutable::binop_cmp::mutable_cmp(&#m_id, #op_str, &left, &right, #loc)
+                    #core_crate::mutable::binop_cmp::run(&#m_id, #op_str, &left, &right, #loc)
                 }
             },).0
         }
     }
 }
 
-pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
+pub fn run<T: PartialOrd<T1>, T1>(
     m_id: &MutableId<'static>,
     op_str: &str,
     left: &T,
@@ -53,16 +53,14 @@ pub fn mutable_cmp<T: PartialOrd<T1>, T1>(
 
     let ord = left.partial_cmp(right);
     m_id.report_weak(|s| update_weak_str(ord, s));
-    if let Some(ord) = ord {
-        match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
-            "<" => ord.is_lt(),
-            "<=" => ord.is_le(),
-            ">=" => ord.is_ge(),
-            ">" => ord.is_gt(),
-            _ => todo!(),
-        }
-    } else {
-        false
+
+    match (ord, m_id.get_active_mutation().as_deref().unwrap_or(op_str)) {
+        (None, _) => false,
+        (Some(ord), "<") => ord.is_lt(),
+        (Some(ord), "<=") => ord.is_le(),
+        (Some(ord), ">=") => ord.is_ge(),
+        (Some(ord), ">") => ord.is_gt(),
+        _ => todo!(),
     }
 }
 
@@ -102,7 +100,8 @@ fn ord_from_str(s: &str) -> Option<Ordering> {
         "LT" => Some(Ordering::Less),
         "EQ" => Some(Ordering::Equal),
         "GT" => Some(Ordering::Greater),
-        _ => None,
+        "" => None,
+        _ => todo!(),
     }
 }
 

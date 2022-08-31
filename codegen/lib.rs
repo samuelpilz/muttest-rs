@@ -3,7 +3,7 @@ use std::ops::{ControlFlow, Deref, DerefMut};
 use muttest_core::{
     mutable::{
         binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp,
-        extreme::MutableExtreme, lit_int::MutableLitInt, lit_str::MutableLitStr,
+        extreme::MutableExtreme, lit_int::MutableLitInt, lit_str::MutableLitStr, binop_eq::MutableBinopEq,
     },
     transformer::*,
 };
@@ -112,6 +112,21 @@ impl<'a> MatchMutable<'a, Expr> for MutableLitStr<'a> {
         }
     }
 }
+impl<'a> MatchMutable<'a, Expr> for MutableBinopEq<'a> {
+    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Binary(ExprBinary {
+                left, op, right, ..
+            }) if is_eq_op(*op) => Some(Self {
+                left,
+                right,
+                op,
+                span: op.span(),
+            }),
+            _ => None,
+        }
+    }
+}
 impl<'a> MatchMutable<'a, Expr> for MutableBinopCmp<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
@@ -192,6 +207,7 @@ impl FoldImpl<'_> {
         self.try_mutate::<Expr, MutableLitInt>(&e)?;
         // TODO: also byteStr
         self.try_mutate::<Expr, MutableLitStr>(&e)?;
+        self.try_mutate::<Expr, MutableBinopEq>(&e)?;
         self.try_mutate::<Expr, MutableBinopCmp>(&e)?;
         self.try_mutate::<Expr, MutableBinopCalc>(&e)?;
         self.try_mutate::<Expr, MutableBinopBool>(&e)?;
@@ -244,13 +260,10 @@ fn is_bool_op(op: BinOp) -> bool {
     }
 }
 
-fn is_calc_op(op: BinOp) -> bool {
+fn is_eq_op(op: BinOp) -> bool {
     match op {
-        BinOp::Add(_) => true,
-        BinOp::Sub(_) => true,
-        BinOp::Mul(_) => true,
-        BinOp::Div(_) => true,
-        BinOp::Rem(_) => true,
+        BinOp::Eq(_) => true,
+        BinOp::Ne(_) => true,
         _ => false,
     }
 }
@@ -261,6 +274,17 @@ fn is_cmp_op(op: BinOp) -> bool {
         BinOp::Le(_) => true,
         BinOp::Ge(_) => true,
         BinOp::Gt(_) => true,
+        _ => false,
+    }
+}
+
+fn is_calc_op(op: BinOp) -> bool {
+    match op {
+        BinOp::Add(_) => true,
+        BinOp::Sub(_) => true,
+        BinOp::Mul(_) => true,
+        BinOp::Div(_) => true,
+        BinOp::Rem(_) => true,
         _ => false,
     }
 }
