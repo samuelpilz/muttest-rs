@@ -71,7 +71,7 @@ fn update_weak_str(ord: Option<Ordering>, s: &str) -> Option<String> {
         return Some(ord_to_str(ord).to_owned());
     }
     // parse existing weak-reports
-    let mut opts = s.split(":").map(|s| ord_from_str(s)).collect::<Vec<_>>();
+    let mut opts = parse_coverage(s);
 
     if opts.contains(&ord) {
         return None;
@@ -84,6 +84,9 @@ fn update_weak_str(ord: Option<Ordering>, s: &str) -> Option<String> {
             .collect::<Vec<_>>()
             .join(":"),
     )
+}
+pub fn parse_coverage(s: &str) -> Vec<Option<Ordering>> {
+    s.split(":").map(|s| ord_from_str(s)).collect::<Vec<_>>()
 }
 fn ord_to_str(ord: Option<Ordering>) -> &'static str {
     match ord {

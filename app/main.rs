@@ -9,7 +9,7 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt},
+    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr},
     transformer::Mutable,
     CollectedData, MutableData, MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
 };
@@ -84,9 +84,9 @@ fn main() -> Result<(), Error> {
     let m_ids = data.mutables.keys().cloned().collect::<Vec<_>>();
     for m_id in m_ids {
         let mutable @ MutableData { code, kind, .. } = &data.mutables[&m_id];
-        let mutations = mutations_for_mutable(&mutable);
         let coverage = data.coverage.get(&m_id);
-        println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
+        let mutations = mutations_for_mutable(&mutable);
+        println!("mutable {m_id}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
 
         let mutations = match mutations {
             Some(m) => m,
@@ -94,11 +94,37 @@ fn main() -> Result<(), Error> {
         };
 
         for m in mutations {
-            println!("mutation {m}");
+            println!("  mutation {:5}", format!("{m:?}"));
+
+            let coverage = match coverage {
+                Some(c) => c,
+                None => {
+                    println!("    not covered",);
+                    continue;
+                }
+            };
+
+            match &**kind {
+                MutableBinopCmp::NAME => {
+                    if (code == "<" && &m == "<=" && !coverage.contains("EQ"))
+                        || (code == "<=" && &m == "<" && !coverage.contains("EQ"))
+                        || (code == ">" && &m == ">=" && !coverage.contains("EQ"))
+                        || (code == ">=" && &m == ">" && !coverage.contains("EQ"))
+                        || (code == "<=" && &m == ">=" && coverage == "EQ")
+                        || (code == ">=" && &m == "<=" && coverage == "EQ")
+                        || (code == "<" && &m == ">" && coverage == "EQ")
+                        || (code == ">" && &m == "<" && coverage == "EQ")
+                    {
+                        println!("    survived weak mutation testing");
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+
             // run test suites without mutations for coverage
             for test_exe in &compilation_result.test_exes {
-                print!("call {}", &test_exe.name);
-                io::stdout().flush()?;
+                println!("    call {}", &test_exe.name);
                 let result = Command::new(&test_exe.path)
                     .env(
                         "MUTTEST_MUTATION",
@@ -114,7 +140,7 @@ fn main() -> Result<(), Error> {
                     Some(0) => "survived",
                     Some(_) => "killed",
                 };
-                println!(" ... {}", exit_code);
+                println!("      {}", exit_code);
                 // TODO: run tests in finer granularity
             }
         }
@@ -249,6 +275,13 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
             .filter(|x| x != &mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
+        MutableLitStr::NAME => {
+            if mutable.code.is_empty() {
+                vec![]
+            } else {
+                vec![String::new()]
+            }
+        }
         // fallback to mutable's description of possible mutations
         _ => mutable
             .possible_mutations
