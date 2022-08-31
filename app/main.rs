@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     fs::{self, File},
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -61,7 +61,9 @@ fn main() -> Result<(), Error> {
     println!("mutable definitions {data:?}");
 
     let details_path = muttest_dir.join("mutable-details.csv");
-    setup_mutable_details(&details_path)?;
+    setup_csv_file(&details_path, MutableDataCollector::DETAILS_FILE_HEADER)?;
+    let coverage_path = muttest_dir.join("coverage.csv");
+    setup_csv_file(&coverage_path, MutableDataCollector::COVERAGE_FILE_HEADER)?;
 
     // run test suites without mutations for coverage
     for test_exe in &compilation_result.test_exes {
@@ -69,19 +71,22 @@ fn main() -> Result<(), Error> {
         Command::new(&test_exe.path)
             .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
             .env(MutableDataCollector::ENV_VAR_DETAILS_FILE, &details_path)
+            .env(MutableDataCollector::ENV_VAR_COVERAGE_FILE, &coverage_path)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
     }
 
     data.read_details_csv(File::open(details_path)?)?;
+    data.read_coverage_csv(File::open(coverage_path)?)?;
 
     // evaluate mutations
     let m_ids = data.mutables.keys().cloned().collect::<Vec<_>>();
     for m_id in m_ids {
         let mutable @ MutableData { code, kind, .. } = &data.mutables[&m_id];
         let mutations = mutations_for_mutable(&mutable);
-        println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}");
+        let coverage = data.coverage.get(&m_id);
+        println!("{m_id:?}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
 
         let mutations = match mutations {
             Some(m) => m,
@@ -110,7 +115,6 @@ fn main() -> Result<(), Error> {
                     Some(_) => "killed",
                 };
                 println!(" ... {}", exit_code);
-                // TODO: if code is none, then error
                 // TODO: run tests in finer granularity
             }
         }
@@ -221,10 +225,11 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<CollectedData, Error> {
     Ok(data)
 }
 
-fn setup_mutable_details(details_filepath: &Utf8Path) -> Result<(), CoreError> {
-    let mut details_file = fs::File::create(details_filepath)?;
-    writeln!(&mut details_file, "id,kind,data")?;
-    details_file.flush()?;
+fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> {
+    let mut file = File::create(path)?;
+    write!(&mut file, "{head}")?;
+    file.flush()?;
+    file.sync_all()?;
     Ok(())
 }
 
