@@ -64,6 +64,7 @@ pub fn mutable_str(
                 _ => {}
             }
             // yes, this leaks. but only once per mutation.
+            // NB: this does not leak for the empty string
             let boxed_str: Box<str> = Box::from(s_mut);
             let leaked = Box::leak(boxed_str);
             println!("mutated: {leaked:?}");
