@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeSet, mem, sync::Mutex};
+use std::{borrow::Cow, collections::{BTreeSet, BTreeMap}, mem, sync::Mutex};
 
 use lazy_static::lazy_static;
 
@@ -76,7 +76,7 @@ pub fn mutable_id(id: usize) -> MutableId<'static> {
 impl MutableDataCollector {
     fn new_for_test() -> Self {
         MutableDataCollector {
-            coverage: Mutex::new(BTreeSet::new()),
+            coverage: Mutex::new(BTreeMap::new()),
             locations: Mutex::new(BTreeSet::new()),
             possible_mutations: Mutex::new(BTreeSet::new()),
             details_file: Mutex::new(CollectorFile::InMemory(

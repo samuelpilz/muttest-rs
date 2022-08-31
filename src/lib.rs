@@ -1,11 +1,10 @@
-#![cfg_attr(test, feature(const_btree_new))]
 //! Rust Mutation Testing core library.
 //!
 //! There are some internals here that are not meant for mutation testing users.
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
+    collections::{btree_map, BTreeMap, BTreeSet},
     env::VarError,
     fmt,
     fmt::Display,
@@ -137,13 +136,19 @@ impl MutableId<'static> {
     ///
     /// calling this function also triggers logging its coverage
     fn get_active_mutation(&self) -> Option<String> {
-        self.get_collector().write_coverage(self);
+        self.get_collector().write_coverage(self, |_| None);
 
         ACTIVE_MUTATION
             .read()
             .expect("read-lock active mutations")
             .get(self)
             .cloned()
+    }
+
+    /// report b
+    // TODO: name and behavior needs bikeshedding
+    fn report_weak(&self, update: impl FnOnce(&str) -> Option<String>) {
+        self.get_collector().write_coverage(self, update);
     }
 
     fn get_collector(&self) -> &'static MutableDataCollector {
@@ -156,9 +161,9 @@ impl MutableId<'static> {
 }
 
 pub struct MutableDataCollector {
-    coverage: Mutex<BTreeSet<MutableId<'static>>>,
     locations: Mutex<BTreeSet<MutableId<'static>>>,
     possible_mutations: Mutex<BTreeSet<MutableId<'static>>>,
+    coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
     details_file: Mutex<CollectorFile>,
     coverage_file: Mutex<CollectorFile>,
 }
@@ -168,7 +173,7 @@ impl MutableDataCollector {
     pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
 
     pub const DETAILS_FILE_HEADER: &str = "id,kind,data\n";
-    pub const COVERAGE_FILE_HEADER: &str = "id\n";
+    pub const COVERAGE_FILE_HEADER: &str = "id,data\n";
 
     fn new_from_envvar_files() -> Result<Self, Error> {
         let details_file = CollectorFile::open_collector_file(Self::ENV_VAR_DETAILS_FILE)?;
@@ -215,15 +220,42 @@ impl MutableDataCollector {
         f.flush().expect("unable to flush mutable detail");
     }
 
-    fn write_coverage(&self, m_id: &MutableId<'static>) {
-        let is_new = self.coverage.lock().unwrap().insert(m_id.clone());
-        if !is_new {
-            return;
-        }
+    // TODO: document what update_data means
+    fn write_coverage(
+        &self,
+        m_id: &MutableId<'static>,
+        update_data: impl FnOnce(&str) -> Option<String>,
+    ) {
+        let mut coverage_map = self.coverage.lock().unwrap();
+        let mut entry = coverage_map.entry(m_id.clone());
 
-        let mut f = self.coverage_file.lock().unwrap();
-        writeln!(f, "{m_id}").expect("unable to write mutable detail");
-        f.flush().expect("unable to flush mutable detail");
+        // insert or update the coverage data
+        let update = match &mut entry {
+            btree_map::Entry::Occupied(e) => {
+                let data = e.get_mut();
+                match update_data(data) {
+                    Some(d) => {
+                        *data = d;
+                        Some(&**data)
+                    }
+                    None => None,
+                }
+            }
+            // create new entry
+            _ => {
+                let data = entry.or_default();
+                if let Some(d) = update_data("") {
+                    *data = d;
+                }
+                Some(&**data)
+            }
+        };
+
+        if let Some(data) = update {
+            let mut f = self.coverage_file.lock().unwrap();
+            writeln!(f, "{m_id},{data}").expect("unable to write mutable detail");
+            f.flush().expect("unable to flush mutable detail");
+        }
     }
 }
 enum CollectorFile {
@@ -284,7 +316,7 @@ pub struct MutableData {
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
     pub mutables: BTreeMap<MutableId<'static>, MutableData>,
-    pub coverage: BTreeSet<MutableId<'static>>,
+    pub coverage: BTreeMap<MutableId<'static>, String>,
 }
 
 impl CollectedData {
@@ -315,8 +347,9 @@ impl CollectedData {
     pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(), Error> {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
         for md in reader.deserialize::<MutableCoverage>() {
-            let id = md?.id.parse::<MutableId>()?;
-            self.coverage.insert(id);
+            let md = md?;
+            let id = md.id.parse::<MutableId>()?;
+            self.coverage.insert(id, md.data);
         }
         Ok(())
     }
@@ -332,6 +365,7 @@ pub struct MutableDetail {
 #[derive(Debug, Deserialize)]
 pub struct MutableCoverage {
     id: String,
+    data: String,
 }
 
 #[derive(Debug, Clone, Copy)]
