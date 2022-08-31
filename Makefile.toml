@@ -1,0 +1,6 @@
+[tasks.examples]
+description = "Run Mutation Testing on exampes"
+command = "cargo"
+args = ["run", "-p", "cargo-muttest", "--", "muttest"]
+workspace = false
+cwd = "examples"
