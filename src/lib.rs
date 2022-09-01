@@ -41,8 +41,8 @@ macro_rules! env_var_muttest_dir {
     };
 }
 
-pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
-pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
+pub const ENV_VAR_MUTTEST_DIR: &'static str = env_var_muttest_dir!();
+pub const ENV_VAR_MUTTEST_MUTATION: &'static str = "MUTTEST_MUTATION";
 
 lazy_static! {
     pub static ref MUTTEST_DIR: Option<PathBuf> = {
@@ -171,11 +171,10 @@ pub struct MutableDataCollector {
 }
 
 impl MutableDataCollector {
-    pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
-    pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
-
-    pub const DETAILS_FILE_HEADER: &str = "id,kind,data\n";
-    pub const COVERAGE_FILE_HEADER: &str = "id,data\n";
+    pub const ENV_VAR_DETAILS_FILE: &'static str = "MUTTEST_DETAILS_FILE";
+    pub const ENV_VAR_COVERAGE_FILE: &'static str = "MUTTEST_COVERAGE_FILE";
+    pub const DETAILS_FILE_HEADER: &'static str = "id,kind,data\n";
+    pub const COVERAGE_FILE_HEADER: &'static str = "id,data\n";
 
     fn new_from_envvar_files() -> Result<Self, Error> {
         let details_file = CollectorFile::open_collector_file(Self::ENV_VAR_DETAILS_FILE)?;
