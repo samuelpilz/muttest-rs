@@ -21,11 +21,11 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
 
         let TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         } = transformer.new_mutable::<Self>(&self.base10_digits, span);
         quote_spanned! {span=>
-            #core_crate::mutable::lit_int::run(&#m_id, #lit, #loc)
+            #muttest_api::mutable::lit_int::run(&#m_id, #lit, #loc)
         }
     }
 }

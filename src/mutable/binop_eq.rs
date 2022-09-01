@@ -24,7 +24,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
 
         let TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         } = transformer.new_mutable::<Self>(&op_str, span);
 
@@ -33,7 +33,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
                 let (left, right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
                 if false {left #op right} else {
-                    #core_crate::mutable::binop_eq::run(&#m_id, #op_str, &left, &right, #loc)
+                    #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &left, &right, #loc)
                 }
             },).0
         }

@@ -23,7 +23,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         let span = self.span;
         let TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         } = transformer.new_mutable::<Self>("", span);
         // TODO: add reasonable code for that
@@ -34,22 +34,22 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         } = self;
         quote_spanned! {span=>
             #vis #sig {
-                let ret_type = ::std::marker::PhantomData;
-                match #core_crate::mutable::extreme::run(&#m_id, #loc) {
-                    ::std::ops::ControlFlow::Continue(_) => {
+                let ret_type = #muttest_api::PhantomData;
+                match #muttest_api::mutable::extreme::run(&#m_id, #loc) {
+                    #muttest_api::ControlFlow::Continue(_) => {
                         // help the type-checker
                         match 0 {
                             // type-check the original code first
                             1 => #block,
-                            2 => #core_crate::mutable::extreme::phantom_unwrap(ret_type),
-                            3 => return #core_crate::mutable::extreme::phantom_unwrap(ret_type),
+                            2 => #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
+                            3 => return #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
                             // report the type first, then execute the block
                             _ => {
                                 (#m_id).report_possible_mutations(
                                     &[("default",
                                         {
                                             #[allow(unused_imports)]
-                                            use #core_crate::mutable::extreme::{NotDefault, YesDefault};
+                                            use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
                                             (&ret_type).is_default()
                                         }
                                     )]
@@ -58,9 +58,9 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
                             }
                         }
                     }
-                    ::std::ops::ControlFlow::Break(_) => {
+                    #muttest_api::ControlFlow::Break(_) => {
                         #[allow(unused_imports)]
-                        use #core_crate::mutable::extreme::{NotDefault, YesDefault};
+                        use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
                         (&ret_type).get_default()
                     },
                 }

@@ -30,6 +30,8 @@ mod tests;
 pub mod api {
     pub use crate::mutable;
     pub use crate::{phantom_for_type, MutableId, MutableLocation};
+
+    pub use std::{marker::PhantomData, borrow::Cow, ops::ControlFlow, sync::RwLock, option::Option};
 }
 
 #[macro_export]

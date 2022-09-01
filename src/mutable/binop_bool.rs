@@ -24,12 +24,12 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
 
         let TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         } = transformer.new_mutable::<Self>(&op_str, span);
 
         quote_spanned! {span=>
-            if let Some(b) = #core_crate::mutable::binop_bool::run(&#m_id, #op_str, #left, #loc) {
+            if let Some(b) = #muttest_api::mutable::binop_bool::run(&#m_id, #op_str, #left, #loc) {
                 b
             } else {
                 #right

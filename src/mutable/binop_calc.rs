@@ -24,7 +24,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
 
         let TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         } = transformer.new_mutable::<Self>(&op_str, span);
 
@@ -42,19 +42,19 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
             ({
                 // arguments are evaluated before executing the calculation
                 let (left, right) = (#left, #right);
-                let left_type = #core_crate::phantom_for_type(&left);
-                let right_type = #core_crate::phantom_for_type(&right);
+                let left_type = #muttest_api::phantom_for_type(&left);
+                let right_type = #muttest_api::phantom_for_type(&right);
                 // this carries the output type of the computation
                 // the assignment in the default-case defines the type of this phantom
-                let mut output_type = ::std::marker::PhantomData;
-                let mut_op = #core_crate::mutable::binop_calc::mutable_binop_calc(&#m_id, #loc);
+                let mut output_type = #muttest_api::PhantomData;
+                let mut_op = #muttest_api::mutable::binop_calc::mutable_binop_calc(&#m_id, #loc);
                 #[allow(unused_assignments)]
                 match mut_op {
                     "" => {
                         let output = left #op right;
                         // after the computation is performed its output type is stored into the variable
                         // giving the compiler the necessary type hint required for the mutated cases
-                        output_type = #core_crate::phantom_for_type(&output);
+                        output_type = #muttest_api::phantom_for_type(&output);
                         // report the possible mutations
                         // TODO: this is only called if original code returns (maybe add reporter for mutable-termination?)
                         (#m_id).report_possible_mutations(
@@ -63,7 +63,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                                     #op_symbols,
                                     {
                                         #[allow(unused_imports)]
-                                        use #core_crate::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                                        use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
                                         (&(left_type, right_type, output_type))
                                             .get_impl()
                                             .is_impl()
@@ -77,7 +77,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                     #(#op_symbols =>
                         {
                             #[allow(unused_imports)]
-                            use #core_crate::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                            use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
                             (&(left_type, right_type, output_type))
                                 .get_impl()
                                 .run(left, right)
@@ -108,7 +108,7 @@ pub fn mutable_binop_calc(m_id: &MutableId<'static>, loc: MutableLocation) -> &'
 macro_rules! binop_calc_traits {
     ($m:ident, $t:path, $f:ident) => {
         pub mod $m {
-            use core::marker::PhantomData;
+            use std::marker::PhantomData;
 
             pub struct Yes;
             pub struct No;

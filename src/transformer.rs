@@ -55,7 +55,7 @@ pub trait Mutable<'a> {
 
 pub struct MuttestTransformer {
     pub conf: TransformerConf,
-    pub core_crate: Option<&'static str>,
+    pub muttest_api: Option<&'static str>,
     pub isolated: Option<TransformerData>,
 }
 pub struct TransformerConf {
@@ -75,7 +75,7 @@ impl MuttestTransformer {
             conf: TransformerConf {
                 mutables: MutablesConf::All,
             },
-            core_crate: Some("muttest"),
+            muttest_api: Some("muttest"),
             isolated: None,
         }
     }
@@ -84,7 +84,7 @@ impl MuttestTransformer {
             conf: TransformerConf {
                 mutables: MutablesConf::All,
             },
-            core_crate: None,
+            muttest_api: None,
             isolated: Some(TransformerData {
                 local_id: 0,
                 mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n"),
@@ -96,7 +96,7 @@ impl MuttestTransformer {
             conf: TransformerConf {
                 mutables: MutablesConf::All,
             },
-            core_crate: None,
+            muttest_api: None,
             isolated: None,
         }
     }
@@ -111,19 +111,19 @@ impl MuttestTransformer {
     pub fn new_mutable<'a, M: Mutable<'a>>(&mut self, code: &str, span: Span) -> TransformSnippets {
         let m_id = self.register_new_mutable(M::NAME, code, &display_span(span));
 
-        let core_crate = match self.core_crate {
+        let muttest_api = match self.muttest_api {
             Some(cc) => format_ident!("{}", span = span, cc).into_token_stream(),
-            None => quote_spanned! {span => crate},
+            None => quote_spanned! {span => crate::api},
         };
 
         let id = m_id.id;
         let crate_name: &str = m_id.crate_name.borrow();
 
         let m_id = quote_spanned! {span =>
-            #core_crate::MutableId {id: #id, crate_name: ::std::borrow::Cow::Borrowed(#crate_name)}
+            #muttest_api::MutableId {id: #id, crate_name: #muttest_api::Cow::Borrowed(#crate_name)}
         };
         let loc = quote_spanned! {span=>
-            #core_crate::MutableLocation {
+            #muttest_api::MutableLocation {
                 file: file!(),
                 line: line!(),
                 column: column!(),
@@ -132,7 +132,7 @@ impl MuttestTransformer {
 
         TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         }
     }
@@ -177,7 +177,7 @@ impl MuttestTransformer {
 
 pub struct TransformSnippets {
     pub m_id: TokenStream,
-    pub core_crate: TokenStream,
+    pub muttest_api: TokenStream,
     pub loc: TokenStream,
 }
 

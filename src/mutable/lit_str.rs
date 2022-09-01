@@ -26,13 +26,13 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
 
         let TransformSnippets {
             m_id,
-            core_crate,
+            muttest_api,
             loc,
         } = transformer.new_mutable::<Self>(&self.value, span);
         quote_spanned! {span=>
-            #core_crate::mutable::lit_str::mutable_str(&#m_id, #lit, #loc, {
-                static MUTABLE: ::std::sync::RwLock<::std::option::Option<&str>> =
-                    ::std::sync::RwLock::new(::std::option::Option::None);
+            #muttest_api::mutable::lit_str::mutable_str(&#m_id, #lit, #loc, {
+                static MUTABLE: #muttest_api::RwLock<#muttest_api::Option<&str>> =
+                #muttest_api::RwLock::new(#muttest_api::Option::None);
                 &MUTABLE
             })
         }
