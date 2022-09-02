@@ -52,7 +52,7 @@ pub fn run<T: PartialOrd<T1>, T1>(
     m_id.report_at(loc);
 
     let ord = left.partial_cmp(right);
-    m_id.report_weak(|s| update_weak_str(ord, s));
+    m_id.report_weak(ord_to_str(ord));
 
     match (ord, m_id.get_active_mutation().as_deref().unwrap_or(op_str)) {
         (None, _) => false,
@@ -64,28 +64,6 @@ pub fn run<T: PartialOrd<T1>, T1>(
     }
 }
 
-fn update_weak_str(ord: Option<Ordering>, s: &str) -> Option<String> {
-    if s.is_empty() {
-        return Some(ord_to_str(ord).to_owned());
-    }
-    // parse existing weak-reports
-    let mut opts = parse_coverage(s);
-
-    if opts.contains(&ord) {
-        return None;
-    }
-    opts.push(ord);
-    // TODO: use `iter::intersperse` when stable
-    Some(
-        opts.into_iter()
-            .map(ord_to_str)
-            .collect::<Vec<_>>()
-            .join(":"),
-    )
-}
-pub fn parse_coverage(s: &str) -> Vec<Option<Ordering>> {
-    s.split(":").map(|s| ord_from_str(s)).collect::<Vec<_>>()
-}
 fn ord_to_str(ord: Option<Ordering>) -> &'static str {
     match ord {
         None => "",
@@ -94,16 +72,8 @@ fn ord_to_str(ord: Option<Ordering>) -> &'static str {
         Some(Ordering::Greater) => "GT",
     }
 }
-// TODO: report parse errors?
-fn ord_from_str(s: &str) -> Option<Ordering> {
-    match s {
-        "LT" => Some(Ordering::Less),
-        "EQ" => Some(Ordering::Equal),
-        "GT" => Some(Ordering::Greater),
-        "" => None,
-        _ => todo!(),
-    }
-}
+
+// TODO: move weak-check to here
 
 #[cfg(test)]
 mod tests {
@@ -125,7 +95,10 @@ mod tests {
     fn lt_ints_unchanged_weak_lt() {
         let res = crate::tests::without_mutation(lt_ints);
         assert_eq!(true, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)], "LT")
+        assert_eq!(
+            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
+            &["LT"]
+        )
     }
 
     #[test]
@@ -151,6 +124,9 @@ mod tests {
     fn count_up_unchanged_weak_lt_and_eq() {
         let res = crate::tests::without_mutation(count_up);
         assert_eq!(2, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)], "LT:EQ")
+        assert_eq!(
+            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
+            &["EQ", "LT"]
+        )
     }
 }

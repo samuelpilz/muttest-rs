@@ -51,7 +51,7 @@ pub fn run<T: PartialEq<T1>, T1>(
 
     let eq = left.eq(right);
     // this reports behavior but is irrelevant for weak mutation testing
-    m_id.report_weak(|s| update_weak_str(eq, s));
+    m_id.report_weak(eq_to_str(eq));
 
     match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
         "==" => eq,
@@ -60,39 +60,11 @@ pub fn run<T: PartialEq<T1>, T1>(
     }
 }
 
-fn update_weak_str(eq: bool, s: &str) -> Option<String> {
-    if s.is_empty() {
-        return Some(eq_to_str(eq).to_owned());
-    }
-    let mut opts = parse_coverage(s);
-
-    if opts.contains(&eq) {
-        return None;
-    }
-    opts.push(eq);
-    // TODO: use `iter::intersperse` when stable
-    Some(
-        opts.into_iter()
-            .map(eq_to_str)
-            .collect::<Vec<_>>()
-            .join(":"),
-    )
-}
-pub fn parse_coverage(s: &str) -> Vec<bool> {
-    s.split(":").map(|s| eq_from_str(s)).collect::<Vec<_>>()
-}
 fn eq_to_str(eq: bool) -> &'static str {
     if eq {
         "EQ"
     } else {
         "NE"
-    }
-}
-fn eq_from_str(s: &str) -> bool {
-    match s {
-        "EQ" => true,
-        "NE" => false,
-        _ => todo!(),
     }
 }
 
@@ -109,7 +81,10 @@ mod tests {
     fn lt_ints_unchanged_weak_lt() {
         let res = crate::tests::without_mutation(eq_ints);
         assert_eq!(false, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)], "NE")
+        assert_eq!(
+            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
+            &["NE"]
+        )
     }
 
     #[test]

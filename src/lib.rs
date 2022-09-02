@@ -31,7 +31,9 @@ pub mod api {
     pub use crate::mutable;
     pub use crate::{phantom_for_type, MutableId, MutableLocation};
 
-    pub use std::{marker::PhantomData, borrow::Cow, ops::ControlFlow, sync::RwLock, option::Option};
+    pub use std::{
+        borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
+    };
 }
 
 #[macro_export]
@@ -138,7 +140,7 @@ impl MutableId<'static> {
     ///
     /// calling this function also triggers logging its coverage
     fn get_active_mutation(&self) -> Option<String> {
-        self.get_collector().write_coverage(self, |_| None);
+        self.get_collector().write_coverage(self, None);
 
         ACTIVE_MUTATION
             .read()
@@ -147,10 +149,9 @@ impl MutableId<'static> {
             .cloned()
     }
 
-    /// report b
-    // TODO: name and behavior needs bikeshedding
-    fn report_weak(&self, update: impl FnOnce(&str) -> Option<String>) {
-        self.get_collector().write_coverage(self, update);
+    // TODO: this is only a first draft of behavior
+    fn report_weak(&self, weak: &str) {
+        self.get_collector().write_coverage(self, Some(weak));
     }
 
     fn get_collector(&self) -> &'static MutableDataCollector {
@@ -222,37 +223,31 @@ impl MutableDataCollector {
     }
 
     // TODO: document what update_data means
-    fn write_coverage(
-        &self,
-        m_id: &MutableId<'static>,
-        update_data: impl FnOnce(&str) -> Option<String>,
-    ) {
+    fn write_coverage(&self, m_id: &MutableId<'static>, weak: Option<&str>) {
         let mut coverage_map = self.coverage.lock().unwrap();
-        let mut entry = coverage_map.entry(m_id.clone());
+        let mut update = false;
 
-        // insert or update the coverage data
-        let update = match &mut entry {
-            btree_map::Entry::Occupied(e) => {
-                let data = e.get_mut();
-                match update_data(data) {
-                    Some(d) => {
-                        *data = d;
-                        Some(&**data)
-                    }
-                    None => None,
-                }
-            }
-            // create new entry
-            _ => {
-                let data = entry.or_default();
-                if let Some(d) = update_data("") {
-                    *data = d;
-                }
-                Some(&**data)
+        let data = match coverage_map.entry(m_id.clone()) {
+            btree_map::Entry::Occupied(e) => e.into_mut(),
+            btree_map::Entry::Vacant(e) => {
+                update = true;
+                e.insert(String::new())
             }
         };
 
-        if let Some(data) = update {
+        if let Some(weak) = weak {
+            debug_assert!(!weak.contains(":"));
+            if data.is_empty() {
+                *data = weak.to_owned();
+                update = true;
+            } else if !data.split(":").find(|&x| x == weak).is_some() {
+                data.push_str(":");
+                data.push_str(weak);
+                update = true;
+            }
+        }
+
+        if update {
             let mut f = self.coverage_file.lock().unwrap();
             writeln!(f, "{m_id},{data}").expect("unable to write mutable detail");
             f.flush().expect("unable to flush mutable detail");
@@ -317,7 +312,7 @@ pub struct MutableData {
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
     pub mutables: BTreeMap<MutableId<'static>, MutableData>,
-    pub coverage: BTreeMap<MutableId<'static>, String>,
+    pub coverage: BTreeMap<MutableId<'static>, BTreeSet<String>>,
 }
 
 impl CollectedData {
@@ -332,6 +327,7 @@ impl CollectedData {
                     self.mutables.entry(id).or_default().possible_mutations = Some(
                         md.data
                             .split(":")
+                            // TODO: empty strings should not be valid mutations
                             .filter(|x| !x.is_empty())
                             .map(ToOwned::to_owned)
                             .collect(),
@@ -350,7 +346,15 @@ impl CollectedData {
         for md in reader.deserialize::<MutableCoverage>() {
             let md = md?;
             let id = md.id.parse::<MutableId>()?;
-            self.coverage.insert(id, md.data);
+            let data = if md.data.is_empty() {
+                BTreeSet::new()
+            } else {
+                md.data
+                    .split(":")
+                    .map(ToOwned::to_owned)
+                    .collect()
+            };
+            self.coverage.insert(id, data);
         }
         Ok(())
     }

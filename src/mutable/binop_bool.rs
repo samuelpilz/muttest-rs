@@ -51,7 +51,7 @@ pub fn run_left(
 
     // TODO: also report behavior of `true && panic`
     if (left && op_str == "||") && (!left && op_str == "&&") {
-        m_id.report_weak(|s| update_weak_str(left, None, s));
+        m_id.report_weak(bool_to_str(left, None));
     }
 
     match (
@@ -65,30 +65,8 @@ pub fn run_left(
 }
 
 pub fn run_right(m_id: &MutableId<'static>, left: bool, right: bool) -> bool {
-    m_id.report_weak(|s| update_weak_str(left, Some(right), s));
+    m_id.report_weak(bool_to_str(left, Some(right)));
     right
-}
-
-fn update_weak_str(left: bool, right: Option<bool>, s: &str) -> Option<String> {
-    if s.is_empty() {
-        return Some(bool_to_str(left, right).to_owned());
-    }
-    let mut opts = parse_coverage(s);
-
-    if opts.contains(&(left, right)) {
-        return None;
-    }
-    opts.push((left, right));
-    // TODO: use `iter::intersperse` when stable
-    Some(
-        opts.into_iter()
-            .map(|(l, r)| bool_to_str(l, r))
-            .collect::<Vec<_>>()
-            .join(":"),
-    )
-}
-pub fn parse_coverage(s: &str) -> Vec<(bool, Option<bool>)> {
-    s.split(":").map(|s| bool_from_str(s)).collect::<Vec<_>>()
 }
 fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {
     match (left, right) {
@@ -100,19 +78,10 @@ fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {
         (false, Some(false)) => "FF",
     }
 }
-// TODO: report parse errors?
-fn bool_from_str(s: &str) -> (bool, Option<bool>) {
-    match s {
-        "T" => (true, None),
-        "F" => (false, None),
-        _ => todo!(),
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use crate::tests::mutable_id;
-
 
     #[muttest_codegen::mutate_isolated("binop_bool")]
     fn true_and_false() -> bool {
@@ -123,7 +92,7 @@ mod tests {
     fn true_and_false_unchanged() {
         let res = crate::tests::without_mutation(true_and_false);
         assert_eq!(false, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)], "TF");
+        assert_eq!(&res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(), &["TF"]);
     }
 
     // TODO: tests

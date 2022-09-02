@@ -9,7 +9,10 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    mutable::{binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr, binop_eq::MutableBinopEq},
+    mutable::{
+        binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, lit_int::MutableLitInt,
+        lit_str::MutableLitStr,
+    },
     transformer::Mutable,
     CollectedData, MutableData, MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
 };
@@ -110,10 +113,18 @@ fn main() -> Result<(), Error> {
                         || (code == "<=" && &m == "<" && !coverage.contains("EQ"))
                         || (code == ">" && &m == ">=" && !coverage.contains("EQ"))
                         || (code == ">=" && &m == ">" && !coverage.contains("EQ"))
-                        || (code == "<=" && &m == ">=" && coverage == "EQ")
-                        || (code == ">=" && &m == "<=" && coverage == "EQ")
-                        || (code == "<" && &m == ">" && coverage == "EQ")
-                        || (code == ">" && &m == "<" && coverage == "EQ")
+                        || (code == "<="
+                            && &m == ">="
+                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
+                        || (code == ">="
+                            && &m == "<="
+                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
+                        || (code == "<"
+                            && &m == ">"
+                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
+                        || (code == ">"
+                            && &m == "<"
+                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
                     {
                         println!("    survived weak mutation testing");
                         continue;
