@@ -17,14 +17,14 @@ pub struct IsolatedFnCall<T> {
 }
 
 pub fn without_mutation<T>(action: impl FnOnce() -> T) -> IsolatedFnCall<T> {
-    run_mutation(None, action)
+    run(None, action)
 }
 pub fn with_mutation<T>(
     id: usize,
     mutation: &str,
     action: impl FnOnce() -> T,
 ) -> IsolatedFnCall<T> {
-    run_mutation(
+    run(
         Some((
             MutableId {
                 id,
@@ -37,7 +37,7 @@ pub fn with_mutation<T>(
 }
 
 // TODO: gather mutable-details and coverage data
-fn run_mutation<T>(
+fn run<T>(
     mutation: Option<(MutableId<'static>, String)>,
     action: impl FnOnce() -> T,
 ) -> IsolatedFnCall<T> {

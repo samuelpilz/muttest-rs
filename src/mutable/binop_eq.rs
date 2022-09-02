@@ -88,7 +88,6 @@ fn eq_to_str(eq: bool) -> &'static str {
         "NE"
     }
 }
-// TODO: report parse errors?
 fn eq_from_str(s: &str) -> bool {
     match s {
         "EQ" => true,
