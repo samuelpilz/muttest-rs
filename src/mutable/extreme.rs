@@ -36,7 +36,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
             #vis #sig {
                 let ret_type = #muttest_api::PhantomData;
 
-                // dead branches help the type-checker
+                // dead branches help type inference
                 match 0 {
                     // type-check the original code first
                     1 => #block,

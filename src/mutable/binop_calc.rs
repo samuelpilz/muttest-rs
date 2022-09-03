@@ -40,25 +40,30 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
 
         quote_spanned! {span=>
             ({
-                // arguments are evaluated before executing the calculation
-                let (left, right) = (#left, #right);
-                let left_type = #muttest_api::phantom_for_type(&left);
-                let right_type = #muttest_api::phantom_for_type(&right);
-                // this carries the output type of the computation
+                // these types carry the types involved in the calculation
                 // the assignment in the default-case defines the type of this phantom
+                let mut left_type = #muttest_api::PhantomData;
+                let mut right_type = #muttest_api::PhantomData;
                 let mut output_type = #muttest_api::PhantomData;
-                let mut_op = #muttest_api::mutable::binop_calc::mutable_binop_calc(&#m_id, #loc);
+
+                // TODO: this has exponential blowup of code-size. Dead branches should use original code instead
+                // dead branches to help type inference
                 #[allow(unused_assignments)]
-                match mut_op {
-                    "" => {
+                match 0 {
+                    1 => #left #op #right,
+                    // type-check almost-original code
+                    2 => {
+                        let (left, right) = (#left, #right);
+                        left_type = #muttest_api::phantom_for_type(&left);
+                        right_type = #muttest_api::phantom_for_type(&right);
                         let output = left #op right;
-                        // after the computation is performed its output type is stored into the variable
-                        // giving the compiler the necessary type hint required for the mutated cases
                         output_type = #muttest_api::phantom_for_type(&output);
-                        // report the possible mutations
-                        // TODO: this is only called if original code returns (maybe add reporter for mutable-termination?)
-                        (#m_id).report_possible_mutations(
-                            &[
+                        output
+                    }
+                    _ => {
+                        (#m_id).report_details(
+                            #loc,
+                            vec![
                                 #((
                                     #op_symbols,
                                     {
@@ -71,42 +76,33 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                                 ),)*
                             ]
                         );
-                        output
-                    },
-                    // possible mutations
-                    #(#op_symbols =>
-                        {
-                            #[allow(unused_imports)]
-                            use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
-                            (&(left_type, right_type, output_type))
-                                .get_impl()
-                                .run(left, right)
+                        let (left, right) = (#left, #right);
+                        match &*#muttest_api::mutable::binop_calc::run(&#m_id) {
+                            "" => left #op right,
+                            #(#op_symbols =>
+                                {
+                                    #[allow(unused_imports)]
+                                    use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
+                                    (&(left_type, right_type, output_type))
+                                        .get_impl()
+                                        .run(left, right)
+                                }
+                            )*
+                            _ => todo!()
                         }
-                    )*
-                    // TODO: report error and panic
-                    _ => unreachable!(),
+                    }
                 }
             },).0
         }
     }
 }
 
-pub fn mutable_binop_calc(m_id: &MutableId<'static>, loc: MutableLocation) -> &'static str {
-    m_id.report_at(loc);
-
-    match m_id.get_active_mutation().as_deref() {
-        None => "",
-        Some("-") => "-",
-        Some("+") => "+",
-        Some("*") => "*",
-        Some("/") => "/",
-        Some("%") => "%",
-        _ => todo!(),
-    }
+pub fn run(m_id: &MutableId<'static>) -> String {
+    m_id.get_active_mutation().unwrap_or_default()
 }
 
 macro_rules! binop_calc_traits {
-    ($m:ident, $t:path, $f:ident) => {
+    ($m:ident, $t:ident, $f:ident) => {
         pub mod $m {
             use std::marker::PhantomData;
 
@@ -119,11 +115,11 @@ macro_rules! binop_calc_traits {
             pub trait IsNo {
                 fn get_impl(&self) -> No;
             }
-            impl<L: $t, R> IsYes
+            impl<L: ::std::ops::$t<R>, R> IsYes
                 for (
                     PhantomData<L>,
                     PhantomData<R>,
-                    PhantomData<<L as $t>::Output>,
+                    PhantomData<<L as ::std::ops::$t<R>>::Output>,
                 )
             {
                 fn get_impl(&self) -> Yes {
@@ -139,8 +135,12 @@ macro_rules! binop_calc_traits {
                 pub fn is_impl(&self) -> bool {
                     true
                 }
-                pub fn run<L: $t, R>(self, left: L, right: R) -> <L as $t>::Output {
-                    <L as $t>::$f(left, right)
+                pub fn run<L: ::std::ops::$t<R>, R>(
+                    self,
+                    left: L,
+                    right: R,
+                ) -> <L as ::std::ops::$t<R>>::Output {
+                    <L as ::std::ops::$t<R>>::$f(left, right)
                 }
             }
             impl No {
@@ -155,11 +155,11 @@ macro_rules! binop_calc_traits {
     };
 }
 
-binop_calc_traits!(add, std::ops::Add<R>, add);
-binop_calc_traits!(sub, std::ops::Sub<R>, sub);
-binop_calc_traits!(mul, std::ops::Mul<R>, mul);
-binop_calc_traits!(div, std::ops::Div<R>, div);
-binop_calc_traits!(rem, std::ops::Rem<R>, rem);
+binop_calc_traits!(add, Add, add);
+binop_calc_traits!(sub, Sub, sub);
+binop_calc_traits!(mul, Mul, mul);
+binop_calc_traits!(div, Div, div);
+binop_calc_traits!(rem, Rem, rem);
 
 #[cfg(test)]
 mod tests {
@@ -295,3 +295,6 @@ mod tests {
         assert!(now > res.res);
     }
 }
+
+// TODO: test x*x + y*y
+// TODO: test that details are reported, even if left&right fail
