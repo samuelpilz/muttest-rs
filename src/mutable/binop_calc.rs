@@ -163,7 +163,10 @@ binop_calc_traits!(rem, std::ops::Rem<R>, rem);
 
 #[cfg(test)]
 mod tests {
-    use std::ops::{Add, Sub};
+    use std::{
+        ops::{Add, Sub},
+        time::{Duration, Instant},
+    };
 
     use crate::tests::*;
 
@@ -199,7 +202,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn add_of_strings() {
         #[muttest_codegen::mutate_isolated("binop_calc")]
         fn f() -> String {
@@ -213,12 +215,11 @@ mod tests {
                 .mutables
                 .get(&mutable_id(1))
                 .and_then(|x| x.possible_mutations.as_ref()),
-            Some(&vec![])
+            Some(&vec!["+".to_owned()])
         );
     }
 
     #[test]
-    #[ignore]
     fn add_with_different_sub() {
         #[muttest_codegen::mutate_isolated("binop_calc")]
         fn f1() -> O1 {
@@ -258,7 +259,7 @@ mod tests {
                 .mutables
                 .get(&mutable_id(1))
                 .and_then(|x| x.possible_mutations.as_ref()),
-            Some(&vec![])
+            Some(&vec!["+".to_owned()])
         );
         let res = call_isolated! {f2()};
         assert_eq!(res.res, O2);
@@ -267,7 +268,30 @@ mod tests {
                 .mutables
                 .get(&mutable_id(1))
                 .and_then(|x| x.possible_mutations.as_ref()),
-            Some(&vec![])
+            Some(&vec!["-".to_owned()])
         );
+    }
+
+    #[test]
+    fn calc_with_time() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn f(i: Instant) -> Instant {
+            i + Duration::new(1, 0)
+        }
+
+        let now = Instant::now();
+        let res = call_isolated! {f(now)};
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec!["+".to_owned(), "-".to_owned()])
+        );
+        assert!(now < res.res);
+
+        let now = Instant::now();
+        let res = call_isolated! {f(now) where 1 => "-"};
+        assert!(now > res.res);
     }
 }
