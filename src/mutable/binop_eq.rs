@@ -72,23 +72,18 @@ fn eq_to_str(eq: bool) -> &'static str {
 mod tests {
     use crate::tests::*;
 
-    #[muttest_codegen::mutate_isolated("binop_eq")]
-    fn eq_ints() -> bool {
-        1 == 2
-    }
-
     #[test]
-    fn lt_ints_unchanged_weak_lt() {
-        let res = call_isolated!{eq_ints()};
+    fn eq_ints() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        fn f() -> bool {
+            1 == 2
+        }
+        let res = call_isolated! {f()};
         assert_eq!(false, res.res);
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
             &["NE"]
-        )
-    }
-
-    #[test]
-    fn lt_ints_ne() {
-        assert_eq!(true, call_isolated!{eq_ints() where 1 => "!="}.res);
+        );
+        assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
     }
 }

@@ -118,44 +118,38 @@ mod tests {
 
     use crate::tests::*;
 
-    #[muttest_codegen::mutate_isolated("extreme")]
-    fn set_true(marker: &mut bool) {
-        *marker = true;
-    }
-
     #[test]
-    fn set_true_unchanged() {
+    fn set_true() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f(marker: &mut bool) {
+            *marker = true;
+        }
+
         let mut b = false;
-        call_isolated! {set_true(&mut b)};
+        call_isolated! {f(&mut b)};
         assert_eq!(b, true);
-    }
-
-    #[test]
-    fn set_true_default() {
         let mut b = false;
-        call_isolated! {set_true(&mut b) where 1 => "default"};
+        call_isolated! {f(&mut b) where 1 => "default"};
         assert_eq!(b, false);
     }
 
-    #[muttest_codegen::mutate_isolated("extreme")]
-    fn post_increment(x: &mut i8) -> i8 {
-        let ret = *x;
-        *x += 1;
-        ret
-    }
-
     #[test]
-    fn post_increment_unchanged() {
+
+    fn post_increment() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f(x: &mut i8) -> i8 {
+            let ret = *x;
+            *x += 1;
+            ret
+        }
+
         let mut x = 1;
-        let res = call_isolated! {post_increment(&mut x)};
+        let res = call_isolated! {f(&mut x)};
         assert_eq!(res.res, 1);
         assert_eq!(x, 2);
-    }
 
-    #[test]
-    fn post_increment_mutate_default() {
         let mut x = 1;
-        let res = call_isolated! {post_increment(&mut x) where 1 => "default"};
+        let res = call_isolated! {f(&mut x) where 1 => "default"};
         assert_eq!(res.res, 0);
         assert_eq!(x, 1);
     }
@@ -163,13 +157,13 @@ mod tests {
     #[derive(Debug, PartialEq, Eq)]
     struct NoDefault;
 
-    #[muttest_codegen::mutate_isolated("extreme")]
-    fn no_default() -> NoDefault {
-        NoDefault
-    }
     #[test]
-    fn no_default_no_mutation() {
-        let res = call_isolated! {no_default()};
+    fn no_default() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f() -> NoDefault {
+            NoDefault
+        }
+        let res = call_isolated! {f()};
         assert_eq!(
             res.data
                 .mutables
@@ -179,13 +173,13 @@ mod tests {
         )
     }
 
-    #[muttest_codegen::mutate_isolated("extreme")]
-    fn return_no_default_impl_debug() -> impl std::fmt::Debug {
-        return NoDefault;
-    }
     #[test]
-    fn return_no_default_no_mutation() {
-        let res = call_isolated! {return_no_default_impl_debug()};
+    fn return_no_default() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f() -> impl std::fmt::Debug {
+            return NoDefault;
+        }
+        let res = call_isolated! {f()};
         assert_eq!(
             res.data
                 .mutables
@@ -195,13 +189,14 @@ mod tests {
         )
     }
 
-    #[muttest_codegen::mutate_isolated("extreme")]
-    fn no_default_impl_debug() -> impl std::fmt::Debug {
-        NoDefault
-    }
     #[test]
-    fn no_default_impl_debug_unchanged_no_mutation() {
-        let res = call_isolated! {no_default_impl_debug()};
+    fn no_default_impl_debug() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f() -> impl std::fmt::Debug {
+            NoDefault
+        }
+
+        let res = call_isolated! {f()};
         assert_eq!(
             res.data
                 .mutables
@@ -213,13 +208,14 @@ mod tests {
         assert_eq!(NoDefault, *res.downcast::<NoDefault>().unwrap());
     }
 
-    #[muttest_codegen::mutate_isolated("extreme")]
-    fn impl_default() -> impl Default + Sized {
-        4usize
-    }
     #[test]
-    fn impl_default_unchanged_one_mutation() {
-        let res = call_isolated! {impl_default()};
+    fn impl_default() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f() -> impl Default + Sized {
+            4usize
+        }
+
+        let res = call_isolated! {f()};
         assert_eq!(
             res.data
                 .mutables
@@ -229,10 +225,8 @@ mod tests {
         );
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(*res.downcast::<usize>().unwrap(), 4);
-    }
-    #[test]
-    fn impl_default_mutate_default() {
-        let res = call_isolated! {impl_default() where 1 => "default"};
+        let res = call_isolated! {f() where 1 => "default"};
+
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(*res.downcast::<usize>().unwrap(), 0);
     }

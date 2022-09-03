@@ -167,100 +167,80 @@ mod tests {
 
     use crate::tests::*;
 
-    #[muttest_codegen::mutate_isolated("binop_calc")]
-    fn mul_ints() -> i32 {
-        5 * 4
-    }
-
     #[test]
-    fn mul_ints_mutables() {
-        let data = data_isolated!(mul_ints);
+    fn mul_ints() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn f() -> i32 {
+            5 * 4
+        }
+        let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 1);
+
+        assert_eq!(call_isolated! {f()}.res, 20);
+        assert_eq!(call_isolated! {f() where 1 => "+"}.res, 9);
+        assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
     }
 
     #[test]
-    fn mul_ints_unchanged() {
-        assert_eq!(call_isolated! {mul_ints()}.res, 20);
-    }
+    fn calc_three_ints() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn f() -> i64 {
+            3 + 2 * 4
+        }
 
-    #[test]
-    fn mul_ints_plus() {
-        assert_eq!(call_isolated! {mul_ints() where 1 => "+"}.res, 9);
-    }
-    #[test]
-    fn mul_ints_minus() {
-        assert_eq!(call_isolated! {mul_ints() where 1 => "-"}.res, 1);
-    }
-
-    #[muttest_codegen::mutate_isolated("binop_calc")]
-    fn calc_three_ints() -> i64 {
-        3 + 2 * 4
-    }
-
-    #[test]
-    fn calc_three_ints_mutables() {
-        let data = data_isolated!(calc_three_ints);
+        let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 2);
         // TODO: assert that mutation 1 is `*` and mutation 2 is `-`
-    }
-    #[test]
-    fn calc_three_ints_unchanged() {
-        assert_eq!(call_isolated! {calc_three_ints()}.res, 11);
-    }
 
-    #[test]
-    fn calc_three_ints_1_minus() {
-        assert_eq!(call_isolated! {calc_three_ints() where 1 => "-"}.res, 1);
-    }
-
-    #[test]
-    fn calc_three_ints_2_div() {
+        assert_eq!(call_isolated! {f()}.res, 11);
+        assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
         // tests implicit parentheses
-        assert_eq!(call_isolated! {calc_three_ints() where 2 => "/"}.res, 0);
-    }
-
-    #[muttest_codegen::mutate_isolated("binop_calc")]
-    fn s() -> String {
-        "a".to_owned() + "b"
-    }
-
-    #[muttest_codegen::mutate_isolated("binop_calc")]
-    fn a1() -> O1 {
-        A + A
-    }
-
-    #[muttest_codegen::mutate_isolated("binop_calc")]
-    fn a2() -> O2 {
-        A - A
-    }
-
-    struct A;
-    struct O1;
-    struct O2;
-
-    impl Add for A {
-        type Output = O1;
-
-        fn add(self, _: Self) -> Self::Output {
-            O1
-        }
-    }
-    impl Sub for A {
-        type Output = O2;
-
-        fn sub(self, _: Self) -> Self::Output {
-            O2
-        }
+        assert_eq!(call_isolated! {f() where 2 => "/"}.res, 0);
     }
 
     #[test]
     #[ignore]
-    fn tests() {
-        // TODO: tests for these
-        // crate::tests::without_mutation(|| {
-        //     assert_eq!(&s(), "ab");
-        //     assert!(matches!(a1(), O1));
-        //     assert!(matches!(a2(), O2));
-        // });
+    fn add_of_strings() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn s() -> String {
+            "a".to_owned() + "b"
+        }
+
+        // TODO: test
+    }
+
+    #[test]
+    #[ignore]
+    fn add_with_different_sub() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn a1() -> O1 {
+            A + A
+        }
+
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn a2() -> O2 {
+            A - A
+        }
+
+        struct A;
+        struct O1;
+        struct O2;
+
+        impl Add for A {
+            type Output = O1;
+
+            fn add(self, _: Self) -> Self::Output {
+                O1
+            }
+        }
+        impl Sub for A {
+            type Output = O2;
+
+            fn sub(self, _: Self) -> Self::Output {
+                O2
+            }
+        }
+
+        // TODO: test
     }
 }

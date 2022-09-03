@@ -79,58 +79,44 @@ fn ord_to_str(ord: Option<Ordering>) -> &'static str {
 mod tests {
     use crate::tests::*;
 
-    #[muttest_codegen::mutate_isolated("binop_cmp")]
-    fn lt_ints() -> bool {
-        1 < 2
-    }
-
     #[test]
-    fn lt_ints_mutables() {
-        let data = data_isolated!(lt_ints);
+    fn lt_ints() {
+        #[muttest_codegen::mutate_isolated("binop_cmp")]
+        fn f() -> bool {
+            1 < 2
+        }
+
+        let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 1);
-    }
 
-    #[test]
-    fn lt_ints_unchanged_weak_lt() {
-        let res = call_isolated! {lt_ints()};
+        let res = call_isolated! {f()};
         assert_eq!(true, res.res);
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
             &["LT"]
-        )
+        );
+        assert_eq!(false, call_isolated! {f() where 1 => ">"}.res);
+        assert_eq!(false, call_isolated! {f() where 1 => ">="}.res);
     }
 
     #[test]
-    fn lt_ints_gt() {
-        assert_eq!(false, call_isolated! {lt_ints() where 1 => ">"}.res);
-    }
-
-    #[test]
-    fn lt_ints_ge() {
-        assert_eq!(false, call_isolated! {lt_ints() where 1 => ">="}.res);
-    }
-
-    #[muttest_codegen::mutate_isolated("binop_cmp")]
-    fn count_up() -> u8 {
-        let mut x = 1;
-        while x < 2 {
-            x += 1;
+    fn count_up() {
+        #[muttest_codegen::mutate_isolated("binop_cmp")]
+        fn f() -> u8 {
+            let mut x = 1;
+            while x < 2 {
+                x += 1;
+            }
+            x
         }
-        x
-    }
 
-    #[test]
-    fn count_up_unchanged_weak_lt_and_eq() {
-        let res = call_isolated! {count_up()};
+        let res = call_isolated! {f()};
         assert_eq!(2, res.res);
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
             &["EQ", "LT"]
-        )
-    }
-    #[test]
-    fn count_up_le() {
-        let res = call_isolated! {count_up() where 1 => "<="};
+        );
+        let res = call_isolated! {f() where 1 => "<="};
         assert_eq!(3, res.res);
     }
 }

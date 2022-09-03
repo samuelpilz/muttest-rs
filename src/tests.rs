@@ -9,13 +9,12 @@ use lazy_static::lazy_static;
 
 use crate::{CollectedData, CollectorFile, DataCollector, MutableId, ACTIVE_MUTATION};
 
-static TEST_LOCK: Mutex<()> = Mutex::new(());
+pub use crate::{call_isolated, data_isolated};
 
 lazy_static! {
     pub(crate) static ref DATA_COLLECTOR: DataCollector = DataCollector::new_for_test();
 }
 
-pub use crate::{call_isolated, data_isolated};
 
 #[macro_export]
 macro_rules! call_isolated {
@@ -39,6 +38,8 @@ pub struct IsolatedFnCall<T> {
     pub res: T,
     pub data: CollectedData,
 }
+
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn run<'a, T>(
     defs_csv: &str,
@@ -74,6 +75,7 @@ pub fn run<'a, T>(
     IsolatedFnCall { res, data }
 }
 
+// TODO: make different isolated fns have different `crate_name`s
 /// returns a MutableId struct with an id to be used in tests
 pub fn mutable_id(id: usize) -> MutableId<'static> {
     MutableId {
@@ -83,7 +85,7 @@ pub fn mutable_id(id: usize) -> MutableId<'static> {
 }
 
 impl CollectedData {
-    // TODO: also validate num_mutables
+    // TODO: also validate against id collisions?
     pub fn from_defs(num: usize, defs_csv: &str) -> Self {
         let mut cd = Self::new();
         cd.read_definition_csv("", defs_csv.as_bytes()).unwrap();
