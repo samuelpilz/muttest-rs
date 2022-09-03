@@ -202,28 +202,38 @@ mod tests {
     #[ignore]
     fn add_of_strings() {
         #[muttest_codegen::mutate_isolated("binop_calc")]
-        fn s() -> String {
+        fn f() -> String {
             "a".to_owned() + "b"
         }
 
-        // TODO: test
+        let res = call_isolated! {f()};
+        assert_eq!(&*res.res, "ab");
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec![])
+        );
     }
 
     #[test]
     #[ignore]
     fn add_with_different_sub() {
         #[muttest_codegen::mutate_isolated("binop_calc")]
-        fn a1() -> O1 {
+        fn f1() -> O1 {
             A + A
         }
 
         #[muttest_codegen::mutate_isolated("binop_calc")]
-        fn a2() -> O2 {
+        fn f2() -> O2 {
             A - A
         }
 
         struct A;
+        #[derive(Debug, PartialEq, Eq)]
         struct O1;
+        #[derive(Debug, PartialEq, Eq)]
         struct O2;
 
         impl Add for A {
@@ -241,6 +251,23 @@ mod tests {
             }
         }
 
-        // TODO: test
+        let res = call_isolated! {f1()};
+        assert_eq!(res.res, O1);
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec![])
+        );
+        let res = call_isolated! {f2()};
+        assert_eq!(res.res, O2);
+        assert_eq!(
+            res.data
+                .mutables
+                .get(&mutable_id(1))
+                .and_then(|x| x.possible_mutations.as_ref()),
+            Some(&vec![])
+        );
     }
 }
