@@ -81,7 +81,7 @@ fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::mutable_id;
+    use crate::tests::*;
 
     #[muttest_codegen::mutate_isolated("binop_bool")]
     fn true_and_false() -> bool {
@@ -90,9 +90,12 @@ mod tests {
 
     #[test]
     fn true_and_false_unchanged() {
-        let res = crate::tests::without_mutation(true_and_false);
+        let res = call_isolated! {true_and_false()};
         assert_eq!(false, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(), &["TF"]);
+        assert_eq!(
+            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
+            &["TF"]
+        );
     }
 
     // TODO: tests

@@ -116,7 +116,7 @@ pub fn run(m_id: &MutableId<'static>, loc: MutableLocation) -> ControlFlow<()> {
 mod tests {
     use std::any::Any;
 
-    use crate::tests::mutable_id;
+    use crate::tests::*;
 
     #[muttest_codegen::mutate_isolated("extreme")]
     fn set_true(marker: &mut bool) {
@@ -126,14 +126,14 @@ mod tests {
     #[test]
     fn set_true_unchanged() {
         let mut b = false;
-        crate::tests::without_mutation(|| set_true(&mut b));
+        call_isolated! {set_true(&mut b)};
         assert_eq!(b, true);
     }
 
     #[test]
     fn set_true_default() {
         let mut b = false;
-        crate::tests::with_mutation(1, "default", || set_true(&mut b));
+        call_isolated! {set_true(&mut b) where 1 => "default"};
         assert_eq!(b, false);
     }
 
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn post_increment_unchanged() {
         let mut x = 1;
-        let res = crate::tests::without_mutation(|| post_increment(&mut x));
+        let res = call_isolated! {post_increment(&mut x)};
         assert_eq!(res.res, 1);
         assert_eq!(x, 2);
     }
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn post_increment_mutate_default() {
         let mut x = 1;
-        let res = crate::tests::with_mutation(1, "default", || post_increment(&mut x));
+        let res = call_isolated! {post_increment(&mut x) where 1 => "default"};
         assert_eq!(res.res, 0);
         assert_eq!(x, 1);
     }
@@ -169,7 +169,7 @@ mod tests {
     }
     #[test]
     fn no_default_no_mutation() {
-        let res = crate::tests::without_mutation(no_default);
+        let res = call_isolated! {no_default()};
         assert_eq!(
             res.data
                 .mutables
@@ -185,7 +185,7 @@ mod tests {
     }
     #[test]
     fn return_no_default_no_mutation() {
-        let res = crate::tests::without_mutation(return_no_default_impl_debug);
+        let res = call_isolated! {return_no_default_impl_debug()};
         assert_eq!(
             res.data
                 .mutables
@@ -201,7 +201,7 @@ mod tests {
     }
     #[test]
     fn no_default_impl_debug_unchanged_no_mutation() {
-        let res = crate::tests::without_mutation(no_default_impl_debug);
+        let res = call_isolated! {no_default_impl_debug()};
         assert_eq!(
             res.data
                 .mutables
@@ -219,7 +219,7 @@ mod tests {
     }
     #[test]
     fn impl_default_unchanged_one_mutation() {
-        let res = crate::tests::without_mutation(impl_default);
+        let res = call_isolated! {impl_default()};
         assert_eq!(
             res.data
                 .mutables
@@ -232,7 +232,7 @@ mod tests {
     }
     #[test]
     fn impl_default_mutate_default() {
-        let res = crate::tests::with_mutation(1, "default", impl_default);
+        let res = call_isolated! {impl_default() where 1 => "default"};
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(*res.downcast::<usize>().unwrap(), 0);
     }

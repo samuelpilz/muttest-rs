@@ -60,7 +60,7 @@ pub fn run<T: PartialOrd<T1>, T1>(
         (Some(ord), "<=") => ord.is_le(),
         (Some(ord), ">=") => ord.is_ge(),
         (Some(ord), ">") => ord.is_gt(),
-        _ => todo!(),
+        _ => todo!(), // TODO: some lock is held here
     }
 }
 
@@ -77,23 +77,22 @@ fn ord_to_str(ord: Option<Ordering>) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::mutable_id;
+    use crate::tests::*;
 
     #[muttest_codegen::mutate_isolated("binop_cmp")]
     fn lt_ints() -> bool {
         1 < 2
     }
 
-    // TODO: parse csv into collected data instead
     #[test]
     fn lt_ints_mutables() {
-        assert_eq!(lt_ints::NUM_MUTABLES, 1);
-        assert_eq!(lt_ints::MUTABLES_CSV.lines().count(), 2);
+        let data = data_isolated!(lt_ints);
+        assert_eq!(data.mutables.len(), 1);
     }
 
     #[test]
     fn lt_ints_unchanged_weak_lt() {
-        let res = crate::tests::without_mutation(lt_ints);
+        let res = call_isolated! {lt_ints()};
         assert_eq!(true, res.res);
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
@@ -103,12 +102,12 @@ mod tests {
 
     #[test]
     fn lt_ints_gt() {
-        assert_eq!(false, crate::tests::with_mutation(1, ">", lt_ints).res);
+        assert_eq!(false, call_isolated! {lt_ints() where 1 => ">"}.res);
     }
 
     #[test]
     fn lt_ints_ge() {
-        assert_eq!(false, crate::tests::with_mutation(1, ">=", lt_ints).res);
+        assert_eq!(false, call_isolated! {lt_ints() where 1 => ">="}.res);
     }
 
     #[muttest_codegen::mutate_isolated("binop_cmp")]
@@ -122,11 +121,16 @@ mod tests {
 
     #[test]
     fn count_up_unchanged_weak_lt_and_eq() {
-        let res = crate::tests::without_mutation(count_up);
+        let res = call_isolated! {count_up()};
         assert_eq!(2, res.res);
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
             &["EQ", "LT"]
         )
+    }
+    #[test]
+    fn count_up_le() {
+        let res = call_isolated! {count_up() where 1 => "<="};
+        assert_eq!(3, res.res);
     }
 }

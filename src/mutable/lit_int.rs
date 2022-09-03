@@ -60,6 +60,8 @@ mutable_ints!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
 #[cfg(test)]
 mod tests {
+    use crate::tests::*;
+
     #[muttest_codegen::mutate_isolated("lit_int")]
     fn two_usize() -> usize {
         2
@@ -67,23 +69,23 @@ mod tests {
 
     #[test]
     fn two_usize_mutables() {
-        assert_eq!(two_usize::NUM_MUTABLES, 1);
-        assert_eq!(two_usize::MUTABLES_CSV.lines().count(), 2);
+        let data = data_isolated!(two_usize);
+        assert_eq!(data.mutables.len(), 1);
     }
 
     #[test]
     fn two_usize_unchanged() {
-        assert_eq!(crate::tests::without_mutation(two_usize).res, 2);
+        assert_eq!(call_isolated!{two_usize()}.res, 2);
     }
 
     #[test]
     fn two_usize_1() {
-        assert_eq!(crate::tests::with_mutation(1, "1", two_usize).res, 1);
+        assert_eq!(call_isolated!{two_usize() where 1 => "1"}.res, 1);
     }
 
     #[test]
     fn two_usize_4() {
-        assert_eq!(crate::tests::with_mutation(1, "4", two_usize).res, 4);
+        assert_eq!(call_isolated!{two_usize() where 1 => "4"}.res, 4);
     }
 
     // TODO: also test invalid mutations

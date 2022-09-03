@@ -1,14 +1,38 @@
-use std::{borrow::Cow, collections::{BTreeSet, BTreeMap}, mem, sync::Mutex};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    mem,
+    sync::Mutex,
+};
 
 use lazy_static::lazy_static;
 
-use crate::{CollectedData, CollectorFile, MutableDataCollector, MutableId, ACTIVE_MUTATION};
+use crate::{CollectedData, CollectorFile, DataCollector, MutableId, ACTIVE_MUTATION};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 lazy_static! {
-    pub(crate) static ref DATA_COLLECTOR: MutableDataCollector =
-        MutableDataCollector::new_for_test();
+    pub(crate) static ref DATA_COLLECTOR: DataCollector = DataCollector::new_for_test();
+}
+
+pub use crate::{call_isolated, data_isolated};
+
+#[macro_export]
+macro_rules! call_isolated {
+    ($f:ident $(::<$t:ty>)? ($($args:expr),*) $(where $m_id:expr => $m:expr)?) => {
+        crate::tests::run$(::<$t>)?(
+            $f::MUTABLES_CSV,
+            $f::NUM_MUTABLES,
+            || $f($($args),*),
+            vec![$(($m_id, $m))?]
+        )
+    };
+}
+#[macro_export]
+macro_rules! data_isolated {
+    ($f:ident) => {
+        crate::CollectedData::from_defs($f::NUM_MUTABLES, $f::MUTABLES_CSV)
+    };
 }
 
 pub struct IsolatedFnCall<T> {
@@ -16,31 +40,14 @@ pub struct IsolatedFnCall<T> {
     pub data: CollectedData,
 }
 
-pub fn without_mutation<T>(action: impl FnOnce() -> T) -> IsolatedFnCall<T> {
-    run(None, action)
-}
-pub fn with_mutation<T>(
-    id: usize,
-    mutation: &str,
+pub fn run<'a, T>(
+    defs_csv: &str,
+    num_mutables: usize,
     action: impl FnOnce() -> T,
+    mutation: impl IntoIterator<Item = (usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
-    run(
-        Some((
-            MutableId {
-                id,
-                crate_name: Cow::Borrowed(""),
-            },
-            mutation.to_owned(),
-        )),
-        action,
-    )
-}
+    let mut data = CollectedData::from_defs(num_mutables, defs_csv);
 
-// TODO: gather mutable-details and coverage data
-fn run<T>(
-    mutation: Option<(MutableId<'static>, String)>,
-    action: impl FnOnce() -> T,
-) -> IsolatedFnCall<T> {
     let l = TEST_LOCK.lock();
 
     DATA_COLLECTOR.assert_clear();
@@ -50,14 +57,16 @@ fn run<T>(
     // clear other isolated mutations
     m_map.retain(|m_id, _| !m_id.crate_name.is_empty());
     // insert new mutation
-    m_map.extend(mutation);
+    for (m_id, m) in mutation {
+        m_map.insert(mutable_id(m_id), m.to_owned());
+    }
     // release lock on ACTIVE_MUTATION
     std::mem::drop(m_map);
 
     // perform action
     let res = action();
 
-    let data = DATA_COLLECTOR.extract_and_clear();
+    DATA_COLLECTOR.extract_data_and_clear(&mut data);
 
     // release test lock
     std::mem::drop(l);
@@ -73,9 +82,23 @@ pub fn mutable_id(id: usize) -> MutableId<'static> {
     }
 }
 
-impl MutableDataCollector {
+impl CollectedData {
+    // TODO: also validate num_mutables
+    pub fn from_defs(num: usize, defs_csv: &str) -> Self {
+        let mut cd = Self::new();
+        cd.read_definition_csv("", defs_csv.as_bytes()).unwrap();
+        for id in cd.mutables.keys() {
+            if num < id.id {
+                panic!("invalid id {}. max: {num}", id.id);
+            }
+        }
+        cd
+    }
+}
+
+impl DataCollector {
     fn new_for_test() -> Self {
-        MutableDataCollector {
+        DataCollector {
             coverage: Mutex::new(BTreeMap::new()),
             locations: Mutex::new(BTreeSet::new()),
             possible_mutations: Mutex::new(BTreeSet::new()),
@@ -88,7 +111,7 @@ impl MutableDataCollector {
         }
     }
 
-    fn extract_and_clear(&self) -> CollectedData {
+    fn extract_data_and_clear(&self, data: &mut CollectedData) {
         let mut details_csv = Self::DETAILS_FILE_HEADER.as_bytes().to_vec();
         let mut coverage_csv = Self::COVERAGE_FILE_HEADER.as_bytes().to_vec();
 
@@ -105,16 +128,12 @@ impl MutableDataCollector {
             possible_mutations.clear();
             mem::swap(details_file.unwrap_vec_mut(), &mut details_csv);
             mem::swap(coverage_file.unwrap_vec_mut(), &mut coverage_csv);
-            // TODO: reset coverage files
         }
 
-        let mut data = CollectedData::default();
         data.read_details_csv(&*details_csv)
             .expect("unable to read csv data");
         data.read_coverage_csv(&*coverage_csv)
             .expect("unable to read csv data");
-
-        data
     }
 
     fn assert_clear(&self) {

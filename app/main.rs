@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -14,9 +13,8 @@ use muttest_core::{
         lit_str::MutableLitStr,
     },
     transformer::Mutable,
-    CollectedData, MutableData, MutableDataCollector, MutableId, ENV_VAR_MUTTEST_DIR,
+    CollectedData, MutableData, DataCollector, ENV_VAR_MUTTEST_DIR,
 };
-use serde::Deserialize;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -64,17 +62,17 @@ fn main() -> Result<(), Error> {
     println!("mutable definitions {data:?}");
 
     let details_path = muttest_dir.join("mutable-details.csv");
-    setup_csv_file(&details_path, MutableDataCollector::DETAILS_FILE_HEADER)?;
+    setup_csv_file(&details_path, DataCollector::DETAILS_FILE_HEADER)?;
     let coverage_path = muttest_dir.join("coverage.csv");
-    setup_csv_file(&coverage_path, MutableDataCollector::COVERAGE_FILE_HEADER)?;
+    setup_csv_file(&coverage_path, DataCollector::COVERAGE_FILE_HEADER)?;
 
     // run test suites without mutations for coverage
     for test_exe in &compilation_result.test_exes {
         println!("call {}", &test_exe.name);
         Command::new(&test_exe.path)
             .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
-            .env(MutableDataCollector::ENV_VAR_DETAILS_FILE, &details_path)
-            .env(MutableDataCollector::ENV_VAR_COVERAGE_FILE, &coverage_path)
+            .env(DataCollector::ENV_VAR_DETAILS_FILE, &details_path)
+            .env(DataCollector::ENV_VAR_COVERAGE_FILE, &coverage_path)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
@@ -172,14 +170,6 @@ struct TestExe {
     path: Utf8PathBuf,
     name: String,
 }
-
-#[derive(Debug, Deserialize)]
-struct MutableDefinition {
-    id: usize,
-    kind: String,
-    code: String,
-    loc: String,
-}
 /// execute `cargo test --no-run --message-format=json` and collect output
 fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
     let mut result = CompilationResult::default();
@@ -235,29 +225,10 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<CollectedData, Error> {
             None => continue,
             Some(n) => n,
         };
-        // TODO: try to delete outdated muttest files
 
-        // read mutable
+        // TODO: try to delete outdated muttest files
         let file_path = muttest_dir.join(&file_name);
-        let mut reader = csv::ReaderBuilder::new()
-            .from_path(&file_path)
-            .map_err(|e| Error::Csv(file_path.as_std_path().to_owned(), e))?;
-        for md in reader.deserialize::<MutableDefinition>() {
-            let md = md.map_err(|e| Error::Csv(file_path.as_std_path().to_owned(), e))?;
-            let id = MutableId {
-                id: md.id,
-                crate_name: Cow::Owned(mutated_package.to_owned()),
-            };
-            data.mutables.insert(
-                id,
-                MutableData {
-                    kind: md.kind,
-                    code: md.code,
-                    location: md.loc,
-                    ..MutableData::default()
-                },
-            );
-        }
+        data.read_definition_csv(mutated_package, File::open(file_path)?)?;
     }
     Ok(data)
 }

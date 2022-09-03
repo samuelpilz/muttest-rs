@@ -70,7 +70,7 @@ fn eq_to_str(eq: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::mutable_id;
+    use crate::tests::*;
 
     #[muttest_codegen::mutate_isolated("binop_eq")]
     fn eq_ints() -> bool {
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn lt_ints_unchanged_weak_lt() {
-        let res = crate::tests::without_mutation(eq_ints);
+        let res = call_isolated!{eq_ints()};
         assert_eq!(false, res.res);
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
@@ -89,6 +89,6 @@ mod tests {
 
     #[test]
     fn lt_ints_ne() {
-        assert_eq!(true, crate::tests::with_mutation(1, "!=", eq_ints).res);
+        assert_eq!(true, call_isolated!{eq_ints() where 1 => "!="}.res);
     }
 }

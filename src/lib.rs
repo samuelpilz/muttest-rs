@@ -59,7 +59,7 @@ lazy_static! {
             &std::env::var(ENV_VAR_MUTTEST_MUTATION).unwrap_or_default(),
         ))
     };
-    static ref DATA_COLLECTOR: MutableDataCollector = MutableDataCollector::new_from_envvar_files()
+    static ref DATA_COLLECTOR: DataCollector = DataCollector::new_from_envvar_files()
         .expect("unable to open mutable-data-collector files");
 }
 
@@ -154,7 +154,7 @@ impl MutableId<'static> {
         self.get_collector().write_coverage(self, Some(weak));
     }
 
-    fn get_collector(&self) -> &'static MutableDataCollector {
+    fn get_collector(&self) -> &'static DataCollector {
         #[cfg(test)]
         if self.crate_name.is_empty() {
             return &tests::DATA_COLLECTOR;
@@ -163,7 +163,7 @@ impl MutableId<'static> {
     }
 }
 
-pub struct MutableDataCollector {
+pub struct DataCollector {
     locations: Mutex<BTreeSet<MutableId<'static>>>,
     possible_mutations: Mutex<BTreeSet<MutableId<'static>>>,
     coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
@@ -171,7 +171,7 @@ pub struct MutableDataCollector {
     coverage_file: Mutex<CollectorFile>,
 }
 
-impl MutableDataCollector {
+impl DataCollector {
     pub const ENV_VAR_DETAILS_FILE: &'static str = "MUTTEST_DETAILS_FILE";
     pub const ENV_VAR_COVERAGE_FILE: &'static str = "MUTTEST_COVERAGE_FILE";
     pub const DETAILS_FILE_HEADER: &'static str = "id,kind,data\n";
@@ -181,7 +181,7 @@ impl MutableDataCollector {
         let details_file = CollectorFile::open_collector_file(Self::ENV_VAR_DETAILS_FILE)?;
         // TODO: fully read details the file (reading coverage does not make much sense)
         let coverage_file = CollectorFile::open_collector_file(Self::ENV_VAR_COVERAGE_FILE)?;
-        Ok(MutableDataCollector {
+        Ok(DataCollector {
             coverage: Mutex::new(Default::default()),
             locations: Mutex::new(Default::default()),
             possible_mutations: Mutex::new(Default::default()),
@@ -222,7 +222,6 @@ impl MutableDataCollector {
         f.flush().expect("unable to flush mutable detail");
     }
 
-    // TODO: document what update_data means
     fn write_coverage(&self, m_id: &MutableId<'static>, weak: Option<&str>) {
         let mut coverage_map = self.coverage.lock().unwrap();
         let mut update = false;
@@ -309,6 +308,7 @@ pub struct MutableData {
     pub possible_mutations: Option<Vec<String>>,
 }
 
+// TODO: require definitions are read before
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
     pub mutables: BTreeMap<MutableId<'static>, MutableData>,
@@ -316,6 +316,34 @@ pub struct CollectedData {
 }
 
 impl CollectedData {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn read_definition_csv(
+        &mut self,
+        mutated_package: &str,
+        definitions: impl Read,
+    ) -> Result<(), Error> {
+        let mut reader = csv::ReaderBuilder::new().from_reader(definitions);
+        for md in reader.deserialize::<MutableDefinition>() {
+            let md = md?;
+            let id = MutableId {
+                id: md.id,
+                crate_name: Cow::Owned(mutated_package.to_owned()),
+            };
+            self.mutables.insert(
+                id,
+                MutableData {
+                    kind: md.kind,
+                    code: md.code,
+                    location: md.loc,
+                    ..MutableData::default()
+                },
+            );
+        }
+        Ok(())
+    }
+    // TODO: report unknown ids more gracefully
     pub fn read_details_csv(&mut self, details: impl Read) -> Result<(), Error> {
         let mut reader = csv::ReaderBuilder::new().from_reader(details);
         for md in reader.deserialize::<MutableDetail>() {
@@ -324,7 +352,7 @@ impl CollectedData {
             let id = md.id.parse::<MutableId>()?;
             match &*md.kind {
                 "mutations" => {
-                    self.mutables.entry(id).or_default().possible_mutations = Some(
+                    self.mutables.get_mut(&id).unwrap().possible_mutations = Some(
                         md.data
                             .split(":")
                             // TODO: empty strings should not be valid mutations
@@ -334,13 +362,14 @@ impl CollectedData {
                     );
                 }
                 "loc" => {
-                    self.mutables.entry(id).or_default().location = md.data;
+                    self.mutables.get_mut(&id).unwrap().location = md.data;
                 }
                 k => debug_assert!(false, "unknown detail kind '{}'", k),
             }
         }
         Ok(())
     }
+    // TODO: only accept known ids
     pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(), Error> {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
         for md in reader.deserialize::<MutableCoverage>() {
@@ -349,10 +378,7 @@ impl CollectedData {
             let data = if md.data.is_empty() {
                 BTreeSet::new()
             } else {
-                md.data
-                    .split(":")
-                    .map(ToOwned::to_owned)
-                    .collect()
+                md.data.split(":").map(ToOwned::to_owned).collect()
             };
             self.coverage.insert(id, data);
         }
@@ -371,6 +397,14 @@ pub struct MutableDetail {
 pub struct MutableCoverage {
     id: String,
     data: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MutableDefinition {
+    id: usize,
+    kind: String,
+    code: String,
+    loc: String,
 }
 
 #[derive(Debug, Clone, Copy)]

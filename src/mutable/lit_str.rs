@@ -77,24 +77,26 @@ pub fn mutable_str(
 #[cfg(test)]
 mod tests {
 
+    use crate::tests::*;
+
     #[muttest_codegen::mutate_isolated("lit_str")]
     fn empty_str() -> &'static str {
         ""
     }
     #[test]
     fn empty_str_mutables() {
-        assert_eq!(empty_str::NUM_MUTABLES, 1);
-        assert_eq!(empty_str::MUTABLES_CSV.lines().count(), 2);
+        let data = data_isolated!(empty_str);
+        assert_eq!(data.mutables.len(), 1);
     }
 
     #[test]
     fn empty_str_unchanged() {
-        assert_eq!(crate::tests::without_mutation(empty_str).res, "");
+        assert_eq!(call_isolated! {empty_str()}.res, "");
     }
 
     #[test]
-    fn empty_str_one() {
-        assert_eq!(crate::tests::with_mutation(1, "1", empty_str).res, "1");
+    fn empty_str_x() {
+        assert_eq!(call_isolated! {empty_str() where 1 => "x"}.res, "x");
     }
 
     #[muttest_codegen::mutate_isolated("lit_str")]
@@ -104,20 +106,17 @@ mod tests {
 
     #[test]
     fn some_str_mutables() {
-        assert_eq!(some_str::NUM_MUTABLES, 1);
-        assert_eq!(some_str::MUTABLES_CSV.lines().count(), 2);
+        let data = data_isolated!(some_str);
+        assert_eq!(data.mutables.len(), 1);
     }
 
     #[test]
     fn some_str_unchanged() {
-        assert_eq!(
-            crate::tests::without_mutation(some_str).res,
-            "mutation testing!"
-        );
+        assert_eq!(call_isolated! {some_str()}.res, "mutation testing!");
     }
 
     #[test]
     fn some_str_empty() {
-        assert_eq!(crate::tests::with_mutation(1, "", some_str).res, "");
+        assert_eq!(call_isolated! {some_str() where 1 => ""}.res, "");
     }
 }
