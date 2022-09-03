@@ -136,6 +136,16 @@ impl MutableId<'static> {
             .write_possible_mutations(self, mutations)
     }
 
+    // TODO: document
+    // TODO: move all mutables to this fn
+    pub fn report_details<'a, I: IntoIterator<Item = (&'static str, bool)>>(
+        &self,
+        loc: MutableLocation,
+        mutations: I,
+    ) {
+        self.get_collector().write_details(self, loc, mutations)
+    }
+
     /// get the active mutation for a mutable
     ///
     /// calling this function also triggers logging its coverage
@@ -146,7 +156,7 @@ impl MutableId<'static> {
             .read()
             .expect("read-lock active mutations")
             .get(self)
-            .cloned()
+            .cloned() // TODO: use Arc for cheap cloning
     }
 
     // TODO: this is only a first draft of behavior
@@ -164,6 +174,7 @@ impl MutableId<'static> {
 }
 
 pub struct DataCollector {
+    // TODO: when reporting location & mutations together, use a single map
     locations: Mutex<BTreeSet<MutableId<'static>>>,
     possible_mutations: Mutex<BTreeSet<MutableId<'static>>>,
     coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
@@ -214,6 +225,17 @@ impl DataCollector {
                 .collect::<Vec<_>>()
                 .join(":"),
         );
+    }
+
+    fn write_details<'a, I: IntoIterator<Item = (&'static str, bool)>>(
+        &self,
+        m_id: &MutableId<'static>,
+        loc: MutableLocation,
+        mutations: I,
+    ) {
+        self.write_location(m_id, loc);
+        self.write_possible_mutations(m_id, &*mutations.into_iter().collect::<Vec<_>>());
+        // TODO: redo impl
     }
 
     fn write_detail<T: Display>(&self, m_id: &MutableId<'static>, kind: &'static str, data: T) {

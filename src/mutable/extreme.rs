@@ -35,45 +35,56 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         quote_spanned! {span=>
             #vis #sig {
                 let ret_type = #muttest_api::PhantomData;
-                match #muttest_api::mutable::extreme::run(&#m_id, #loc) {
-                    #muttest_api::ControlFlow::Continue(_) => {
-                        // help the type-checker
-                        match 0 {
-                            // type-check the original code first
-                            1 => #block,
-                            2 => #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
-                            3 => return #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
-                            // report the type first, then execute the block
-                            _ => {
-                                (#m_id).report_possible_mutations(
-                                    &[("default",
-                                        {
-                                            #[allow(unused_imports)]
-                                            use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
-                                            (&ret_type).is_default()
-                                        }
-                                    )]
-                                );
-                                #block
-                            }
+
+                // dead branches help the type-checker
+                match 0 {
+                    // type-check the original code first
+                    1 => #block,
+                    // unify the ret_type with expression-type of block
+                    2 => #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
+                    // unify the ret_type with fn return value
+                    3 => return #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
+
+                    // run mutable
+                    _ => {
+                        // report static analysis
+                        (#m_id).report_details(
+                            #loc,
+                            Some(("default",
+                                {
+                                    #[allow(unused_imports)]
+                                    use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
+                                    (&ret_type).is_default()
+                                }
+                            ))
+                        );
+
+                        match #muttest_api::mutable::extreme::run(&#m_id,
+                        ) {
+                            #muttest_api::ControlFlow::Continue(_) => #block,
+                            #muttest_api::ControlFlow::Break(_) => {
+                                #[allow(unused_imports)]
+                                use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
+                                (&ret_type).get_default()
+                            },
                         }
                     }
-                    #muttest_api::ControlFlow::Break(_) => {
-                        #[allow(unused_imports)]
-                        use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
-                        (&ret_type).get_default()
-                    },
                 }
             }
         }
     }
 }
 
-#[derive(Debug)]
-struct NoDefault;
+pub fn run(m_id: &MutableId<'static>) -> ControlFlow<()> {
+    match m_id.get_active_mutation().as_deref().unwrap_or_default() {
+        "" => ControlFlow::Continue(()),
+        "default" => ControlFlow::Break(()),
+        _ => todo!(),
+    }
+}
 
 pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
-    panic!()
+    todo!()
 }
 
 // TODO: private names for these functions?
@@ -99,16 +110,6 @@ impl<T: Default> YesDefault<T> for PhantomData<T> {
     }
     fn get_default(&self) -> T {
         T::default()
-    }
-}
-
-pub fn run(m_id: &MutableId<'static>, loc: MutableLocation) -> ControlFlow<()> {
-    m_id.report_at(loc);
-
-    match m_id.get_active_mutation().as_deref().unwrap_or_default() {
-        "" => ControlFlow::Continue(()),
-        "default" => ControlFlow::Break(()),
-        _ => todo!(),
     }
 }
 
