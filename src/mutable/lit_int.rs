@@ -15,6 +15,10 @@ pub struct MutableLitInt<'a> {
 impl<'a> Mutable<'a> for MutableLitInt<'a> {
     const NAME: &'static str = "lit_int";
 
+    fn span(&self) -> Span {
+        self.span
+    }
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let lit = self.lit;
@@ -23,7 +27,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
             m_id,
             muttest_api,
             loc,
-        } = transformer.new_mutable::<Self>(&self.base10_digits, span);
+        } = transformer.new_mutable(&self, &self.base10_digits);
         quote_spanned! {span=>
             #muttest_api::mutable::lit_int::run(&#m_id, #lit, #loc)
         }

@@ -1,8 +1,7 @@
 use std::{
-    borrow::{Borrow, Cow},
+    borrow::Borrow,
     fs,
     io::Write,
-    ops::DerefMut,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
@@ -49,8 +48,10 @@ fn open_definitions_file() -> Result<Option<fs::File>, Error> {
 
 pub trait Mutable<'a> {
     const NAME: &'static str;
+
+    fn span(&self) -> Span;
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream;
-    // TODO: span-getter here
 }
 
 pub struct MuttestTransformer {
@@ -67,7 +68,7 @@ pub enum MutablesConf {
 }
 pub struct TransformerData {
     pub local_id: usize,
-    pub mutables_csv: String,
+    pub mutables_csv: Vec<u8>,
 }
 impl MuttestTransformer {
     pub fn new() -> Self {
@@ -87,7 +88,7 @@ impl MuttestTransformer {
             muttest_api: None,
             isolated: Some(TransformerData {
                 local_id: 0,
-                mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n"),
+                mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n").into_bytes(),
             }),
         }
     }
@@ -108,26 +109,35 @@ impl MuttestTransformer {
         }
     }
 
-    pub fn new_mutable<'a, M: Mutable<'a>>(&mut self, code: &str, span: Span) -> TransformSnippets {
-        let m_id = self.register_new_mutable(M::NAME, code, &display_span(span));
+    pub fn new_mutable<'a, M: Mutable<'a>>(&mut self, m: &M, code: &str) -> TransformSnippets {
+        let id;
+        match &mut self.isolated {
+            Some(data) => {
+                id = MutableId::new_isolated({
+                    data.local_id += 1;
+                    data.local_id
+                });
+                write_mutable(Some(&mut data.mutables_csv), &id, m, code);
+            }
+            None => {
+                id = MutableId::new(MUTABLE_ID_NUM.fetch_add(1, SeqCst), &*TARGET_NAME);
+                write_mutable(MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut(), &id, m, code);
+            }
+        }
 
         let muttest_api = match self.muttest_api {
-            Some(cc) => format_ident!("{}", span = span, cc).into_token_stream(),
-            None => quote_spanned! {span => crate::api},
+            Some(cc) => format_ident!("{}", span = m.span(), cc).into_token_stream(),
+            None => quote_spanned! {m.span() => crate::api},
         };
 
-        let id = m_id.id;
-        let crate_name: &str = m_id.crate_name.borrow();
+        let crate_name: &str = id.crate_name.borrow();
+        let id = id.id;
 
-        let m_id = quote_spanned! {span =>
+        let m_id = quote_spanned! {m.span() =>
             #muttest_api::MutableId {id: #id, crate_name: #muttest_api::Cow::Borrowed(#crate_name)}
         };
-        let loc = quote_spanned! {span=>
-            #muttest_api::MutableLocation {
-                file: file!(),
-                line: line!(),
-                column: column!(),
-            }
+        let loc = quote_spanned! {m.span()=>
+            #muttest_api::MutableLocation {file: file!(), line: line!(), column: column!() }
         };
 
         TransformSnippets {
@@ -136,42 +146,20 @@ impl MuttestTransformer {
             loc,
         }
     }
-
-    /// register a new mutable
-    fn register_new_mutable(
-        &mut self,
-        mut_kind: &str,
-        code: &str,
-        loc: &str,
-    ) -> MutableId<'static> {
-        match &mut self.isolated {
-            Some(data) => {
-                data.local_id += 1;
-                let id = data.local_id;
-
-                data.mutables_csv += &format!("{id},{mut_kind},{},{loc}\n", code);
-
-                MutableId {
-                    id,
-                    crate_name: Cow::Borrowed(""),
-                }
-            }
-            None => {
-                let id = MUTABLE_ID_NUM.fetch_add(1, SeqCst);
-
-                let mut f = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
-                if let Some(f) = f.deref_mut() {
-                    writeln!(f, "{id},{mut_kind},{},{loc}", code)
-                        .expect("unable to write mutable file");
-                    f.flush().expect("unable to flush mutable file");
-                }
-
-                MutableId {
-                    id,
-                    crate_name: Cow::Borrowed(&*TARGET_NAME),
-                }
-            }
-        }
+}
+/// register a new mutable
+fn write_mutable<'a, M: Mutable<'a>, W: Write>(f: Option<W>, id: &MutableId, m: &M, code: &str) {
+    if let Some(mut f) = f {
+        writeln!(
+            f,
+            "{},{},{},{}",
+            id.id,
+            M::NAME,
+            code,
+            display_span(m.span())
+        )
+        .expect("unable to write mutable file");
+        f.flush().expect("unable to flush mutable file");
     }
 }
 

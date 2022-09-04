@@ -29,7 +29,7 @@ mod tests;
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::{phantom_for_type, MutableId, MutableLocation, id};
+    pub use crate::{id, phantom_for_type, MutableId, MutableLocation};
 
     pub use std::{
         borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
@@ -119,6 +119,16 @@ impl FromStr for MutableId<'static> {
 }
 
 impl MutableId<'static> {
+    pub fn new_isolated(id: usize) -> Self {
+        Self::new(id, "")
+    }
+    pub fn new(id: usize, crate_name: &'static str) -> Self {
+        MutableId {
+            id,
+            crate_name: Cow::Borrowed(crate_name),
+        }
+    }
+
     /// reports this mutable's location
     ///
     /// This function should be called as early as possible

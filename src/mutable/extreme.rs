@@ -19,13 +19,17 @@ pub struct MutableExtreme<'a> {
 impl<'a> Mutable<'a> for MutableExtreme<'a> {
     const NAME: &'static str = "extreme";
 
+    fn span(&self) -> Span {
+        self.span
+    }
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let TransformSnippets {
             m_id,
             muttest_api,
             loc,
-        } = transformer.new_mutable::<Self>("", span);
+        } = transformer.new_mutable(&self, "");
         // TODO: add reasonable code for that
         // TODO: or should code be optional?
 

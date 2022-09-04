@@ -16,6 +16,10 @@ pub struct MutableBinopCalc<'a> {
 impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
     const NAME: &'static str = "binop_calc";
 
+    fn span(&self) -> Span {
+        self.span
+    }
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
@@ -26,7 +30,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
             m_id,
             muttest_api,
             loc,
-        } = transformer.new_mutable::<Self>(&op_str, span);
+        } = transformer.new_mutable(&self, &op_str);
 
         let mutations = CALC_OP_NAMES;
         // TODO: remove current op from list

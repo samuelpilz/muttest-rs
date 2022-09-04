@@ -20,6 +20,10 @@ pub struct MutableLitStr<'a> {
 impl<'a> Mutable<'a> for MutableLitStr<'a> {
     const NAME: &'static str = "lit_str";
 
+    fn span(&self) -> Span {
+        self.span
+    }
+
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let lit = self.lit;
@@ -28,7 +32,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
             m_id,
             muttest_api,
             loc,
-        } = transformer.new_mutable::<Self>(&self.value, span);
+        } = transformer.new_mutable(&self, &self.value);
         quote_spanned! {span=>
             #muttest_api::mutable::lit_str::mutable_str(&#m_id, #lit, #loc, {
                 static MUTABLE: #muttest_api::RwLock<#muttest_api::Option<&str>> =
