@@ -3,7 +3,8 @@ use std::ops::{ControlFlow, Deref, DerefMut};
 use muttest_core::{
     mutable::{
         binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp,
-        extreme::MutableExtreme, lit_int::MutableLitInt, lit_str::MutableLitStr, binop_eq::MutableBinopEq,
+        binop_eq::MutableBinopEq, extreme::MutableExtreme, lit_int::MutableLitInt,
+        lit_str::MutableLitStr,
     },
     transformer::*,
 };
@@ -12,7 +13,7 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
-    File, ItemConst, ItemFn, Lit, LitStr,
+    ExprRepeat, File, ItemConst, ItemFn, ItemStatic, Lit, LitStr, Pat, Type,
 };
 
 /// isolated mutation for testing purposes
@@ -224,9 +225,23 @@ impl FoldImpl<'_> {
 
 impl Fold for FoldImpl<'_> {
     // TODO: inspect & preserve attrs
-    // TODO: skip consts & tests ...
+    // TODO: tests ...
     fn fold_item_const(&mut self, item_const: ItemConst) -> ItemConst {
         item_const
+    }
+    fn fold_item_static(&mut self, item_static: ItemStatic) -> ItemStatic {
+        item_static
+    }
+    fn fold_pat(&mut self, pat: Pat) -> Pat {
+        pat
+    }
+    fn fold_expr_repeat(&mut self, mut expr_repeat: ExprRepeat) -> ExprRepeat {
+        // only mutate expression not len
+        expr_repeat.expr = Box::new(self.fold_expr(*expr_repeat.expr));
+        expr_repeat
+    }
+    fn fold_type(&mut self, node: Type) -> Type {
+        node
     }
 
     fn fold_item_fn(&mut self, f: ItemFn) -> ItemFn {

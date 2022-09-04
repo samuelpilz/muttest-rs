@@ -104,4 +104,18 @@ mod tests {
         assert_eq!(call_isolated! {f()}.res, "mutation testing!");
         assert_eq!(call_isolated! {f() where 1 => ""}.res, "");
     }
+
+    #[test]
+    fn patterns_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_str")]
+        fn _f(x: String) {
+            match &*x {
+                "a" => {}
+                "xyz" => {}
+                _ => {}
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
 }

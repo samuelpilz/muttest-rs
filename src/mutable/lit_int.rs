@@ -78,4 +78,42 @@ mod tests {
     }
 
     // TODO: also test invalid mutations
+
+    #[test]
+    fn consts_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_int")]
+        fn _f() {
+            const X1: u32 = 1;
+            static X2: u8 = 1;
+            const fn plus1(x: u8) -> u8 {
+                x + 1
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
+    #[test]
+    fn const_generics_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_int")]
+        fn _f(_: [usize; 2]) -> [i128; 2] {
+            [1; 2]
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 1);
+        assert_eq!(data.mutables[&mutable_id(1)].code, "1");
+    }
+
+    #[test]
+    fn patterns_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_int")]
+        fn _f(x: isize) {
+            match x {
+                1 => {}
+                3..=4 => {}
+                _ => {}
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
 }

@@ -360,6 +360,43 @@ mod tests {
         assert_eq!(res.res, 0);
     }
 
+    #[test]
+    fn consts_not_mutated() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn _f() {
+            const X1: u32 = 1 + 1;
+            static X2: u8 = 1 - 1;
+            const fn plus1(x: u8) -> u8 {
+                x + 1
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
+    #[test]
+    fn const_generics_not_mutated() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn _f() -> [(); 4 + 5] {
+            [(); 4 + 5]
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
+    #[test]
+    fn pattern_guard_mutated() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn f() -> usize {
+            match 0 {
+                _ if 1 + 1 == 2 => 1,
+                _ => 2,
+            }
+        }
+        let res = call_isolated! {f()};
+        assert_eq!(res.res, 1);
+
+        let res = call_isolated! {f() where 1 => "-"};
+        assert_eq!(res.res, 2);
+    }
 }
 
 // TODO: test that details are reported, even if left&right fail
