@@ -285,6 +285,11 @@ fn is_calc_op(op: BinOp) -> bool {
         BinOp::Mul(_) => true,
         BinOp::Div(_) => true,
         BinOp::Rem(_) => true,
+        BinOp::BitOr(_) => true,
+        BinOp::BitAnd(_) => true,
+        BinOp::BitXor(_) => true,
+        BinOp::Shl(_) => true,
+        BinOp::Shr(_) => true,
         _ => false,
     }
 }

@@ -29,7 +29,7 @@ mod tests;
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::{phantom_for_type, MutableId, MutableLocation};
+    pub use crate::{phantom_for_type, MutableId, MutableLocation, id};
 
     pub use std::{
         borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
@@ -444,4 +444,8 @@ impl fmt::Display for MutableLocation {
 
 pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
     PhantomData
+}
+
+pub fn id<T>(t: T) -> T {
+    t
 }

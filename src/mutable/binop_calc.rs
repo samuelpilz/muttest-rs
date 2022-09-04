@@ -28,18 +28,16 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
             loc,
         } = transformer.new_mutable::<Self>(&op_str, span);
 
-        let mutations = [
-            ("+", "add"),
-            ("-", "sub"),
-            ("*", "mul"),
-            ("/", "div"),
-            ("%", "rem"),
-        ];
-        let op_symbols = mutations.map(|x| x.0);
-        let op_names = mutations.map(|x| format_ident!("{}", span = span, x.1));
+        let mutations = CALC_OP_NAMES;
+        // TODO: remove current op from list
+        let op_symbols = mutations.iter().map(|x| x.0).collect::<Vec<_>>();
+        let op_names = mutations
+            .iter()
+            .map(|x| format_ident!("{}", span = span, x.1))
+            .collect::<Vec<_>>();
 
         quote_spanned! {span=>
-            ({
+            #muttest_api::id({
                 // these types carry the types involved in the calculation
                 // the assignment in the default-case defines the type of this phantom
                 let mut left_type = #muttest_api::PhantomData;
@@ -92,7 +90,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                         }
                     }
                 }
-            },).0
+            })
         }
     }
 }
@@ -102,64 +100,79 @@ pub fn run(m_id: &MutableId<'static>) -> String {
 }
 
 macro_rules! binop_calc_traits {
-    ($m:ident, $t:ident, $f:ident) => {
-        pub mod $m {
-            use std::marker::PhantomData;
+    ($($op_code:literal, $op:ident, $t:ident;)*) => {
+        const CALC_OP_NAMES: &[(&str, &str)] = &[
+            $(
+                ($op_code, stringify!($op)),
+            )*
+        ];
 
-            pub struct Yes;
-            pub struct No;
+        $(
+            pub mod $op {
+                use std::marker::PhantomData;
 
-            pub trait IsYes {
-                fn get_impl(&self) -> Yes;
-            }
-            pub trait IsNo {
-                fn get_impl(&self) -> No;
-            }
-            impl<L: ::std::ops::$t<R>, R> IsYes
-                for (
-                    PhantomData<L>,
-                    PhantomData<R>,
-                    PhantomData<<L as ::std::ops::$t<R>>::Output>,
-                )
-            {
-                fn get_impl(&self) -> Yes {
-                    Yes
+                pub struct Yes;
+                pub struct No;
+
+                pub trait IsYes {
+                    fn get_impl(&self) -> Yes;
+                }
+                pub trait IsNo {
+                    fn get_impl(&self) -> No;
+                }
+                impl<L: ::std::ops::$t<R>, R> IsYes
+                    for (
+                        PhantomData<L>,
+                        PhantomData<R>,
+                        PhantomData<<L as ::std::ops::$t<R>>::Output>,
+                    )
+                {
+                    fn get_impl(&self) -> Yes {
+                        Yes
+                    }
+                }
+                impl<L, R, O> IsNo for &(PhantomData<L>, PhantomData<R>, PhantomData<O>) {
+                    fn get_impl(&self) -> No {
+                        No
+                    }
+                }
+                impl Yes {
+                    pub fn is_impl(&self) -> bool {
+                        true
+                    }
+                    pub fn run<L: ::std::ops::$t<R>, R>(
+                        self,
+                        left: L,
+                        right: R,
+                    ) -> <L as ::std::ops::$t<R>>::Output {
+                        <L as ::std::ops::$t<R>>::$op(left, right)
+                    }
+                }
+                impl No {
+                    pub fn is_impl(&self) -> bool {
+                        false
+                    }
+                    pub fn run<L, R, O>(self, _: L, _: R) -> O {
+                        unreachable!()
+                    }
                 }
             }
-            impl<L, R, O> IsNo for &(PhantomData<L>, PhantomData<R>, PhantomData<O>) {
-                fn get_impl(&self) -> No {
-                    No
-                }
-            }
-            impl Yes {
-                pub fn is_impl(&self) -> bool {
-                    true
-                }
-                pub fn run<L: ::std::ops::$t<R>, R>(
-                    self,
-                    left: L,
-                    right: R,
-                ) -> <L as ::std::ops::$t<R>>::Output {
-                    <L as ::std::ops::$t<R>>::$f(left, right)
-                }
-            }
-            impl No {
-                pub fn is_impl(&self) -> bool {
-                    false
-                }
-                pub fn run<L, R, O>(self, _: L, _: R) -> O {
-                    unreachable!()
-                }
-            }
-        }
+        )*
     };
 }
 
-binop_calc_traits!(add, Add, add);
-binop_calc_traits!(sub, Sub, sub);
-binop_calc_traits!(mul, Mul, mul);
-binop_calc_traits!(div, Div, div);
-binop_calc_traits!(rem, Rem, rem);
+binop_calc_traits!(
+    "+", add, Add;
+    "-", sub, Sub;
+    "*", mul, Mul;
+    "/", div, Div;
+    "%", rem, Rem;
+    "&", bitor, BitOr;
+    "|", bitand, BitAnd;
+    "^", bitxor, BitXor;
+    "<<", shl, Shl;
+    ">>", shr, Shr;
+);
 
 #[cfg(test)]
 mod tests {
@@ -168,6 +181,7 @@ mod tests {
         time::{Duration, Instant},
     };
 
+    use super::CALC_OP_NAMES;
     use crate::tests::*;
 
     #[test]
@@ -179,7 +193,17 @@ mod tests {
         let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 1);
 
-        assert_eq!(call_isolated! {f()}.res, 20);
+        let res = call_isolated! {f()};
+        assert_eq!(res.res, 20);
+        assert_eq!(
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_deref()
+                .unwrap_or_default()
+                .len(),
+            // all mutations possible
+            CALC_OP_NAMES.len()
+        );
         assert_eq!(call_isolated! {f() where 1 => "+"}.res, 9);
         assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
     }
@@ -193,7 +217,8 @@ mod tests {
 
         let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 2);
-        // TODO: assert that mutation 1 is `*` and mutation 2 is `-`
+        assert_eq!(&data.mutables[&mutable_id(1)].code, "*");
+        assert_eq!(&data.mutables[&mutable_id(2)].code, "+");
 
         assert_eq!(call_isolated! {f()}.res, 11);
         assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
@@ -211,10 +236,9 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec!["+".to_owned()])
         );
     }
@@ -255,19 +279,17 @@ mod tests {
         let res = call_isolated! {f1()};
         assert_eq!(res.res, O1);
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec!["+".to_owned()])
         );
         let res = call_isolated! {f2()};
         assert_eq!(res.res, O2);
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec!["-".to_owned()])
         );
     }
@@ -282,10 +304,9 @@ mod tests {
         let now = Instant::now();
         let res = call_isolated! {f(now)};
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec!["+".to_owned(), "-".to_owned()])
         );
         assert!(now < res.res);
@@ -294,7 +315,51 @@ mod tests {
         let res = call_isolated! {f(now) where 1 => "-"};
         assert!(now > res.res);
     }
+
+    #[test]
+    fn sum_of_squares() {
+        // this test makes sure that the order of operation is intact
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn f(x: i8, y: i8) -> i8 {
+            x * x + y * y
+        }
+
+        let data = data_isolated!(f);
+        assert_eq!(&data.mutables[&mutable_id(1)].code, "*");
+        assert_eq!(&data.mutables[&mutable_id(2)].code, "*");
+        assert_eq!(&data.mutables[&mutable_id(3)].code, "+");
+
+        let res = call_isolated! {f(-4, 7)};
+        assert_eq!(res.res, 16 + 49);
+
+        let res = call_isolated! {f(-2, 3) where 1 => "/"};
+        assert_eq!(res.res, 10);
+        let res = call_isolated! {f(3, 2) where 2 => "/"};
+        assert_eq!(res.res, 10);
+        let res = call_isolated! {f(-2, 2) where 3 => "-"};
+        assert_eq!(res.res, 0);
+    }
+
+    #[test]
+    fn shift_different_rhs_type() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn f() -> u8 {
+            1 << 2i32
+        }
+
+        let res = call_isolated! {f()};
+        assert_eq!(
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
+            Some(&vec!["<<".to_owned(), ">>".to_owned()])
+        );
+        assert_eq!(res.res, 4);
+
+        let res = call_isolated! {f() where 1 => ">>"};
+        assert_eq!(res.res, 0);
+    }
+
 }
 
-// TODO: test x*x + y*y
 // TODO: test that details are reported, even if left&right fail

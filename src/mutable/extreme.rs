@@ -87,7 +87,6 @@ pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
     todo!()
 }
 
-// TODO: private names for these functions?
 pub trait NotDefault<T> {
     fn is_default(&self) -> bool;
     fn get_default(&self) -> T;
@@ -166,10 +165,9 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec![])
         )
     }
@@ -182,10 +180,9 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec![])
         )
     }
@@ -199,10 +196,9 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec![])
         );
         let res: Box<dyn Any> = Box::new(res.res);
@@ -218,10 +214,9 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data
-                .mutables
-                .get(&mutable_id(1))
-                .and_then(|x| x.possible_mutations.as_ref()),
+            res.data.mutables[&mutable_id(1)]
+                .possible_mutations
+                .as_ref(),
             Some(&vec!["default".to_owned()])
         );
         let res: Box<dyn Any> = Box::new(res.res);
