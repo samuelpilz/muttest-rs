@@ -1,11 +1,11 @@
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, marker::PhantomData};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    *,
+    MutableId,
 };
 
 // TODO: mutate (some) blocks instead of `ItemFn`s

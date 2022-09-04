@@ -3,7 +3,7 @@ use quote::{format_ident, quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    *,
+    MutableId,
 };
 
 pub struct MutableBinopCalc<'a> {

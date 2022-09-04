@@ -1,9 +1,11 @@
+use std::fmt;
+
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    *,
+    MutableId, MutableLocation,
 };
 
 pub struct MutableLitInt<'a> {

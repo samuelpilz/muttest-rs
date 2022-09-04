@@ -3,7 +3,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    *,
+    MutableId, MutableLocation,
 };
 
 pub struct MutableBinopEq<'a> {
