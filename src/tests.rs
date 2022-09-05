@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     mem,
-    sync::{Mutex, Arc},
+    sync::{Arc, Mutex},
 };
 
 use lazy_static::lazy_static;

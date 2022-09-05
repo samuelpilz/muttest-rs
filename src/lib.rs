@@ -13,7 +13,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
     str::FromStr,
-    sync::{Mutex, RwLock, Arc},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use lazy_static::lazy_static;
@@ -29,7 +29,7 @@ mod tests;
 pub mod api {
     pub use crate::mutable;
     pub use crate::{
-        id, mutation_string_opt, mutation_string_from_bool_list, phantom_for_type, MutableId,
+        id, mutation_string_from_bool_list, mutation_string_opt, phantom_for_type, MutableId,
         MutableLocation,
     };
 

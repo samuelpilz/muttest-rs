@@ -121,7 +121,12 @@ impl MuttestTransformer {
             }
             None => {
                 id = MutableId::new(MUTABLE_ID_NUM.fetch_add(1, SeqCst), &*TARGET_NAME);
-                write_mutable(MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut(), &id, m, code);
+                write_mutable(
+                    MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut(),
+                    &id,
+                    m,
+                    code,
+                );
             }
         }
 
