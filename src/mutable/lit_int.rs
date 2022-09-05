@@ -36,12 +36,13 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
     }
 }
 
-pub fn run<T: MutableInt>(m_id: &MutableId<'static>, x: T, loc: MutableLocation) -> T {
-    m_id.report_details(loc, vec![]);
+pub fn run<I: MutableInt>(m_id: &MutableId<'static>, lit: I, loc: MutableLocation) -> I {
+    m_id.report_details(loc, I::type_str(), "");
+    // TODO: report type instead?
 
     match m_id.get_active_mutation().as_deref() {
-        None => x,
-        Some(p) if p.chars().all(|c| c.is_numeric()) => T::parse(p),
+        None => lit,
+        Some(p) if p.chars().all(|c| c.is_numeric()) => I::parse(p),
         _ => todo!(), // TODO: panic and report
     }
 }

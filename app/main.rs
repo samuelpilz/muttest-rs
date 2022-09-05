@@ -13,7 +13,7 @@ use muttest_core::{
         lit_str::MutableLitStr,
     },
     transformer::Mutable,
-    CollectedData, MutableData, DataCollector, ENV_VAR_MUTTEST_DIR,
+    CollectedData, DataCollector, MutableData, ENV_VAR_MUTTEST_DIR,
 };
 
 #[derive(Debug, Parser)]
@@ -271,8 +271,9 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
         }
         // fallback to mutable's description of possible mutations
         _ => mutable
-            .possible_mutations
+            .details
             .iter()
+            .flat_map(|m| &m.possible_mutations)
             .filter(|&x| x != &mutable.code)
             .map(ToOwned::to_owned)
             .collect(),

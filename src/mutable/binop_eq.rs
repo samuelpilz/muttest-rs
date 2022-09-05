@@ -34,7 +34,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                (#m_id).report_details(#loc,vec![("==", true), ("!=", true)]);
+                (#m_id).report_details(#loc,"","==:!=");
                 let (_left, _right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {
@@ -109,7 +109,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(1, res.res);
-        assert_ne!(&res.data.mutables[&mutable_id(1)].location, "");
+        assert_ne!(res.data.mutables[&mutable_id(1)].details, None);
         assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
     }
 }

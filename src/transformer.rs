@@ -136,6 +136,7 @@ impl MuttestTransformer {
         let m_id = quote_spanned! {m.span() =>
             #muttest_api::MutableId {id: #id, crate_name: #muttest_api::Cow::Borrowed(#crate_name)}
         };
+        // TODO: use Span::before/after when available to get the entire range
         let loc = quote_spanned! {m.span()=>
             #muttest_api::MutableLocation {file: file!(), line: line!(), column: column!() }
         };

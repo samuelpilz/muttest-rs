@@ -49,7 +49,7 @@ pub fn mutable_str(
     loc: MutableLocation,
     mutation: &RwLock<Option<&'static str>>,
 ) -> &'static str {
-    m_id.report_details(loc, vec![]);
+    m_id.report_details(loc, "&'static str", "");
 
     match m_id.get_active_mutation().as_deref() {
         None => s,

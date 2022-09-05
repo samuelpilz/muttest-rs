@@ -28,7 +28,10 @@ mod tests;
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::{id, phantom_for_type, MutableId, MutableLocation};
+    pub use crate::{
+        id, mutation_string_opt, mutation_string_from_bool_list, phantom_for_type, MutableId,
+        MutableLocation,
+    };
 
     pub use std::{
         borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
@@ -72,6 +75,8 @@ pub enum Error {
     Csv(#[from] csv::Error),
     #[error("not a valid MutableId: '{0}'")]
     MutableIdFormat(String),
+    #[error("not a known mutable: '{0}'")]
+    UnknownMutable(MutableId<'static>),
 }
 
 fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
@@ -128,15 +133,9 @@ impl MutableId<'static> {
         }
     }
 
-    // TODO: document
-    // TODO: move all mutables to this fn
-    // TODO: (&str, bool) is no longer a good idea
-    pub fn report_details<'a, I: IntoIterator<Item = (&'static str, bool)>>(
-        &self,
-        loc: MutableLocation,
-        mutations: I,
-    ) {
-        self.get_collector().write_details(self, loc, mutations)
+    /// reports details of mutables gathered by static analysis
+    pub fn report_details(&self, loc: MutableLocation, ty: &str, mutations: &str) {
+        self.get_collector().write_details(self, loc, ty, mutations)
     }
 
     /// get the active mutation for a mutable
@@ -166,8 +165,23 @@ impl MutableId<'static> {
     }
 }
 
+/// make a correct string of possible mutations from a (&str,bool) tuple list
+pub fn mutation_string_from_bool_list(l: &[(&'static str, bool)]) -> String {
+    l.into_iter()
+        .filter(|(_, ok)| *ok)
+        .map(|(m, _)| *m)
+        .collect::<Vec<_>>()
+        .join(":")
+}
+pub fn mutation_string_opt(mutation: &str, opt: bool) -> &str {
+    if opt {
+        mutation
+    } else {
+        ""
+    }
+}
+
 pub struct DataCollector {
-    // TODO: when reporting location & mutations together, use a single map
     details: Mutex<BTreeSet<MutableId<'static>>>,
     coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
     details_file: Mutex<CollectorFile>,
@@ -177,7 +191,7 @@ pub struct DataCollector {
 impl DataCollector {
     pub const ENV_VAR_DETAILS_FILE: &'static str = "MUTTEST_DETAILS_FILE";
     pub const ENV_VAR_COVERAGE_FILE: &'static str = "MUTTEST_COVERAGE_FILE";
-    pub const DETAILS_FILE_HEADER: &'static str = "id,loc,mutations\n";
+    pub const DETAILS_FILE_HEADER: &'static str = "id,loc,ty,mutations\n";
     pub const COVERAGE_FILE_HEADER: &'static str = "id,data\n";
 
     fn new_from_envvar_files() -> Result<Self, Error> {
@@ -192,26 +206,20 @@ impl DataCollector {
         })
     }
 
-    fn write_details<'a, I: IntoIterator<Item = (&'static str, bool)>>(
+    fn write_details(
         &self,
         m_id: &MutableId<'static>,
         loc: MutableLocation,
-        mutations: I,
+        ty: &str,
+        mutations: &str,
     ) {
         let is_new = self.details.lock().unwrap().insert(m_id.clone());
         if !is_new {
             return;
         }
 
-        let mutations = mutations
-            .into_iter()
-            .filter(|(_, ok)| *ok)
-            .map(|(m, _)| m)
-            .collect::<Vec<_>>()
-            .join(":");
-
         let mut f = self.details_file.lock().unwrap();
-        writeln!(f, "{m_id},{loc},{mutations}").expect("unable to write mutable detail");
+        writeln!(f, "{m_id},{loc},{ty},{mutations}").expect("unable to write mutable detail");
         f.flush().expect("unable to flush mutable detail");
     }
 
@@ -292,22 +300,28 @@ impl DerefMut for CollectorFile {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct MutableData {
     pub kind: String,
     pub code: String,
-    // TODO: maybe have two loc fields (one from defs, one from details)
-    // TODO: signal when details are not found
-    pub location: String,
+    pub details: Option<MutableDetails>,
+    // TODO: parsed location
+    pub loc: String,
+}
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct MutableDetails {
+    // TODO: merge location with other
+    pub loc: String,
+    pub mutable_type: String,
     pub possible_mutations: Vec<String>,
 }
 
-// TODO: require definitions are read before
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
     pub mutables: BTreeMap<MutableId<'static>, MutableData>,
     pub coverage: BTreeMap<MutableId<'static>, BTreeSet<String>>,
 }
+// TODO: tests
 
 impl CollectedData {
     pub fn new() -> Self {
@@ -330,8 +344,8 @@ impl CollectedData {
                 MutableData {
                     kind: md.kind,
                     code: md.code,
-                    location: md.loc,
-                    ..MutableData::default()
+                    loc: md.loc,
+                    details: None,
                 },
             );
         }
@@ -339,43 +353,48 @@ impl CollectedData {
     }
     // TODO: report errors more gracefully
     pub fn read_details_csv(&mut self, details: impl Read) -> Result<(), Error> {
+        #[derive(Debug, Deserialize)]
+        pub struct MutableDetailsCsvLine {
+            pub id: String,
+            pub loc: String,
+            pub ty: String,
+            pub mutations: String,
+        }
+
         let mut reader = csv::ReaderBuilder::new().from_reader(details);
-        for md in reader.deserialize::<MutableDetails>() {
+        for md in reader.deserialize::<MutableDetailsCsvLine>() {
             let md = md?;
 
             let id = md.id.parse::<MutableId>()?;
-            let mut mutable = self.mutables.get_mut(&id).unwrap();
-            mutable.location = md.loc;
-            mutable.possible_mutations = if md.mutations.is_empty() {
-                Vec::new()
-            } else {
-                md.mutations.split(":").map(ToOwned::to_owned).collect()
+            let details = MutableDetails {
+                loc: md.loc,
+                mutable_type: md.ty,
+                possible_mutations: split_or_empty(&md.mutations, ":"),
             };
+            self.mutables
+                .get_mut(&id)
+                .ok_or_else(|| Error::UnknownMutable(id))?
+                .details = Some(details);
         }
         Ok(())
     }
-    // TODO: report errors more gracefully
     pub fn read_coverage_csv(&mut self, coverage: impl Read) -> Result<(), Error> {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
         for md in reader.deserialize::<MutableCoverage>() {
             let md = md?;
-            let id = md.id.parse::<MutableId>()?;
-            let data = if md.data.is_empty() {
-                BTreeSet::new()
-            } else {
-                md.data.split(":").map(ToOwned::to_owned).collect()
-            };
-            self.coverage.insert(id, data);
+            self.coverage
+                .insert(md.id.parse()?, split_or_empty(&md.data, ":"));
         }
         Ok(())
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct MutableDetails {
-    pub id: String,
-    pub loc: String,
-    pub mutations: String,
+fn split_or_empty<T: FromIterator<String>>(s: &str, sep: &str) -> T {
+    if s.is_empty() {
+        std::iter::empty().collect()
+    } else {
+        s.split(sep).map(ToOwned::to_owned).collect()
+    }
 }
 
 #[derive(Debug, Deserialize)]

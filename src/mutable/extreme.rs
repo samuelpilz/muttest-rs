@@ -1,4 +1,4 @@
-use std::{ops::ControlFlow, marker::PhantomData};
+use std::{marker::PhantomData, ops::ControlFlow};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -54,13 +54,14 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
                         // report static analysis
                         (#m_id).report_details(
                             #loc,
-                            Some(("default",
+                            "", // TODO: try print the type
+                            #muttest_api::mutation_string_opt("default",
                                 {
                                     #[allow(unused_imports)]
                                     use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
                                     (&ret_type).is_default()
                                 }
-                            ))
+                            )
                         );
 
                         match #muttest_api::mutable::extreme::run(&#m_id,
@@ -169,8 +170,12 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &<Vec<String>>::new(),
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
         )
     }
 
@@ -182,7 +187,11 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &<Vec<String>>::new(),
         )
     }
@@ -196,7 +205,11 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &<Vec<String>>::new(),
         );
         let res: Box<dyn Any> = Box::new(res.res);
@@ -212,7 +225,11 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &["default"]
         );
         let res: Box<dyn Any> = Box::new(res.res);

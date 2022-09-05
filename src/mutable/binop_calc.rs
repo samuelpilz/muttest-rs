@@ -45,7 +45,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                 // these types carry the types involved in the calculation
                 // the assignment in the default-case defines the type of this phantom
                 #[allow(unused_mut)]
-                let (mut left_type, mut right_type, mut output_type) = 
+                let (mut left_type, mut right_type, mut output_type) =
                     (#muttest_api::PhantomData, #muttest_api::PhantomData,#muttest_api::PhantomData);
 
                 // TODO: this has exponential blowup of code-size. Dead branches should use original code instead
@@ -53,7 +53,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                 #[allow(unused_assignments)]
                 match 0 {
                     1 => {
-                        // underscores are used 
+                        // underscores are used
                         let (_left, _right) = (#left, #right);
                         left_type = #muttest_api::phantom_for_type(&_left);
                         right_type = #muttest_api::phantom_for_type(&_right);
@@ -64,7 +64,8 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                     _ => {
                         (#m_id).report_details(
                             #loc,
-                            vec![
+                            "",
+                            &#muttest_api::mutation_string_from_bool_list(&[
                                 #((
                                     #op_symbols,
                                     {
@@ -75,7 +76,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                                             .is_impl()
                                     }
                                 ),)*
-                            ]
+                            ])
                         );
                         let (_left, _right) = (#left, #right);
                         match &*#muttest_api::mutable::binop_calc::run(&#m_id) {
@@ -199,7 +200,12 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.data.mutables[&mutable_id(1)].possible_mutations.len(),
+            res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations
+                .len(),
             // all mutations possible
             CALC_OP_NAMES.len()
         );
@@ -235,7 +241,11 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &["+"]
         );
     }
@@ -276,13 +286,21 @@ mod tests {
         let res = call_isolated! {f1()};
         assert_eq!(res.res, O1);
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &["+"]
         );
         let res = call_isolated! {f2()};
         assert_eq!(res.res, O2);
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &["-"]
         );
     }
@@ -297,7 +315,11 @@ mod tests {
         let now = Instant::now();
         let res = call_isolated! {f(now)};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &["+", "-"]
         );
         assert!(now < res.res);
@@ -340,7 +362,11 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &res.data.mutables[&mutable_id(1)]
+                .details
+                .as_ref()
+                .unwrap()
+                .possible_mutations,
             &["<<", ">>"]
         );
         assert_eq!(res.res, 4);
@@ -400,7 +426,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(5, res.res);
-        assert_ne!(&res.data.mutables[&mutable_id(1)].location, "");
+        assert_ne!(res.data.mutables[&mutable_id(1)].details, None);
         assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
     }
 }
