@@ -50,7 +50,7 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
 
 pub fn run_left(m_id: &MutableId<'static>, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     // TODO: also report behavior of `true && panic`
-    if (left && op_str == "||") && (!left && op_str == "&&") {
+    if (left && op_str == "||") || (!left && op_str == "&&") {
         m_id.report_weak(bool_to_str(left, None));
     }
 
@@ -95,6 +95,21 @@ mod tests {
         assert_eq!(
             &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
             &["TF"]
+        );
+    }
+
+    #[test]
+    fn true_or_false() {
+        #[muttest_codegen::mutate_isolated("binop_bool")]
+        fn f() -> bool {
+            true || false
+        }
+
+        let res = call_isolated! {f()};
+        assert_eq!(true, res.res);
+        assert_eq!(
+            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
+            &["T"]
         );
     }
 

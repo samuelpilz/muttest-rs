@@ -29,7 +29,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
             m_id,
             muttest_api,
             loc,
-        } = transformer.new_mutable(&self, &self.base10_digits);
+        } = transformer.new_mutable(&self, self.base10_digits);
         quote_spanned! {span=>
             #muttest_api::mutable::lit_int::run(&#m_id, #lit, #loc)
         }

@@ -102,7 +102,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
 }
 
 pub fn run(m_id: &MutableId<'static>) -> Arc<str> {
-    m_id.get_active_mutation().unwrap_or(Arc::from(""))
+    m_id.get_active_mutation().unwrap_or_else(|| Arc::from(""))
 }
 
 macro_rules! binop_calc_traits {

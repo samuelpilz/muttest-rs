@@ -23,7 +23,7 @@ lazy_static! {
         let mut target_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
         let crate_name = std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
         if crate_name != target_name {
-            target_name.push_str(":");
+            target_name.push(':');
             target_name.push_str(&crate_name);
         }
         target_name
@@ -69,6 +69,11 @@ pub enum MutablesConf {
 pub struct TransformerData {
     pub local_id: usize,
     pub mutables_csv: Vec<u8>,
+}
+impl Default for MuttestTransformer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 impl MuttestTransformer {
     pub fn new() -> Self {

@@ -86,7 +86,7 @@ fn main() -> Result<(), Error> {
     for m_id in m_ids {
         let mutable @ MutableData { code, kind, .. } = &data.mutables[&m_id];
         let coverage = data.coverage.get(&m_id);
-        let mutations = mutations_for_mutable(&mutable);
+        let mutations = mutations_for_mutable(mutable);
         println!("mutable {m_id}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
 
         let mutations = match mutations {
@@ -105,30 +105,23 @@ fn main() -> Result<(), Error> {
                 }
             };
 
-            match &**kind {
-                MutableBinopCmp::NAME => {
-                    if (code == "<" && &m == "<=" && !coverage.contains("EQ"))
-                        || (code == "<=" && &m == "<" && !coverage.contains("EQ"))
-                        || (code == ">" && &m == ">=" && !coverage.contains("EQ"))
-                        || (code == ">=" && &m == ">" && !coverage.contains("EQ"))
-                        || (code == "<="
-                            && &m == ">="
-                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
-                        || (code == ">="
-                            && &m == "<="
-                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
-                        || (code == "<"
-                            && &m == ">"
-                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
-                        || (code == ">"
-                            && &m == "<"
-                            && &*coverage.iter().collect::<Vec<_>>() == &["EQ"])
-                    {
-                        println!("    survived weak mutation testing");
-                        continue;
-                    }
-                }
-                _ => {}
+            // TODO: improve weak surviving
+            if *kind == MutableBinopCmp::NAME
+                && ((code == "<" && &m == "<=" && !coverage.contains("EQ"))
+                    || (code == "<=" && &m == "<" && !coverage.contains("EQ"))
+                    || (code == ">" && &m == ">=" && !coverage.contains("EQ"))
+                    || (code == ">=" && &m == ">" && !coverage.contains("EQ"))
+                    || (code == "<="
+                        && &m == ">="
+                        && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+                    || (code == ">="
+                        && &m == "<="
+                        && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+                    || (code == "<" && &m == ">" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+                    || (code == ">" && &m == "<" && *coverage.iter().collect::<Vec<_>>() == ["EQ"]))
+            {
+                println!("    survived weak mutation testing");
+                continue;
             }
 
             // run test suites without mutations for coverage

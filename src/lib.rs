@@ -45,8 +45,8 @@ macro_rules! env_var_muttest_dir {
     };
 }
 
-pub const ENV_VAR_MUTTEST_DIR: &'static str = env_var_muttest_dir!();
-pub const ENV_VAR_MUTTEST_MUTATION: &'static str = "MUTTEST_MUTATION";
+pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
+pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
 
 lazy_static! {
     pub static ref MUTTEST_DIR: Option<PathBuf> = {
@@ -83,11 +83,11 @@ fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
     let mut mutations = BTreeMap::new();
 
     // TODO: report errors
-    for m in env.split(";") {
+    for m in env.split(';') {
         if m.is_empty() {
             continue;
         }
-        let (id, m) = m.split_once("=").unwrap();
+        let (id, m) = m.split_once('=').unwrap();
         let id = id.parse().unwrap();
         mutations.insert(id, Arc::from(m));
     }
@@ -110,7 +110,7 @@ impl FromStr for MutableId<'static> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let id = s
-            .split_once(":")
+            .split_once(':')
             .ok_or_else(|| Error::MutableIdFormat(s.to_owned()))?;
         Ok(MutableId {
             id: id
@@ -167,7 +167,7 @@ impl MutableId<'static> {
 
 /// make a correct string of possible mutations from a (&str,bool) tuple list
 pub fn mutation_string_from_bool_list(l: &[(&'static str, bool)]) -> String {
-    l.into_iter()
+    l.iter()
         .filter(|(_, ok)| *ok)
         .map(|(m, _)| *m)
         .collect::<Vec<_>>()
@@ -236,12 +236,12 @@ impl DataCollector {
         };
 
         if let Some(weak) = weak {
-            debug_assert!(!weak.contains(":"));
+            debug_assert!(!weak.contains(':'));
             if data.is_empty() {
                 *data = weak.to_owned();
                 update = true;
-            } else if !data.split(":").find(|&x| x == weak).is_some() {
-                data.push_str(":");
+            } else if data.split(':').all(|x| x != weak) {
+                data.push(':');
                 data.push_str(weak);
                 update = true;
             }
@@ -373,7 +373,7 @@ impl CollectedData {
             };
             self.mutables
                 .get_mut(&id)
-                .ok_or_else(|| Error::UnknownMutable(id))?
+                .ok_or(Error::UnknownMutable(id))?
                 .details = Some(details);
         }
         Ok(())

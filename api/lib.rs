@@ -7,7 +7,7 @@ pub use muttest_core::api::*;
 #[cfg(test)]
 fn _ensure_this_is_inferrable() {
     let x = [0u8];
-    assert_eq!((&x[..]).as_ref(), []);
+    assert_eq!(&x[..], []);
 }
 
 // TODO: make this feature-gated
