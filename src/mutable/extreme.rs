@@ -169,10 +169,8 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec![])
+            &<Vec<String>>::new(),
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
         )
     }
 
@@ -184,10 +182,8 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec![])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &<Vec<String>>::new(),
         )
     }
 
@@ -200,10 +196,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec![])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &<Vec<String>>::new(),
         );
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(NoDefault, *res.downcast::<NoDefault>().unwrap());
@@ -218,10 +212,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec!["default".to_owned()])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &["default"]
         );
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(*res.downcast::<usize>().unwrap(), 4);

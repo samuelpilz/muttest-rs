@@ -200,11 +200,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_deref()
-                .unwrap_or_default()
-                .len(),
+            res.data.mutables[&mutable_id(1)].possible_mutations.len(),
             // all mutations possible
             CALC_OP_NAMES.len()
         );
@@ -240,10 +236,8 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec!["+".to_owned()])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &["+"]
         );
     }
 
@@ -283,18 +277,14 @@ mod tests {
         let res = call_isolated! {f1()};
         assert_eq!(res.res, O1);
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec!["+".to_owned()])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &["+"]
         );
         let res = call_isolated! {f2()};
         assert_eq!(res.res, O2);
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec!["-".to_owned()])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &["-"]
         );
     }
 
@@ -308,10 +298,8 @@ mod tests {
         let now = Instant::now();
         let res = call_isolated! {f(now)};
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec!["+".to_owned(), "-".to_owned()])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &["+", "-"]
         );
         assert!(now < res.res);
 
@@ -353,10 +341,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
-                .possible_mutations
-                .as_ref(),
-            Some(&vec!["<<".to_owned(), ">>".to_owned()])
+            &res.data.mutables[&mutable_id(1)].possible_mutations,
+            &["<<", ">>"]
         );
         assert_eq!(res.res, 4);
 

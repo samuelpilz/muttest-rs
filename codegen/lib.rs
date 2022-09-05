@@ -32,6 +32,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut mod_ident = result.sig.ident.clone();
     mod_ident.set_span(Span::call_site());
     let mutables_csv = &transformer.isolated.as_ref().unwrap().mutables_csv;
+    let mutables_csv = std::str::from_utf8(mutables_csv).unwrap();
     let num_mutables = transformer.isolated.as_ref().unwrap().local_id;
 
     let result: File = parse_quote! {

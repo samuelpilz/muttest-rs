@@ -4,7 +4,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
-    transformer::{Mutable, MuttestTransformer, TransformSnippets}, MutableId, MutableLocation,
+    transformer::{Mutable, MuttestTransformer, TransformSnippets},
+    MutableId,
 };
 
 pub struct MutableBinopBool<'a> {
@@ -34,24 +35,20 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
         } = transformer.new_mutable(&self, &op_str);
 
         quote_spanned! {span=>
-            match #muttest_api::mutable::binop_bool::run_left(&#m_id, #op_str, #left, #loc) {
-                #muttest_api::ControlFlow::Break(b) => b,
-                #muttest_api::ControlFlow::Continue(b) => {
-                    #muttest_api::mutable::binop_bool::run_right(&#m_id, b, #right)
+            #muttest_api::id({
+                (#m_id).report_details(#loc,vec![("&&", true), ("||", true)]);
+                match #muttest_api::mutable::binop_bool::run_left(&#m_id, #op_str, #left) {
+                    #muttest_api::ControlFlow::Break(b) => b,
+                    #muttest_api::ControlFlow::Continue(b) => {
+                        #muttest_api::mutable::binop_bool::run_right(&#m_id, b, #right)
+                    }
                 }
-            }
+            })
         }
     }
 }
 
-pub fn run_left(
-    m_id: &MutableId<'static>,
-    op_str: &str,
-    left: bool,
-    loc: MutableLocation,
-) -> ControlFlow<bool, bool> {
-    m_id.report_at(loc);
-
+pub fn run_left(m_id: &MutableId<'static>, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     // TODO: also report behavior of `true && panic`
     if (left && op_str == "||") && (!left && op_str == "&&") {
         m_id.report_weak(bool_to_str(left, None));
@@ -84,6 +81,8 @@ fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use crate::tests::*;
 
     #[test]
@@ -101,5 +100,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn details_reported_before_covered() {
+        #[muttest_codegen::mutate_isolated("binop_bool")]
+        #[allow(unreachable_code)]
+        fn f() -> bool {
+            ({
+                return true;
+            }) && false
+        }
+
+        let res = call_isolated! {f()};
+        assert_eq!(true, res.res);
+        assert_ne!(&res.data.mutables[&mutable_id(1)].location, "");
+        assert_eq!(res.data.coverage[&mutable_id(1)], BTreeSet::new());
+    }
+
     // TODO: tests
+
+    // TODO: test that details are reported if left&&right fail
 }

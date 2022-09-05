@@ -5,7 +5,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    MutableId, MutableLocation,
+    MutableId,
 };
 
 pub struct MutableBinopCmp<'a> {
@@ -35,13 +35,14 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
         } = transformer.new_mutable(&self, &op_str);
 
         quote_spanned! {span=>
-            ({
+            #muttest_api::id({
+                (#m_id).report_details(#loc,vec![("<", true), ("<=", true), (">=", true), (">", true)]);
                 let (left, right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
                 if false {left #op right} else {
-                    #muttest_api::mutable::binop_cmp::run(&#m_id, #op_str, &left, &right, #loc)
+                    #muttest_api::mutable::binop_cmp::run(&#m_id, #op_str, &left, &right)
                 }
-            },).0
+            })
         }
     }
 }
@@ -51,10 +52,7 @@ pub fn run<T: PartialOrd<T1>, T1>(
     op_str: &str,
     left: &T,
     right: &T1,
-    loc: MutableLocation,
 ) -> bool {
-    m_id.report_at(loc);
-
     let ord = left.partial_cmp(right);
     m_id.report_weak(ord_to_str(ord));
 

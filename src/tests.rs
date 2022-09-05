@@ -15,7 +15,6 @@ lazy_static! {
     pub(crate) static ref DATA_COLLECTOR: DataCollector = DataCollector::new_for_test();
 }
 
-
 #[macro_export]
 macro_rules! call_isolated {
     ($f:ident $(::<$t:ty>)? ($($args:expr),*) $(where $m_id:expr => $m:expr)?) => {
@@ -101,9 +100,8 @@ impl CollectedData {
 impl DataCollector {
     fn new_for_test() -> Self {
         DataCollector {
+            details: Mutex::new(BTreeSet::new()),
             coverage: Mutex::new(BTreeMap::new()),
-            locations: Mutex::new(BTreeSet::new()),
-            possible_mutations: Mutex::new(BTreeSet::new()),
             details_file: Mutex::new(CollectorFile::InMemory(
                 Self::DETAILS_FILE_HEADER.as_bytes().to_vec(),
             )),
@@ -120,14 +118,12 @@ impl DataCollector {
         // lock everything together to ensure isolation
         {
             let mut coverage = self.coverage.lock().unwrap();
-            let mut locations = self.locations.lock().unwrap();
-            let mut possible_mutations = self.possible_mutations.lock().unwrap();
+            let mut details = self.details.lock().unwrap();
             let mut details_file = self.details_file.lock().unwrap();
             let mut coverage_file = self.coverage_file.lock().unwrap();
 
             coverage.clear();
-            locations.clear();
-            possible_mutations.clear();
+            details.clear();
             mem::swap(details_file.unwrap_vec_mut(), &mut details_csv);
             mem::swap(coverage_file.unwrap_vec_mut(), &mut coverage_csv);
         }
@@ -141,14 +137,12 @@ impl DataCollector {
     fn assert_clear(&self) {
         // lock everything together to ensure isolation
         let coverage = self.coverage.lock().unwrap();
-        let locations = self.locations.lock().unwrap();
-        let possible_mutations = self.possible_mutations.lock().unwrap();
+        let details = self.details.lock().unwrap();
         let details_file = self.details_file.lock().unwrap();
         let coverage_file = self.coverage_file.lock().unwrap();
 
         assert!(coverage.is_empty());
-        assert!(locations.is_empty());
-        assert!(possible_mutations.is_empty());
+        assert!(details.is_empty());
         assert_eq!(
             &*details_file.unwrap_vec(),
             Self::DETAILS_FILE_HEADER.as_bytes()

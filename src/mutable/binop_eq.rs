@@ -3,7 +3,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    MutableId, MutableLocation,
+    MutableId,
 };
 
 pub struct MutableBinopEq<'a> {
@@ -33,13 +33,14 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
         } = transformer.new_mutable(&self, &op_str);
 
         quote_spanned! {span=>
-            ({
+            #muttest_api::id({
+                (#m_id).report_details(#loc,vec![("==", true), ("!=", true)]);
                 let (left, right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
                 if false {left #op right} else {
-                    #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &left, &right, #loc)
+                    #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &left, &right)
                 }
-            },).0
+            })
         }
     }
 }
@@ -49,10 +50,7 @@ pub fn run<T: PartialEq<T1>, T1>(
     op_str: &str,
     left: &T,
     right: &T1,
-    loc: MutableLocation,
 ) -> bool {
-    m_id.report_at(loc);
-
     let eq = left.eq(right);
     // this reports behavior but is irrelevant for weak mutation testing
     m_id.report_weak(eq_to_str(eq));

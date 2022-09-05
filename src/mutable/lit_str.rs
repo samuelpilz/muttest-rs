@@ -36,7 +36,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
         quote_spanned! {span=>
             #muttest_api::mutable::lit_str::mutable_str(&#m_id, #lit, #loc, {
                 static MUTABLE: #muttest_api::RwLock<#muttest_api::Option<&str>> =
-                #muttest_api::RwLock::new(#muttest_api::Option::None);
+                    #muttest_api::RwLock::new(#muttest_api::Option::None);
                 &MUTABLE
             })
         }
@@ -49,7 +49,7 @@ pub fn mutable_str(
     loc: MutableLocation,
     mutation: &RwLock<Option<&'static str>>,
 ) -> &'static str {
-    m_id.report_at(loc);
+    m_id.report_details(loc, vec![]);
 
     match m_id.get_active_mutation().as_deref() {
         None => s,

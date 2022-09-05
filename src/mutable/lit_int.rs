@@ -37,7 +37,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
 }
 
 pub fn run<T: MutableInt>(m_id: &MutableId<'static>, x: T, loc: MutableLocation) -> T {
-    m_id.report_at(loc);
+    m_id.report_details(loc, vec![]);
 
     match m_id.get_active_mutation().as_deref() {
         None => x,
