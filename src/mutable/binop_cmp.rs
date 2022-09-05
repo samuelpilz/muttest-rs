@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeSet};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -65,6 +65,18 @@ pub fn run<T: PartialOrd<T1>, T1>(
         _ => todo!(), // TODO: some lock is held here
     }
 }
+
+pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String>) -> bool {
+    (code == "<" && mutation == "<=" && !coverage.contains("EQ"))
+        || (code == "<=" && mutation == "<" && !coverage.contains("EQ"))
+        || (code == ">" && mutation == ">=" && !coverage.contains("EQ"))
+        || (code == ">=" && mutation == ">" && !coverage.contains("EQ"))
+        || (code == "<=" && mutation == ">=" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+        || (code == ">=" && mutation == "<=" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+        || (code == "<" && mutation == ">" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+        || (code == ">" && mutation == "<" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+}
+// TODO: test this
 
 fn ord_to_str(ord: Option<Ordering>) -> &'static str {
     match ord {
