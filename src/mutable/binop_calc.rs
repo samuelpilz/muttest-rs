@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
@@ -99,8 +101,8 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
     }
 }
 
-pub fn run(m_id: &MutableId<'static>) -> String {
-    m_id.get_active_mutation().unwrap_or_default()
+pub fn run(m_id: &MutableId<'static>) -> Arc<str> {
+    m_id.get_active_mutation().unwrap_or(Arc::from(""))
 }
 
 macro_rules! binop_calc_traits {

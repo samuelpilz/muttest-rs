@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     mem,
-    sync::Mutex,
+    sync::{Mutex, Arc},
 };
 
 use lazy_static::lazy_static;
@@ -58,7 +58,7 @@ pub fn run<'a, T>(
     m_map.retain(|m_id, _| !m_id.crate_name.is_empty());
     // insert new mutation
     for (m_id, m) in mutation {
-        m_map.insert(mutable_id(m_id), m.to_owned());
+        m_map.insert(mutable_id(m_id), Arc::from(m));
     }
     // release lock on ACTIVE_MUTATION
     std::mem::drop(m_map);

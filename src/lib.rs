@@ -13,7 +13,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
     str::FromStr,
-    sync::{Mutex, RwLock},
+    sync::{Mutex, RwLock, Arc},
 };
 
 use lazy_static::lazy_static;
@@ -56,7 +56,7 @@ lazy_static! {
             Err(e) => panic!("{}", e),
         }
     };
-    static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, String>> = {
+    static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, Arc<str>>> = {
         RwLock::new(parse_mutations(
             &std::env::var(ENV_VAR_MUTTEST_MUTATION).unwrap_or_default(),
         ))
@@ -79,7 +79,7 @@ pub enum Error {
     UnknownMutable(MutableId<'static>),
 }
 
-fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
+fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
     let mut mutations = BTreeMap::new();
 
     // TODO: report errors
@@ -89,7 +89,7 @@ fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, String> {
         }
         let (id, m) = m.split_once("=").unwrap();
         let id = id.parse().unwrap();
-        mutations.insert(id, m.to_owned());
+        mutations.insert(id, Arc::from(m));
     }
 
     mutations
@@ -141,14 +141,14 @@ impl MutableId<'static> {
     /// get the active mutation for a mutable
     ///
     /// calling this function also triggers logging its coverage
-    fn get_active_mutation(&self) -> Option<String> {
+    fn get_active_mutation(&self) -> Option<Arc<str>> {
         self.get_collector().write_coverage(self, None);
 
         ACTIVE_MUTATION
             .read()
             .expect("read-lock active mutations")
             .get(self)
-            .cloned() // TODO: use Arc for cheap cloning
+            .cloned()
     }
 
     // TODO: this is only a first draft of behavior
