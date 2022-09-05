@@ -81,8 +81,6 @@ fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use crate::tests::*;
 
     #[test]
@@ -113,7 +111,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
         assert_ne!(&res.data.mutables[&mutable_id(1)].location, "");
-        assert_eq!(res.data.coverage[&mutable_id(1)], BTreeSet::new());
+        assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
     }
 
     // TODO: tests

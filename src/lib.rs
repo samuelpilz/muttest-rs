@@ -297,6 +297,7 @@ pub struct MutableData {
     pub kind: String,
     pub code: String,
     // TODO: maybe have two loc fields (one from defs, one from details)
+    // TODO: signal when details are not found
     pub location: String,
     pub possible_mutations: Vec<String>,
 }

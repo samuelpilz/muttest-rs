@@ -35,10 +35,10 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
         quote_spanned! {span=>
             #muttest_api::id({
                 (#m_id).report_details(#loc,vec![("==", true), ("!=", true)]);
-                let (left, right) = (#left, #right);
+                let (_left, _right) = (#left, #right);
                 // for type-inference, keep the original expression in the first branch
-                if false {left #op right} else {
-                    #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &left, &right)
+                if false {_left #op _right} else {
+                    #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &_left, &_right)
                 }
             })
         }
@@ -87,5 +87,29 @@ mod tests {
             &["NE"]
         );
         assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
+    }
+
+    #[test]
+    fn details_reported_before_covered() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        #[allow(unreachable_code)]
+        fn f() -> u8 {
+            return loop {
+                if ({
+                    break 1;
+                    2
+                }) == 2
+                {
+                    return 3;
+                } else {
+                    return 4;
+                };
+            };
+        }
+
+        let res = call_isolated! {f()};
+        assert_eq!(1, res.res);
+        assert_ne!(&res.data.mutables[&mutable_id(1)].location, "");
+        assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
     }
 }

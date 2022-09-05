@@ -44,23 +44,22 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
             #muttest_api::id({
                 // these types carry the types involved in the calculation
                 // the assignment in the default-case defines the type of this phantom
-                let mut left_type = #muttest_api::PhantomData;
-                let mut right_type = #muttest_api::PhantomData;
-                let mut output_type = #muttest_api::PhantomData;
+                #[allow(unused_mut)]
+                let (mut left_type, mut right_type, mut output_type) = 
+                    (#muttest_api::PhantomData, #muttest_api::PhantomData,#muttest_api::PhantomData);
 
                 // TODO: this has exponential blowup of code-size. Dead branches should use original code instead
                 // dead branches to help type inference
                 #[allow(unused_assignments)]
                 match 0 {
-                    1 => #left #op #right,
-                    // type-check almost-original code
-                    2 => {
-                        let (left, right) = (#left, #right);
-                        left_type = #muttest_api::phantom_for_type(&left);
-                        right_type = #muttest_api::phantom_for_type(&right);
-                        let output = left #op right;
-                        output_type = #muttest_api::phantom_for_type(&output);
-                        output
+                    1 => {
+                        // underscores are used 
+                        let (_left, _right) = (#left, #right);
+                        left_type = #muttest_api::phantom_for_type(&_left);
+                        right_type = #muttest_api::phantom_for_type(&_right);
+                        let _output = _left #op _right;
+                        output_type = #muttest_api::phantom_for_type(&_output);
+                        _output
                     }
                     _ => {
                         (#m_id).report_details(
@@ -78,16 +77,16 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                                 ),)*
                             ]
                         );
-                        let (left, right) = (#left, #right);
+                        let (_left, _right) = (#left, #right);
                         match &*#muttest_api::mutable::binop_calc::run(&#m_id) {
-                            "" => left #op right,
+                            "" => _left #op _right,
                             #(#op_symbols =>
                                 {
                                     #[allow(unused_imports)]
                                     use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
                                     (&(left_type, right_type, output_type))
                                         .get_impl()
-                                        .run(left, right)
+                                        .run(_left, _right)
                                 }
                             )*
                             _ => todo!()
@@ -387,6 +386,21 @@ mod tests {
         let res = call_isolated! {f() where 1 => "-"};
         assert_eq!(res.res, 2);
     }
-}
 
-// TODO: test that details are reported, even if left&right fail
+    #[test]
+    fn details_reported_before_covered() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        #[allow(unreachable_code)]
+        fn f() -> u8 {
+            ({
+                return 5;
+                1
+            }) / 3
+        }
+
+        let res = call_isolated! {f()};
+        assert_eq!(5, res.res);
+        assert_ne!(&res.data.mutables[&mutable_id(1)].location, "");
+        assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
+    }
+}

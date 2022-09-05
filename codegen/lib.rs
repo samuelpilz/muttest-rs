@@ -120,8 +120,8 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopEq<'a> {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_eq_op(*op) => Some(Self {
-                left,
-                right,
+                left: strip_expr_parens(left),
+                right: strip_expr_parens(right),
                 op,
                 span: op.span(),
             }),
@@ -135,8 +135,8 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopCmp<'a> {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_cmp_op(*op) => Some(Self {
-                left,
-                right,
+                left: strip_expr_parens(left),
+                right: strip_expr_parens(right),
                 op,
                 span: op.span(),
             }),
@@ -150,8 +150,8 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopCalc<'a> {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_calc_op(*op) => Some(Self {
-                left,
-                right,
+                left: strip_expr_parens(left),
+                right: strip_expr_parens(right),
                 op,
                 span: op.span(),
             }),
@@ -165,8 +165,8 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopBool<'a> {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_bool_op(*op) => Some(Self {
-                left,
-                right,
+                left: strip_expr_parens(left),
+                right: strip_expr_parens(right),
                 op,
                 span: op.span(),
             }),
@@ -265,6 +265,14 @@ impl Fold for FoldImpl<'_> {
             ControlFlow::Break(e) => e,
             ControlFlow::Continue(_) => e,
         }
+    }
+}
+
+fn strip_expr_parens(e: &Expr) -> &Expr {
+    match e {
+        // TODO: this loses attrs
+        Expr::Paren(ep) => &*ep.expr,
+        _ => e,
     }
 }
 
