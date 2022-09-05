@@ -10,7 +10,7 @@ use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
     mutable::{
-        self, binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, lit_int::MutableLitInt,
+        self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt,
         lit_str::MutableLitStr,
     },
     transformer::Mutable,
@@ -89,6 +89,9 @@ fn main() -> Result<(), Error> {
     data.read_details_csv(File::open(details_path)?)?;
     data.read_coverage_csv(File::open(coverage_path)?)?;
 
+    let mut total_mutants = 0;
+    let mut killed_mutants = 0;
+
     // evaluate mutations
     let m_ids = data.mutables.keys().cloned().collect::<Vec<_>>();
     for m_id in m_ids {
@@ -96,13 +99,14 @@ fn main() -> Result<(), Error> {
         let coverage = data.coverage.get(&m_id);
         let mutations = mutations_for_mutable(mutable);
         println!("mutable {m_id}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
-
+        
         let mutations = match mutations {
             Some(m) => m,
             None => continue,
         };
-
+        
         for m in mutations {
+            total_mutants += 1;
             println!("  mutation {:5}", format!("{m:?}"));
 
             let coverage = match coverage {
@@ -129,31 +133,34 @@ fn main() -> Result<(), Error> {
                         "MUTTEST_MUTATION",
                         format!("{}:{}={m}", m_id.id, m_id.crate_name),
                     )
-                    // TODO: think about details here
+                    // TODO: think about details in mutated runs
                     .stdout(Stdio::null())
-                    .stderr(Stdio::inherit())
+                    .stderr(Stdio::null())
                     .spawn()?;
                 // TODO: make timeout parameters into config options
-                let result = test
-                    .wait_timeout(Duration::from_millis(500).max(5 * test_bin.exec_time.unwrap()))?
-                    .unwrap_or_else(|| {
-                        // TODO: error handling in here?
-                        test.kill().unwrap();
-                        test.wait().unwrap()
-                    });
-                let exit_code = match result.code() {
-                    // TODO: try extract reason (trait ExitStatusExt)
-                    None => "KILLED BY SIGNAL".to_owned(),
-                    Some(0) => "survived".to_owned(),
-                    Some(x) => format!("killed (code {x})"),
+                let result = test.wait_timeout(
+                    Duration::from_millis(500).max(3 * test_bin.exec_time.unwrap()),
+                )?;
+                let result = match result {
+                    Some(r) => r,
+                    None => {
+                        test.kill()?;
+                        test.wait()?
+                    }
                 };
-                println!("      {}", exit_code);
+                let result = if result.success() {
+                    "survived"
+                } else {
+                    killed_mutants += 1;
+                    "killed"
+                };
+                println!("      {}", result);
                 // TODO: run tests in finer granularity
             }
         }
     }
 
-    // TODO: make report
+    println!("{killed_mutants}/{total_mutants} mutants killed");
 
     Ok(())
 }
@@ -252,16 +259,6 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
             m.push((i + 1).to_string());
             m
         }
-        MutableBinopEq::NAME => ["!=", "=="]
-            .into_iter()
-            .filter(|x| x != &mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
-        MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
-            .into_iter()
-            .filter(|x| x != &mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
         MutableLitStr::NAME => {
             if mutable.code.is_empty() {
                 vec![]
