@@ -51,5 +51,5 @@ jobs:
         with:
           components: rustfmt
       - name: Check format
-        run: cargo format --check --all
+        run: cargo fmt --check --all
 # TODO: currently there is a ICE when running clippy
