@@ -3,18 +3,20 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    time::{Duration, Instant},
 };
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
     mutable::{
-        binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, lit_int::MutableLitInt,
+        self, binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, lit_int::MutableLitInt,
         lit_str::MutableLitStr,
     },
     transformer::Mutable,
     CollectedData, DataCollector, MutableData, ENV_VAR_MUTTEST_DIR,
 };
+use wait_timeout::ChildExt;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -52,7 +54,7 @@ fn main() -> Result<(), Error> {
     fs::create_dir_all(&muttest_dir)?;
 
     // compile libs and test cases
-    let compilation_result = compile(&cargo_exe, &muttest_dir)?;
+    let mut compilation_result = compile(&cargo_exe, &muttest_dir)?;
 
     println!("{compilation_result:?}");
 
@@ -67,15 +69,21 @@ fn main() -> Result<(), Error> {
     setup_csv_file(&coverage_path, DataCollector::COVERAGE_FILE_HEADER)?;
 
     // run test suites without mutations for coverage
-    for test_exe in &compilation_result.test_exes {
-        println!("call {}", &test_exe.name);
-        Command::new(&test_exe.path)
+    for test_bin in &mut compilation_result.test_bins {
+        println!("call {}", &test_bin.name);
+        let start_time = Instant::now();
+        let status = Command::new(&test_bin.path)
             .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
             .env(DataCollector::ENV_VAR_DETAILS_FILE, &details_path)
             .env(DataCollector::ENV_VAR_COVERAGE_FILE, &coverage_path)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
+        test_bin.exec_time = Some(start_time.elapsed());
+        // TODO: better error report
+        if !status.success() {
+            panic!("test suite fails")
+        }
     }
 
     data.read_details_csv(File::open(details_path)?)?;
@@ -107,27 +115,16 @@ fn main() -> Result<(), Error> {
 
             // TODO: improve weak surviving
             if *kind == MutableBinopCmp::NAME
-                && ((code == "<" && &m == "<=" && !coverage.contains("EQ"))
-                    || (code == "<=" && &m == "<" && !coverage.contains("EQ"))
-                    || (code == ">" && &m == ">=" && !coverage.contains("EQ"))
-                    || (code == ">=" && &m == ">" && !coverage.contains("EQ"))
-                    || (code == "<="
-                        && &m == ">="
-                        && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
-                    || (code == ">="
-                        && &m == "<="
-                        && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
-                    || (code == "<" && &m == ">" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
-                    || (code == ">" && &m == "<" && *coverage.iter().collect::<Vec<_>>() == ["EQ"]))
+                && mutable::binop_cmp::identical_behavior(code, &m, coverage)
             {
                 println!("    survived weak mutation testing");
                 continue;
             }
 
             // run test suites without mutations for coverage
-            for test_exe in &compilation_result.test_exes {
-                println!("    call {}", &test_exe.name);
-                let result = Command::new(&test_exe.path)
+            for test_bin in &compilation_result.test_bins {
+                println!("    call {}", &test_bin.name);
+                let mut test = Command::new(&test_bin.path)
                     .env(
                         "MUTTEST_MUTATION",
                         format!("{}:{}={m}", m_id.id, m_id.crate_name),
@@ -135,12 +132,20 @@ fn main() -> Result<(), Error> {
                     // TODO: think about details here
                     .stdout(Stdio::null())
                     .stderr(Stdio::inherit())
-                    .spawn()?
-                    .wait()?;
+                    .spawn()?;
+                // TODO: make timeout parameters into config options
+                let result = test
+                    .wait_timeout(Duration::from_millis(500).max(5 * test_bin.exec_time.unwrap()))?
+                    .unwrap_or_else(|| {
+                        // TODO: error handling in here?
+                        test.kill().unwrap();
+                        test.wait().unwrap()
+                    });
                 let exit_code = match result.code() {
-                    None => "TIMEOUT",
-                    Some(0) => "survived",
-                    Some(_) => "killed",
+                    // TODO: try extract reason (trait ExitStatusExt)
+                    None => "KILLED BY SIGNAL".to_owned(),
+                    Some(0) => "survived".to_owned(),
+                    Some(x) => format!("killed (code {x})"),
                 };
                 println!("      {}", exit_code);
                 // TODO: run tests in finer granularity
@@ -155,13 +160,14 @@ fn main() -> Result<(), Error> {
 
 #[derive(Debug, Default)]
 struct CompilationResult {
-    test_exes: Vec<TestExe>,
+    test_bins: Vec<TestBin>,
 }
 
 #[derive(Debug)]
-struct TestExe {
+struct TestBin {
     path: Utf8PathBuf,
     name: String,
+    exec_time: Option<Duration>,
 }
 /// execute `cargo test --no-run --message-format=json` and collect output
 fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
@@ -190,12 +196,13 @@ fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult,
             None => continue,
         };
 
-        let test_exe = TestExe {
+        let test_exe = TestBin {
             path: test_exe.to_owned(),
             name: test_exe.file_name().expect("test exe file name").to_owned(),
+            exec_time: None,
         };
 
-        result.test_exes.push(test_exe);
+        result.test_bins.push(test_exe);
     }
 
     let status = compile_out.wait().map_err(|_| Error::Cargo("test", None))?;

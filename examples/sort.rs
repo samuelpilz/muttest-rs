@@ -33,8 +33,6 @@ fn stooge_sort(arr: &mut [u8]) {
     stooge_sort(&mut arr[..2 * t]);
 }
 
-// TODO: apply test suite
-
 macro_rules! sort_tests {
     ($sort_fn:ident) => {
         mod $sort_fn {

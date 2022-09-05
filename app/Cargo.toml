@@ -10,6 +10,7 @@ thiserror = "1.0.30"
 csv = "1.1"
 serde = "1"
 muttest-core = { path = ".." }
+wait-timeout = "0.2.0"
 
 [[bin]]
 name = "cargo-muttest"
