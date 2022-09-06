@@ -35,7 +35,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
         quote_spanned! {span=>
             #muttest_api::id({
                 (#m_id).report_details(#loc,"","==:!=");
-                let (_left, _right) = (#left, #right);
+                let (_left, _right) = (&#left, &#right);
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {
                     #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &_left, &_right)
@@ -45,6 +45,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run<T: PartialEq<T1>, T1>(
     m_id: &MutableId<'static>,
     op_str: &str,
@@ -62,6 +63,7 @@ pub fn run<T: PartialEq<T1>, T1>(
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 fn eq_to_str(eq: bool) -> &'static str {
     if eq {
         "EQ"
@@ -87,6 +89,30 @@ mod tests {
             &["NE"]
         );
         assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
+    }
+
+    #[test]
+    fn compare_unsized() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        fn f(s: String) -> bool {
+            *s == *"2";
+            // second call to ensure that s is not moved in call before
+            *s == *"2"
+        }
+
+        assert_eq!(call_isolated! {f(String::new())}.res, false);
+        assert_eq!(call_isolated! {f(String::new()) where 2 => "!="}.res, true);
+    }
+
+    #[test]
+    fn compare_tmp_vars() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        fn f() -> bool {
+            vec!["1", "2", "3"].into_iter().collect::<String>() == "123".to_owned()
+        }
+
+        assert_eq!(call_isolated! {f()}.res, true);
+        assert_eq!(call_isolated! {f() where 1 => "!="}.res, false);
     }
 
     #[test]

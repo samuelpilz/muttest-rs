@@ -37,7 +37,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
         quote_spanned! {span=>
             #muttest_api::id({
                 (#m_id).report_details(#loc, "", "<:<=:>=:>");
-                let (_left, _right) = (#left, #right);
+                let (_left, _right) = (&#left, &#right);
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {
                     #muttest_api::mutable::binop_cmp::run(&#m_id, #op_str, &_left, &_right)
@@ -47,6 +47,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run<T: PartialOrd<T1>, T1>(
     m_id: &MutableId<'static>,
     op_str: &str,
@@ -66,6 +67,7 @@ pub fn run<T: PartialOrd<T1>, T1>(
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String>) -> bool {
     // TODO: better structure for this
     (code == "<" && mutation == "<=" && !coverage.contains("EQ"))
@@ -79,6 +81,7 @@ pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String
 }
 // TODO: test this
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 fn ord_to_str(ord: Option<Ordering>) -> &'static str {
     match ord {
         None => "",
@@ -130,6 +133,30 @@ mod tests {
         );
         let res = call_isolated! {f() where 1 => "<="};
         assert_eq!(3, res.res);
+    }
+
+    #[test]
+    fn compare_unsized() {
+        #[muttest_codegen::mutate_isolated("binop_cmp")]
+        fn f(s: String) -> bool {
+            *s < *"2";
+            // second call to ensure that s is not moved in call before
+            *s < *"2"
+        }
+
+        assert_eq!(call_isolated! {f(String::new())}.res, true);
+        assert_eq!(call_isolated! {f(String::new()) where 2 => ">"}.res, false);
+    }
+
+    #[test]
+    fn compare_tmp_vars() {
+        #[muttest_codegen::mutate_isolated("binop_cmp")]
+        fn f() -> bool {
+            vec!["1", "2", "3"].into_iter().collect::<String>() < "123".to_owned()
+        }
+
+        assert_eq!(call_isolated! {f()}.res, false);
+        assert_eq!(call_isolated! {f() where 1 => ">"}.res, false);
     }
 
     #[test]
