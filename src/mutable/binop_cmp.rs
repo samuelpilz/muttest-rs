@@ -67,6 +67,7 @@ pub fn run<T: PartialOrd<T1>, T1>(
 }
 
 pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String>) -> bool {
+    // TODO: better structure for this
     (code == "<" && mutation == "<=" && !coverage.contains("EQ"))
         || (code == "<=" && mutation == "<" && !coverage.contains("EQ"))
         || (code == ">" && mutation == ">=" && !coverage.contains("EQ"))
@@ -105,10 +106,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
-        assert_eq!(
-            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
-            &["LT"]
-        );
+        assert_eq!(&res.data.coverage[&mutable_id(1)].to_vec_ref(), &["LT"]);
         assert_eq!(false, call_isolated! {f() where 1 => ">"}.res);
         assert_eq!(false, call_isolated! {f() where 1 => ">="}.res);
     }
@@ -127,7 +125,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(2, res.res);
         assert_eq!(
-            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
+            &res.data.coverage[&mutable_id(1)].to_vec_ref(),
             &["EQ", "LT"]
         );
         let res = call_isolated! {f() where 1 => "<="};

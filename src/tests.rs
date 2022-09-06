@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     mem,
+    ops::Deref,
     sync::{Arc, Mutex},
 };
 
@@ -166,6 +167,45 @@ impl CollectorFile {
             CollectorFile::InMemory(v) => v,
             _ => panic!("expect in-memory file"),
         }
+    }
+}
+
+pub const NO_MUTATIONS: &[&str] = &[];
+
+pub trait ToVec<T> {
+    fn to_vec(&self) -> Vec<T>
+    where
+        T: Clone;
+    fn to_vec_ref(&self) -> Vec<&T>;
+    fn to_vec_deref(&self) -> Vec<&<T as Deref>::Target>
+    where
+        T: Deref;
+    fn to_vec_into<T1>(&self) -> Vec<T1>
+    where
+        T: Into<T1> + Clone;
+}
+impl<T> ToVec<T> for BTreeSet<T> {
+    fn to_vec(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.iter().cloned().collect()
+    }
+    fn to_vec_ref(&self) -> Vec<&T> {
+        self.iter().collect()
+    }
+    fn to_vec_deref(&self) -> Vec<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        self.iter().map(|x| x.deref()).collect()
+    }
+
+    fn to_vec_into<T1>(&self) -> Vec<T1>
+    where
+        T: Into<T1> + Clone,
+    {
+        self.iter().cloned().map(|x| x.into()).collect()
     }
 }
 

@@ -174,8 +174,9 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
-            &<Vec<String>>::new(),
+                .possible_mutations
+                .to_vec_ref(),
+            NO_MUTATIONS,
         )
     }
 
@@ -191,8 +192,9 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
-            &<Vec<String>>::new(),
+                .possible_mutations
+                .to_vec(),
+            NO_MUTATIONS,
         )
     }
 
@@ -205,12 +207,13 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            res.data.mutables[&mutable_id(1)]
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
-            &<Vec<String>>::new(),
+                .possible_mutations
+                .to_vec_into::<String>(),
+            NO_MUTATIONS,
         );
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(NoDefault, *res.downcast::<NoDefault>().unwrap());
@@ -229,7 +232,8 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
+                .possible_mutations
+                .to_vec_ref(),
             &["default"]
         );
         let res: Box<dyn Any> = Box::new(res.res);

@@ -9,10 +9,7 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    mutable::{
-        self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt,
-        lit_str::MutableLitStr,
-    },
+    mutable::{self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr},
     transformer::Mutable,
     CollectedData, DataCollector, MutableData, ENV_VAR_MUTTEST_DIR,
 };
@@ -99,12 +96,12 @@ fn main() -> Result<(), Error> {
         let coverage = data.coverage.get(&m_id);
         let mutations = mutations_for_mutable(mutable);
         println!("mutable {m_id}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
-        
+
         let mutations = match mutations {
             Some(m) => m,
             None => continue,
         };
-        
+
         for m in mutations {
             total_mutants += 1;
             println!("  mutation {:5}", format!("{m:?}"));

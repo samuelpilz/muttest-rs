@@ -313,7 +313,7 @@ pub struct MutableDetails {
     // TODO: merge location with other
     pub loc: String,
     pub mutable_type: String,
-    pub possible_mutations: Vec<String>,
+    pub possible_mutations: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Default)]

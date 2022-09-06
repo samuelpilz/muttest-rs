@@ -247,7 +247,8 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
+                .possible_mutations
+                .to_vec_ref(),
             &["+"]
         );
     }
@@ -292,7 +293,8 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
+                .possible_mutations
+                .to_vec_ref(),
             &["+"]
         );
         let res = call_isolated! {f2()};
@@ -302,7 +304,8 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
+                .possible_mutations
+                .to_vec_ref(),
             &["-"]
         );
     }
@@ -321,7 +324,8 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
+                .possible_mutations
+                .to_vec_ref(),
             &["+", "-"]
         );
         assert!(now < res.res);
@@ -368,7 +372,8 @@ mod tests {
                 .details
                 .as_ref()
                 .unwrap()
-                .possible_mutations,
+                .possible_mutations
+                .to_vec_ref(),
             &["<<", ">>"]
         );
         assert_eq!(res.res, 4);
