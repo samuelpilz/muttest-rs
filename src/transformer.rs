@@ -15,7 +15,7 @@ use quote::{format_ident, quote_spanned, ToTokens};
 
 use crate::{Error, MutableId, MUTTEST_DIR};
 
-pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,loc";
+pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,path,span";
 static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
 
 lazy_static! {
@@ -56,11 +56,13 @@ pub trait Mutable<'a> {
 
 pub struct MuttestTransformer {
     pub conf: TransformerConf,
-    pub muttest_api: Option<&'static str>,
     pub isolated: Option<TransformerData>,
+    // TODO: parsed path
+    pub path: Vec<String>,
 }
 pub struct TransformerConf {
     pub mutables: MutablesConf,
+    pub muttest_api: Option<&'static str>,
 }
 pub enum MutablesConf {
     All,
@@ -80,30 +82,33 @@ impl MuttestTransformer {
         Self {
             conf: TransformerConf {
                 mutables: MutablesConf::All,
+                muttest_api: Some("muttest"),
             },
-            muttest_api: Some("muttest"),
             isolated: None,
+            path: vec![],
         }
     }
     pub fn new_isolated() -> Self {
         Self {
             conf: TransformerConf {
                 mutables: MutablesConf::All,
+                muttest_api: None,
             },
-            muttest_api: None,
             isolated: Some(TransformerData {
                 local_id: 0,
                 mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n").into_bytes(),
             }),
+            path: vec![],
         }
     }
     pub fn new_selftest() -> Self {
         Self {
             conf: TransformerConf {
                 mutables: MutablesConf::All,
+                muttest_api: None,
             },
-            muttest_api: None,
             isolated: None,
+            path: vec![],
         }
     }
 
@@ -122,11 +127,12 @@ impl MuttestTransformer {
                     data.local_id += 1;
                     data.local_id
                 });
-                write_mutable(Some(&mut data.mutables_csv), &id, m, code);
+                write_mutable(&self.path, Some(&mut data.mutables_csv), &id, m, code);
             }
             None => {
                 id = MutableId::new(MUTABLE_ID_NUM.fetch_add(1, SeqCst), &*TARGET_NAME);
                 write_mutable(
+                    &self.path,
                     MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut(),
                     &id,
                     m,
@@ -135,7 +141,7 @@ impl MuttestTransformer {
             }
         }
 
-        let muttest_api = match self.muttest_api {
+        let muttest_api = match self.conf.muttest_api {
             Some(cc) => format_ident!("{}", span = m.span(), cc).into_token_stream(),
             None => quote_spanned! {m.span() => crate::api},
         };
@@ -147,8 +153,9 @@ impl MuttestTransformer {
             #muttest_api::MutableId {id: #id, crate_name: #muttest_api::Cow::Borrowed(#crate_name)}
         };
         // TODO: use Span::before/after when available to get the entire range
+        // TODO: also print location of attribute
         let loc = quote_spanned! {m.span()=>
-            #muttest_api::MutableLocation {file: file!(), line: line!(), column: column!() }
+            #muttest_api::MutableLocation {file: #muttest_api::Cow::Borrowed(file!()), line: line!(), column: column!() }
         };
 
         TransformSnippets {
@@ -159,14 +166,21 @@ impl MuttestTransformer {
     }
 }
 /// register a new mutable
-fn write_mutable<'a, M: Mutable<'a>, W: Write>(f: Option<W>, id: &MutableId, m: &M, code: &str) {
+fn write_mutable<'a, M: Mutable<'a>, W: Write>(
+    path: &[String],
+    f: Option<W>,
+    id: &MutableId,
+    m: &M,
+    code: &str,
+) {
     if let Some(mut f) = f {
         writeln!(
             f,
-            "{},{},{},{}",
+            "{},{},{},{},{}",
             id.id,
             M::NAME,
             code,
+            path.join(" => "),
             display_span(m.span())
         )
         .expect("unable to write mutable file");
@@ -183,6 +197,9 @@ pub struct TransformSnippets {
 pub fn display_span(span: Span) -> String {
     let start = span.start();
     let end = span.end();
+    if [start.line, start.column, end.line, end.column] == [0, 0, 0, 0] {
+        return String::new();
+    }
     format!(
         "{}@{}:{}-{}:{}",
         source_file_path(span)

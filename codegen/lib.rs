@@ -13,7 +13,7 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
-    ExprRepeat, File, ItemConst, ItemFn, ItemStatic, Lit, LitStr, Pat, Type,
+    ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type,
 };
 
 /// isolated mutation for testing purposes
@@ -24,7 +24,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut transformer = MuttestTransformer::new_isolated();
     if !attr.is_empty() {
         let s = parse_macro_input!(attr as LitStr);
-        transformer.conf.mutables = MutablesConf::One(s.value())
+        transformer.conf.mutables = MutablesConf::One(s.value());
     }
     let result = FoldImpl(&mut transformer).fold_item_fn(input);
 
@@ -250,12 +250,30 @@ impl Fold for FoldImpl<'_> {
             return f;
         }
 
+        self.path.push(format!("fn {}", f.sig.ident));
+
         let f = syn::fold::fold_item_fn(self, f);
 
-        match self.try_all_mutate_item_fn(&f) {
+        let f = match self.try_all_mutate_item_fn(&f) {
             ControlFlow::Break(f) => f,
             ControlFlow::Continue(_) => f,
-        }
+        };
+        self.path.pop();
+
+        f
+    }
+
+    fn fold_item_impl(&mut self, node: ItemImpl) -> ItemImpl {
+        self.path.push(format!(
+            "impl {}",
+            node.self_ty.to_token_stream().to_string()
+        ));
+
+        let i = syn::fold::fold_item_impl(self, node);
+
+        self.path.pop();
+
+        i
     }
 
     fn fold_expr(&mut self, e: Expr) -> Expr {

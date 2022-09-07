@@ -91,11 +91,24 @@ fn main() -> Result<(), Error> {
 
     // evaluate mutations
     let m_ids = data.mutables.keys().cloned().collect::<Vec<_>>();
-    for m_id in m_ids {
-        let mutable @ MutableData { code, kind, .. } = &data.mutables[&m_id];
+    let mut crate_name = None;
+    for m_id in &m_ids {
+        if crate_name == Some(&m_id.crate_name) {
+            println!("crate {}", m_id.crate_name);
+            crate_name = Some(&m_id.crate_name);
+        }
+
+        let mutable @ MutableData {
+            code,
+            kind,
+            span,
+            path,
+            ..
+        } = &data.mutables[&m_id];
         let coverage = data.coverage.get(&m_id);
         let mutations = mutations_for_mutable(mutable);
-        println!("mutable {m_id}: `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
+        let id = m_id.id;
+        println!("{id}: {path} {span} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
 
         let mutations = match mutations {
             Some(m) => m,

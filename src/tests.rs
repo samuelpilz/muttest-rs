@@ -209,13 +209,15 @@ impl<T> ToVec<T> for BTreeSet<T> {
     }
 }
 
-// this shows how a mutation testing for the `muttest-core` lib itself could work in theory
-#[muttest_codegen::mutate_selftest]
-fn example_selftest_fn() -> usize {
-    1
-}
-
 #[test]
-fn example_selftest_test() {
-    assert_eq!(example_selftest_fn(), 1);
+pub fn mutable_id_ord() {
+    assert!(
+        MutableId {
+            crate_name: Cow::Borrowed("a"),
+            id: 1,
+        } < MutableId {
+            crate_name: Cow::Borrowed("b"),
+            id: 0,
+        }
+    )
 }

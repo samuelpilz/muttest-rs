@@ -77,6 +77,8 @@ pub enum Error {
     MutableIdFormat(String),
     #[error("not a known mutable: '{0}'")]
     UnknownMutable(MutableId<'static>),
+    #[error("invalid location: '{0}'")]
+    InvalidLocation(String),
 }
 
 fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
@@ -97,8 +99,8 @@ fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MutableId<'a> {
-    pub id: usize,
     pub crate_name: Cow<'a, str>,
+    pub id: usize,
 }
 impl fmt::Display for MutableId<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -300,18 +302,20 @@ impl DerefMut for CollectorFile {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutableData {
     pub kind: String,
     pub code: String,
+    // TODO: parsed span
+    pub span: String,
+    // TODO: parsed path
+    pub path: String,
     pub details: Option<MutableDetails>,
-    // TODO: parsed location
-    pub loc: String,
 }
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutableDetails {
     // TODO: merge location with other
-    pub loc: String,
+    pub loc: MutableLocation,
     pub mutable_type: String,
     pub possible_mutations: BTreeSet<String>,
 }
@@ -344,7 +348,8 @@ impl CollectedData {
                 MutableData {
                     kind: md.kind,
                     code: md.code,
-                    loc: md.loc,
+                    span: md.span,
+                    path: md.path,
                     details: None,
                 },
             );
@@ -367,7 +372,7 @@ impl CollectedData {
 
             let id = md.id.parse::<MutableId>()?;
             let details = MutableDetails {
-                loc: md.loc,
+                loc: md.loc.parse()?,
                 mutable_type: md.ty,
                 possible_mutations: split_or_empty(&md.mutations, ":"),
             };
@@ -408,19 +413,42 @@ struct MutableDefinition {
     id: usize,
     kind: String,
     code: String,
-    loc: String,
+    span: String,
+    path: String,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(unused)]
 pub struct MutableLocation {
-    pub file: &'static str,
+    pub file: Cow<'static, str>,
     pub line: u32,
     pub column: u32,
 }
 impl fmt::Display for MutableLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}:{}", self.file, self.line, self.column)
+        write!(f, "{}@{}:{}", self.file, self.line, self.column)
+    }
+}
+impl FromStr for MutableLocation {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (f, lc) = s
+            .split_once('@')
+            .ok_or_else(|| Error::InvalidLocation(s.to_owned()))?;
+
+        let (l, c) = lc
+            .split_once(':')
+            .ok_or_else(|| Error::InvalidLocation(s.to_owned()))?;
+        Ok(Self {
+            file: Cow::Owned((*f).to_owned()),
+            line: l
+                .parse()
+                .map_err(|_| Error::InvalidLocation(s.to_owned()))?,
+            column: c
+                .parse()
+                .map_err(|_| Error::InvalidLocation(s.to_owned()))?,
+        })
     }
 }
 
