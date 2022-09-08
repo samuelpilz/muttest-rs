@@ -5,7 +5,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    MutableId, MutableLocation,
+    BakedLocation, MutableId,
 };
 
 pub struct MutableLitInt<'a> {
@@ -36,7 +36,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
     }
 }
 
-pub fn run<I: MutableInt>(m_id: &MutableId<'static>, lit: I, loc: MutableLocation) -> I {
+pub fn run<I: MutableInt>(m_id: &MutableId<'static>, lit: I, loc: BakedLocation) -> I {
     m_id.report_details(loc, I::type_str(), "");
     // TODO: report type instead?
 

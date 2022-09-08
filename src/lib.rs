@@ -29,8 +29,8 @@ mod tests;
 pub mod api {
     pub use crate::mutable;
     pub use crate::{
-        id, mutation_string_from_bool_list, mutation_string_opt, phantom_for_type, MutableId,
-        MutableLocation,
+        id, mutation_string_from_bool_list, mutation_string_opt, phantom_for_type, BakedLocation,
+        LineColumn, MutableId, Span,
     };
 
     pub use std::{
@@ -73,12 +73,12 @@ pub enum Error {
     EnvVarUnicode(&'static str),
     #[error("failed to read csv file: {0}")]
     Csv(#[from] csv::Error),
-    #[error("not a valid MutableId: '{0}'")]
+    #[error("invalid MutableId: '{0}'")]
     MutableIdFormat(String),
     #[error("not a known mutable: '{0}'")]
     UnknownMutable(MutableId<'static>),
     #[error("invalid location: '{0}'")]
-    InvalidLocation(String),
+    LocationFormat(String),
 }
 
 fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
@@ -95,6 +95,58 @@ fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
     }
 
     mutations
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableData {
+    pub kind: String,
+    pub code: String,
+    pub location: MutableLocation,
+    pub details: Option<MutableDetails>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableDetails {
+    // TODO: merge location with other
+    pub mutable_type: String,
+    pub possible_mutations: BTreeSet<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MutableCoverage {
+    id: String,
+    data: String,
+}
+
+// TODO: name
+pub struct BakedLocation {
+    pub file: &'static str,
+    pub module: &'static str,
+    pub attr_span: Span,
+    pub span: Span,
+    // TODO: add more end location info for feature proc_macro_span / proc_macro_span_shrink
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(unused)]
+pub struct MutableLocation {
+    pub file: String,
+    pub module: String,
+    pub path: Vec<String>,
+    pub attr_span: Option<Span>,
+    pub span: Option<Span>,
+    // TODO: display instance
+}
+
+// TODO: use proc-macro2 structs instead??
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: LineColumn,
+    pub end: Option<LineColumn>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineColumn {
+    pub line: u32,
+    pub column: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -136,7 +188,7 @@ impl MutableId<'static> {
     }
 
     /// reports details of mutables gathered by static analysis
-    pub fn report_details(&self, loc: MutableLocation, ty: &str, mutations: &str) {
+    pub fn report_details(&self, loc: BakedLocation, ty: &str, mutations: &str) {
         self.get_collector().write_details(self, loc, ty, mutations)
     }
 
@@ -193,7 +245,7 @@ pub struct DataCollector {
 impl DataCollector {
     pub const ENV_VAR_DETAILS_FILE: &'static str = "MUTTEST_DETAILS_FILE";
     pub const ENV_VAR_COVERAGE_FILE: &'static str = "MUTTEST_COVERAGE_FILE";
-    pub const DETAILS_FILE_HEADER: &'static str = "id,loc,ty,mutations\n";
+    pub const DETAILS_FILE_HEADER: &'static str = "id,ty,mutations,file,module,attr_span,span\n";
     pub const COVERAGE_FILE_HEADER: &'static str = "id,data\n";
 
     fn new_from_envvar_files() -> Result<Self, Error> {
@@ -211,7 +263,7 @@ impl DataCollector {
     fn write_details(
         &self,
         m_id: &MutableId<'static>,
-        loc: MutableLocation,
+        loc: BakedLocation,
         ty: &str,
         mutations: &str,
     ) {
@@ -221,7 +273,17 @@ impl DataCollector {
         }
 
         let mut f = self.details_file.lock().unwrap();
-        writeln!(f, "{m_id},{loc},{ty},{mutations}").expect("unable to write mutable detail");
+        let BakedLocation {
+            file,
+            module,
+            attr_span,
+            span,
+        } = loc;
+        writeln!(
+            f,
+            "{m_id},{ty},{mutations},{file},{module},{attr_span},{span}"
+        )
+        .expect("unable to write mutable detail");
         f.flush().expect("unable to flush mutable detail");
     }
 
@@ -302,24 +364,6 @@ impl DerefMut for CollectorFile {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MutableData {
-    pub kind: String,
-    pub code: String,
-    // TODO: parsed span
-    pub span: String,
-    // TODO: parsed path
-    pub path: String,
-    pub details: Option<MutableDetails>,
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MutableDetails {
-    // TODO: merge location with other
-    pub loc: MutableLocation,
-    pub mutable_type: String,
-    pub possible_mutations: BTreeSet<String>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
     pub mutables: BTreeMap<MutableId<'static>, MutableData>,
@@ -336,8 +380,19 @@ impl CollectedData {
         mutated_package: &str,
         definitions: impl Read,
     ) -> Result<(), Error> {
+        #[derive(Debug, Deserialize)]
+        struct MutableDefinitionCsvLine {
+            id: usize,
+            kind: String,
+            code: String,
+            file: String,
+            path: String,
+            attr_span: String,
+            span: String,
+        }
+
         let mut reader = csv::ReaderBuilder::new().from_reader(definitions);
-        for md in reader.deserialize::<MutableDefinition>() {
+        for md in reader.deserialize::<MutableDefinitionCsvLine>() {
             let md = md?;
             let id = MutableId {
                 id: md.id,
@@ -348,8 +403,13 @@ impl CollectedData {
                 MutableData {
                     kind: md.kind,
                     code: md.code,
-                    span: md.span,
-                    path: md.path,
+                    location: MutableLocation {
+                        file: md.file.to_owned(),
+                        module: String::new(),
+                        path: md.path.split(':').map(ToOwned::to_owned).collect(),
+                        attr_span: parse_or_none_if_empty(&md.attr_span)?,
+                        span: parse_or_none_if_empty(&md.span)?,
+                    },
                     details: None,
                 },
             );
@@ -359,11 +419,14 @@ impl CollectedData {
     // TODO: report errors more gracefully
     pub fn read_details_csv(&mut self, details: impl Read) -> Result<(), Error> {
         #[derive(Debug, Deserialize)]
-        pub struct MutableDetailsCsvLine {
-            pub id: String,
-            pub loc: String,
-            pub ty: String,
-            pub mutations: String,
+        struct MutableDetailsCsvLine {
+            id: String,
+            ty: String,
+            mutations: String,
+            file: String,
+            module: String,
+            attr_span: String,
+            span: String,
         }
 
         let mut reader = csv::ReaderBuilder::new().from_reader(details);
@@ -371,15 +434,26 @@ impl CollectedData {
             let md = md?;
 
             let id = md.id.parse::<MutableId>()?;
+            // TODO: enhance location info
             let details = MutableDetails {
-                loc: md.loc.parse()?,
                 mutable_type: md.ty,
                 possible_mutations: split_or_empty(&md.mutations, ":"),
             };
-            self.mutables
+            // TODO: enhance mutable location
+            let mutable = self
+                .mutables
                 .get_mut(&id)
-                .ok_or(Error::UnknownMutable(id))?
-                .details = Some(details);
+                .ok_or(Error::UnknownMutable(id))?;
+
+            if mutable.location.span.is_none() {
+                mutable.location.span = parse_or_none_if_empty(&md.span)?;
+            }
+            if mutable.location.attr_span.is_none() {
+                mutable.location.span = parse_or_none_if_empty(&md.attr_span)?;
+            }
+            mutable.location.file = md.file;
+            mutable.location.module = md.module;
+            mutable.details = Some(details);
         }
         Ok(())
     }
@@ -394,61 +468,84 @@ impl CollectedData {
     }
 }
 
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.start.line, self.start.column)?;
+        if let Some(end) = self.end {
+            write!(f, "-{}:{}", end.line, end.column)?;
+        }
+        Ok(())
+    }
+}
+
+impl Span {
+    fn from(span: proc_macro2::Span) -> Option<Self> {
+        let start = span.start();
+        if start.line == 0 {
+            return None;
+        }
+        let end = Some(span.end()).filter(|&end| end.line != 0 && start != end);
+        Some(Self {
+            start: LineColumn {
+                line: start.line.try_into().unwrap(),
+                column: start.column.try_into().unwrap(),
+            },
+            end: end.map(|end| LineColumn {
+                line: end.line.try_into().unwrap(),
+                column: end.column.try_into().unwrap(),
+            }),
+        })
+    }
+}
+
+impl FromStr for Span {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let start;
+        let mut end = None;
+        match s.split_once('-') {
+            Some((s, e)) => {
+                start = parse_lc(s)?;
+                end = Some(parse_lc(e)?);
+            }
+            None => {
+                start = parse_lc(s)?;
+            }
+        }
+
+        Ok(Self { start, end })
+    }
+}
+fn parse_lc(s: &str) -> Result<LineColumn, Error> {
+    let (l, c) = s
+        .split_once(':')
+        .ok_or_else(|| Error::LocationFormat(s.to_owned()))?;
+    Ok(LineColumn {
+        line: l.parse().map_err(|_| Error::LocationFormat(s.to_owned()))?,
+        column: c.parse().map_err(|_| Error::LocationFormat(s.to_owned()))?,
+    })
+}
+
+fn display_or_empty_if_none(d: &Option<impl fmt::Display>) -> &dyn fmt::Display {
+    match d {
+        Some(d) => d,
+        None => &"",
+    }
+}
+fn parse_or_none_if_empty<T: FromStr>(s: &str) -> Result<Option<T>, <T as FromStr>::Err> {
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(s.parse()?))
+    }
+}
+
 fn split_or_empty<T: FromIterator<String>>(s: &str, sep: &str) -> T {
     if s.is_empty() {
         std::iter::empty().collect()
     } else {
         s.split(sep).map(ToOwned::to_owned).collect()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MutableCoverage {
-    id: String,
-    data: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct MutableDefinition {
-    id: usize,
-    kind: String,
-    code: String,
-    span: String,
-    path: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(unused)]
-pub struct MutableLocation {
-    pub file: Cow<'static, str>,
-    pub line: u32,
-    pub column: u32,
-}
-impl fmt::Display for MutableLocation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}:{}", self.file, self.line, self.column)
-    }
-}
-impl FromStr for MutableLocation {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (f, lc) = s
-            .split_once('@')
-            .ok_or_else(|| Error::InvalidLocation(s.to_owned()))?;
-
-        let (l, c) = lc
-            .split_once(':')
-            .ok_or_else(|| Error::InvalidLocation(s.to_owned()))?;
-        Ok(Self {
-            file: Cow::Owned((*f).to_owned()),
-            line: l
-                .parse()
-                .map_err(|_| Error::InvalidLocation(s.to_owned()))?,
-            column: c
-                .parse()
-                .map_err(|_| Error::InvalidLocation(s.to_owned()))?,
-        })
     }
 }
 

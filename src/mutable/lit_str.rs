@@ -8,7 +8,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    MutableId, MutableLocation,
+    BakedLocation, MutableId,
 };
 
 pub struct MutableLitStr<'a> {
@@ -46,7 +46,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
 pub fn mutable_str(
     m_id: &MutableId<'static>,
     s: &'static str,
-    loc: MutableLocation,
+    loc: BakedLocation,
     mutation: &RwLock<Option<&'static str>>,
 ) -> &'static str {
     m_id.report_details(loc, "&'static str", "");

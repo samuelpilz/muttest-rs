@@ -21,7 +21,7 @@ use syn::{
 pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ItemFn);
 
-    let mut transformer = MuttestTransformer::new_isolated();
+    let mut transformer = MuttestTransformer::new_isolated(Span::call_site());
     if !attr.is_empty() {
         let s = parse_macro_input!(attr as LitStr);
         transformer.conf.mutables = MutablesConf::One(s.value());
@@ -50,7 +50,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
 pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
-    let mut transformer = MuttestTransformer::new_selftest();
+    let mut transformer = MuttestTransformer::new_selftest(Span::call_site());
     let result = FoldImpl(&mut transformer).fold_file(input);
 
     result.into_token_stream().into()
@@ -61,7 +61,7 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: maybe only transform if env-vars set
     let input = parse_macro_input!(input as File);
 
-    let mut transformer = MuttestTransformer::new();
+    let mut transformer = MuttestTransformer::new(Span::call_site());
     let result = FoldImpl(&mut transformer).fold_file(input);
 
     result.into_token_stream().into()

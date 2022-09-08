@@ -2,7 +2,7 @@ use std::{
     borrow::Borrow,
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
         Mutex,
@@ -15,7 +15,7 @@ use quote::{format_ident, quote_spanned, ToTokens};
 
 use crate::{Error, MutableId, MUTTEST_DIR};
 
-pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,path,span";
+pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
 static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
 
 lazy_static! {
@@ -61,6 +61,7 @@ pub struct MuttestTransformer {
     pub path: Vec<String>,
 }
 pub struct TransformerConf {
+    pub span: Span,
     pub mutables: MutablesConf,
     pub muttest_api: Option<&'static str>,
 }
@@ -72,15 +73,11 @@ pub struct TransformerData {
     pub local_id: usize,
     pub mutables_csv: Vec<u8>,
 }
-impl Default for MuttestTransformer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 impl MuttestTransformer {
-    pub fn new() -> Self {
+    pub fn new(span: Span) -> Self {
         Self {
             conf: TransformerConf {
+                span,
                 mutables: MutablesConf::All,
                 muttest_api: Some("muttest"),
             },
@@ -88,9 +85,10 @@ impl MuttestTransformer {
             path: vec![],
         }
     }
-    pub fn new_isolated() -> Self {
+    pub fn new_isolated(span: Span) -> Self {
         Self {
             conf: TransformerConf {
+                span,
                 mutables: MutablesConf::All,
                 muttest_api: None,
             },
@@ -101,9 +99,10 @@ impl MuttestTransformer {
             path: vec![],
         }
     }
-    pub fn new_selftest() -> Self {
+    pub fn new_selftest(span: Span) -> Self {
         Self {
             conf: TransformerConf {
+                span,
                 mutables: MutablesConf::All,
                 muttest_api: None,
             },
@@ -127,17 +126,20 @@ impl MuttestTransformer {
                     data.local_id += 1;
                     data.local_id
                 });
-                write_mutable(&self.path, Some(&mut data.mutables_csv), &id, m, code);
-            }
-            None => {
-                id = MutableId::new(MUTABLE_ID_NUM.fetch_add(1, SeqCst), &*TARGET_NAME);
                 write_mutable(
-                    &self.path,
-                    MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut(),
+                    &mut data.mutables_csv,
                     &id,
                     m,
                     code,
+                    &self.path,
+                    self.conf.span,
                 );
+            }
+            None => {
+                id = MutableId::new(MUTABLE_ID_NUM.fetch_add(1, SeqCst), &*TARGET_NAME);
+                if let Some(f) = MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut() {
+                    write_mutable(f, &id, m, code, &self.path, self.conf.span);
+                }
             }
         }
 
@@ -152,10 +154,16 @@ impl MuttestTransformer {
         let m_id = quote_spanned! {m.span() =>
             #muttest_api::MutableId {id: #id, crate_name: #muttest_api::Cow::Borrowed(#crate_name)}
         };
-        // TODO: use Span::before/after when available to get the entire range
-        // TODO: also print location of attribute
+        let span = bake_span(&muttest_api, m.span());
+        let attr_span = bake_span(&muttest_api, self.conf.span);
+
         let loc = quote_spanned! {m.span()=>
-            #muttest_api::MutableLocation {file: #muttest_api::Cow::Borrowed(file!()), line: line!(), column: column!() }
+            #muttest_api::BakedLocation {
+                file: file!(),
+                module: module_path!(),
+                attr_span: #attr_span,
+                span: #span,
+            }
         };
 
         TransformSnippets {
@@ -165,52 +173,50 @@ impl MuttestTransformer {
         }
     }
 }
+
+fn bake_span(muttest_api: &TokenStream, span: Span) -> TokenStream {
+    // TODO: use Span::before/after when available to get the entire range
+    quote_spanned! {span=>
+        #muttest_api::Span {
+            start: #muttest_api::LineColumn {line: line!(), column: column!() },
+            end: #muttest_api::Option::None,
+        }
+    }
+}
+
 /// register a new mutable
 fn write_mutable<'a, M: Mutable<'a>, W: Write>(
-    path: &[String],
-    f: Option<W>,
+    mut f: W,
     id: &MutableId,
     m: &M,
     code: &str,
+    path: &[String],
+    attr_span: Span,
 ) {
-    if let Some(mut f) = f {
-        writeln!(
-            f,
-            "{},{},{},{},{}",
-            id.id,
-            M::NAME,
-            code,
-            path.join(" => "),
-            display_span(m.span())
-        )
-        .expect("unable to write mutable file");
-        f.flush().expect("unable to flush mutable file");
-    }
+    let span = m.span();
+    writeln!(
+        f,
+        "{},{},{},{},{},{},{}",
+        id.id,
+        M::NAME,
+        code,
+        source_file_path(span).unwrap_or_default().display(),
+        path.join(":"),
+        crate::Span::from(span)
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+        crate::Span::from(attr_span)
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+    )
+    .expect("unable to write mutable file");
+    f.flush().expect("unable to flush mutable file");
 }
 
 pub struct TransformSnippets {
     pub m_id: TokenStream,
     pub muttest_api: TokenStream,
     pub loc: TokenStream,
-}
-
-pub fn display_span(span: Span) -> String {
-    let start = span.start();
-    let end = span.end();
-    if [start.line, start.column, end.line, end.column] == [0, 0, 0, 0] {
-        return String::new();
-    }
-    format!(
-        "{}@{}:{}-{}:{}",
-        source_file_path(span)
-            .as_deref()
-            .unwrap_or_else(|| Path::new("<unknown-file>"))
-            .display(),
-        start.line,
-        start.column,
-        end.line,
-        end.column
-    )
 }
 
 #[cfg(procmacro2_semver_exempt)]
@@ -222,3 +228,5 @@ pub fn source_file_path(span: Span) -> Option<PathBuf> {
 pub fn source_file_path(span: Span) -> Option<PathBuf> {
     None
 }
+
+// TODO: tests for

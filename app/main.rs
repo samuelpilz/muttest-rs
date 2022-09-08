@@ -11,7 +11,7 @@ use clap::Parser;
 use muttest_core::{
     mutable::{self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr},
     transformer::Mutable,
-    CollectedData, DataCollector, MutableData, ENV_VAR_MUTTEST_DIR,
+    CollectedData, DataCollector, MutableData, MutableLocation, ENV_VAR_MUTTEST_DIR,
 };
 use wait_timeout::ChildExt;
 
@@ -101,14 +101,20 @@ fn main() -> Result<(), Error> {
         let mutable @ MutableData {
             code,
             kind,
-            span,
-            path,
+            location: MutableLocation {
+                file, path, span, ..
+            },
             ..
         } = &data.mutables[&m_id];
         let coverage = data.coverage.get(&m_id);
         let mutations = mutations_for_mutable(mutable);
+        let path = path.join(" => ");
+        let span = span.map(|s| s.to_string()).unwrap_or_default();
         let id = m_id.id;
-        println!("{id}: {path} {span} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
+        // TODO: better location presentation
+        println!(
+            "{id}: {path} {file}:{span} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}"
+        );
 
         let mutations = match mutations {
             Some(m) => m,
