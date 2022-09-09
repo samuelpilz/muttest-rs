@@ -3,10 +3,9 @@ use std::sync::Arc;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
-use crate::{
-    transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    MutableId,
-};
+use crate::MutableId;
+
+use super::{Mutable, MuttestTransformer, TransformSnippets};
 
 pub struct MutableBinopCalc<'a> {
     pub left: &'a dyn ToTokens,

@@ -20,7 +20,6 @@ use crate::collector::DataCollector;
 
 pub mod collector;
 pub mod mutable;
-pub mod transformer;
 
 #[cfg(test)]
 mod tests;

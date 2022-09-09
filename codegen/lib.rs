@@ -1,12 +1,9 @@
 use std::ops::{ControlFlow, Deref, DerefMut};
 
-use muttest_core::{
-    mutable::{
-        binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp,
-        binop_eq::MutableBinopEq, extreme::MutableExtreme, lit_int::MutableLitInt,
-        lit_str::MutableLitStr,
-    },
-    transformer::*,
+use muttest_core::mutable::{
+    binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp,
+    binop_eq::MutableBinopEq, extreme::MutableExtreme, lit_int::MutableLitInt,
+    lit_str::MutableLitStr, Mutable, MutablesConf, MuttestTransformer,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;

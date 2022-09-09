@@ -6,10 +6,9 @@ use std::{
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::{
-    transformer::{Mutable, MuttestTransformer, TransformSnippets},
-    BakedLocation, MutableId,
-};
+use crate::{BakedLocation, MutableId};
+
+use super::{Mutable, MuttestTransformer, TransformSnippets};
 
 pub struct MutableLitStr<'a> {
     pub value: String,
