@@ -13,7 +13,7 @@ use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
-use crate::{Error, MutableId, MUTTEST_DIR};
+use crate::{display_or_empty_if_none, Error, MutableId, MUTTEST_DIR};
 
 pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
 static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
@@ -202,12 +202,8 @@ fn write_mutable<'a, M: Mutable<'a>, W: Write>(
         code,
         source_file_path(span).unwrap_or_default().display(),
         path.join(":"),
-        crate::Span::from(span)
-            .map(|s| s.to_string())
-            .unwrap_or_default(),
-        crate::Span::from(attr_span)
-            .map(|s| s.to_string())
-            .unwrap_or_default(),
+        display_or_empty_if_none(&crate::Span::from(span)),
+        display_or_empty_if_none(&crate::Span::from(attr_span)),
     )
     .expect("unable to write mutable file");
     f.flush().expect("unable to flush mutable file");

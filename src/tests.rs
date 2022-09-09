@@ -8,7 +8,10 @@ use std::{
 
 use lazy_static::lazy_static;
 
-use crate::{CollectedData, CollectorFile, DataCollector, MutableId, ACTIVE_MUTATION};
+use crate::{
+    collector::{CollectedData, CollectorFile},
+    DataCollector, MutableId, ACTIVE_MUTATION,
+};
 
 pub use crate::{call_isolated, data_isolated};
 
@@ -30,7 +33,7 @@ macro_rules! call_isolated {
 #[macro_export]
 macro_rules! data_isolated {
     ($f:ident) => {
-        crate::CollectedData::from_defs($f::NUM_MUTABLES, $f::MUTABLES_CSV)
+        crate::collector::CollectedData::from_defs($f::NUM_MUTABLES, $f::MUTABLES_CSV)
     };
 }
 

@@ -9,9 +9,10 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
+    collector::{CollectedData, DataCollector},
     mutable::{self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr},
     transformer::Mutable,
-    CollectedData, DataCollector, MutableData, MutableLocation, ENV_VAR_MUTTEST_DIR,
+    MutableData, ENV_VAR_MUTTEST_DIR,
 };
 use wait_timeout::ChildExt;
 
@@ -101,20 +102,13 @@ fn main() -> Result<(), Error> {
         let mutable @ MutableData {
             code,
             kind,
-            location: MutableLocation {
-                file, path, span, ..
-            },
+            location,
             ..
         } = &data.mutables[&m_id];
         let coverage = data.coverage.get(&m_id);
         let mutations = mutations_for_mutable(mutable);
-        let path = path.join(" => ");
-        let span = span.map(|s| s.to_string()).unwrap_or_default();
         let id = m_id.id;
-        // TODO: better location presentation
-        println!(
-            "{id}: {path} {file}:{span} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}"
-        );
+        println!("{id}: {location} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
 
         let mutations = match mutations {
             Some(m) => m,
