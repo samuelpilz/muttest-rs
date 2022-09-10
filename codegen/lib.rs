@@ -13,7 +13,8 @@ use std::{
 use lazy_static::lazy_static;
 use muttest_core::{
     mutable::{
-        binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc, binop_cmp::MutableBinopCmp,
+        binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
+        assign_op::MutableAssignOp, binop_cmp::MutableBinopCmp,
         binop_eq::MutableBinopEq, extreme::MutableExtreme, lit_int::MutableLitInt,
         lit_str::MutableLitStr, Mutable, MutablesConf, MuttestTransformer, TransformerConf,
         MUTABLE_DEFINITIONS_CSV_HEAD,
@@ -25,7 +26,7 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
-    ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type, Variant,
+    ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type, Variant, ExprAssignOp,
 };
 
 lazy_static! {
@@ -234,6 +235,21 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopCalc<'a> {
         }
     }
 }
+impl<'a> MatchMutable<'a, Expr> for MutableAssignOp<'a> {
+    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::AssignOp(ExprAssignOp {
+                left, op, right, ..
+            }) => Some(Self {
+                left: strip_expr_parens(left),
+                right: strip_expr_parens(right),
+                op,
+                span: op.span(),
+            }),
+            _ => None,
+        }
+    }
+}
 impl<'a> MatchMutable<'a, Expr> for MutableBinopBool<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
@@ -287,6 +303,7 @@ impl<W: Write> FoldImpl<'_, W> {
         self.try_mutate::<Expr, MutableBinopEq>(e)?;
         self.try_mutate::<Expr, MutableBinopCmp>(e)?;
         self.try_mutate::<Expr, MutableBinopCalc>(e)?;
+        self.try_mutate::<Expr, MutableAssignOp>(e)?;
         self.try_mutate::<Expr, MutableBinopBool>(e)?;
 
         ControlFlow::Continue(())
