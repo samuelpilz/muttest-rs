@@ -339,10 +339,8 @@ impl<W: Write> Fold for FoldImpl<'_, W> {
     }
 
     fn fold_item_impl(&mut self, node: ItemImpl) -> ItemImpl {
-        self.path.push(format!(
-            "impl {}",
-            node.self_ty.to_token_stream().to_string()
-        ));
+        self.path
+            .push(format!("impl {}", node.self_ty.to_token_stream()));
 
         let i = syn::fold::fold_item_impl(self, node);
 

@@ -9,7 +9,7 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    collector::{CollectedData, DataCollector},
+    collector::{self, CollectedData},
     mutable::{
         self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
     },
@@ -47,13 +47,17 @@ fn main() -> Result<(), Error> {
 
     // TODO: pass features from opts
     // read cargo metadata
-    let cargo_exe = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let cargo_exe = std::env::var_os("CARGO");
+    let cargo_exe = cargo_exe
+        .as_ref()
+        .map(Path::new)
+        .unwrap_or_else(|| Path::new("cargo"));
     let cargo_metadata = cargo_metadata::MetadataCommand::new().exec()?;
     let muttest_dir = cargo_metadata.target_directory.join("muttest");
     fs::create_dir_all(&muttest_dir)?;
 
     // compile libs and test cases
-    let mut compilation_result = compile(&cargo_exe, &muttest_dir)?;
+    let mut compilation_result = compile(cargo_exe, &muttest_dir)?;
 
     println!("{compilation_result:?}");
 
@@ -63,9 +67,9 @@ fn main() -> Result<(), Error> {
     println!("mutable definitions {data:?}");
 
     let details_path = muttest_dir.join("mutable-details.csv");
-    setup_csv_file(&details_path, DataCollector::DETAILS_FILE_HEADER)?;
+    setup_csv_file(&details_path, collector::DETAILS_FILE_HEADER)?;
     let coverage_path = muttest_dir.join("coverage.csv");
-    setup_csv_file(&coverage_path, DataCollector::COVERAGE_FILE_HEADER)?;
+    setup_csv_file(&coverage_path, collector::COVERAGE_FILE_HEADER)?;
 
     // run test suites without mutations for coverage
     for test_bin in &mut compilation_result.test_bins {
@@ -73,8 +77,8 @@ fn main() -> Result<(), Error> {
         let start_time = Instant::now();
         let status = Command::new(&test_bin.path)
             .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
-            .env(DataCollector::ENV_VAR_DETAILS_FILE, &details_path)
-            .env(DataCollector::ENV_VAR_COVERAGE_FILE, &coverage_path)
+            .env(collector::ENV_VAR_DETAILS_FILE, &details_path)
+            .env(collector::ENV_VAR_COVERAGE_FILE, &coverage_path)
             .stdout(Stdio::inherit())
             .spawn()?
             .wait()?;
@@ -105,8 +109,8 @@ fn main() -> Result<(), Error> {
             kind,
             location,
             ..
-        } = &data.mutables[&m_id];
-        let coverage = data.coverage.get(&m_id);
+        } = &data.mutables[m_id];
+        let coverage = data.coverage.get(m_id);
         let mutations = mutations_for_mutable(mutable);
         let id = m_id.id;
         println!("{id}: {location} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
@@ -188,7 +192,7 @@ struct TestBin {
     exec_time: Option<Duration>,
 }
 /// execute `cargo test --no-run --message-format=json` and collect output
-fn compile(cargo_exe: &str, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
+fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
     let mut result = CompilationResult::default();
 
     // TODO: pass features from opts

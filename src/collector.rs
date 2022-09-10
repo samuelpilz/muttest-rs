@@ -3,8 +3,7 @@ use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
     env::VarError,
     fs::File,
-    io::{Read, Sink, Write},
-    ops::{Deref, DerefMut},
+    io::{Read, Write},
     sync::Mutex,
 };
 
@@ -15,32 +14,33 @@ use crate::{
     MutableDetails, MutableId, MutableLocation,
 };
 
-// TODO: generics for files
-pub struct DataCollector {
+pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
+pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
+pub const DETAILS_FILE_HEADER: &str = "id,ty,mutations,file,module,attr_span,span";
+pub const COVERAGE_FILE_HEADER: &str = "id,data";
+
+pub struct DataCollector<F: Write> {
     pub(crate) details: Mutex<BTreeSet<MutableId<'static>>>,
     pub(crate) coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
-    pub(crate) details_file: Mutex<CollectorFile>,
-    pub(crate) coverage_file: Mutex<CollectorFile>,
+    pub(crate) details_file: Option<Mutex<F>>,
+    pub(crate) coverage_file: Option<Mutex<F>>,
 }
 
-impl DataCollector {
-    pub const ENV_VAR_DETAILS_FILE: &'static str = "MUTTEST_DETAILS_FILE";
-    pub const ENV_VAR_COVERAGE_FILE: &'static str = "MUTTEST_COVERAGE_FILE";
-    pub const DETAILS_FILE_HEADER: &'static str = "id,ty,mutations,file,module,attr_span,span\n";
-    pub const COVERAGE_FILE_HEADER: &'static str = "id,data\n";
-
+impl DataCollector<File> {
     pub fn new_from_envvar_files() -> Result<Self, Error> {
-        let details_file = CollectorFile::open_collector_file(Self::ENV_VAR_DETAILS_FILE)?;
+        let details_file = open_collector_file(ENV_VAR_DETAILS_FILE)?.map(Mutex::new);
         // TODO: fully read details the file (reading coverage does not make much sense)
-        let coverage_file = CollectorFile::open_collector_file(Self::ENV_VAR_COVERAGE_FILE)?;
+        let coverage_file = open_collector_file(ENV_VAR_COVERAGE_FILE)?.map(Mutex::new);
         Ok(DataCollector {
             details: Mutex::new(Default::default()),
             coverage: Mutex::new(Default::default()),
-            details_file: Mutex::new(details_file),
-            coverage_file: Mutex::new(coverage_file),
+            details_file,
+            coverage_file,
         })
     }
+}
 
+impl<F: Write> DataCollector<F> {
     pub(crate) fn write_details(
         &self,
         m_id: &MutableId<'static>,
@@ -53,19 +53,21 @@ impl DataCollector {
             return;
         }
 
-        let mut f = self.details_file.lock().unwrap();
-        let BakedLocation {
-            file,
-            module,
-            attr_span,
-            span,
-        } = loc;
-        writeln!(
-            f,
-            "{m_id},{ty},{mutations},{file},{module},{attr_span},{span}"
-        )
-        .expect("unable to write mutable detail");
-        f.flush().expect("unable to flush mutable detail");
+        if let Some(f) = &self.details_file {
+            let mut f = f.lock().unwrap();
+            let BakedLocation {
+                file,
+                module,
+                attr_span,
+                span,
+            } = loc;
+            writeln!(
+                f,
+                "{m_id},{ty},{mutations},{file},{module},{attr_span},{span}"
+            )
+            .expect("unable to write mutable detail");
+            f.flush().expect("unable to flush mutable detail");
+        }
     }
 
     pub(crate) fn write_coverage(&self, m_id: &MutableId<'static>, weak: Option<&str>) {
@@ -93,54 +95,27 @@ impl DataCollector {
         }
 
         if update {
-            let mut f = self.coverage_file.lock().unwrap();
-            writeln!(f, "{m_id},{data}").expect("unable to write mutable detail");
-            f.flush().expect("unable to flush mutable detail");
-        }
-    }
-}
-pub enum CollectorFile {
-    None(Sink),
-    File(File),
-    InMemory(Vec<u8>),
-}
-impl CollectorFile {
-    // TODO: rename
-    fn open_collector_file(env_var_name: &'static str) -> Result<Self, Error> {
-        match std::env::var(env_var_name) {
-            Ok(file) => {
-                let file = File::options()
-                    .read(true)
-                    .write(true)
-                    .append(true)
-                    .open(file)?;
-                Ok(Self::File(file))
+            if let Some(f) = &self.coverage_file {
+                let mut f = f.lock().unwrap();
+                writeln!(f, "{m_id},{data}").expect("unable to write mutable detail");
+                f.flush().expect("unable to flush mutable detail");
             }
-            Err(VarError::NotPresent) => Ok(Self::None(std::io::sink())),
-            Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
-        }
-    }
-    // TODO: fn InMemory with_csv_header
-}
-impl Deref for CollectorFile {
-    type Target = dyn Write;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            CollectorFile::None(s) => s,
-            CollectorFile::File(f) => f,
-            CollectorFile::InMemory(v) => v,
         }
     }
 }
 
-impl DerefMut for CollectorFile {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            CollectorFile::None(s) => s,
-            CollectorFile::File(f) => f,
-            CollectorFile::InMemory(v) => v,
+fn open_collector_file(env_var_name: &'static str) -> Result<Option<File>, Error> {
+    match std::env::var(env_var_name) {
+        Ok(file) => {
+            let file = File::options()
+                .read(true)
+                .write(true)
+                .append(true)
+                .open(file)?;
+            Ok(Some(file))
         }
+        Err(VarError::NotPresent) => Ok(None),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
     }
 }
 

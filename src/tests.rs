@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
+    io::Write,
     mem,
     ops::Deref,
     sync::{Arc, Mutex},
@@ -9,14 +10,14 @@ use std::{
 use lazy_static::lazy_static;
 
 use crate::{
-    collector::{CollectedData, CollectorFile},
+    collector::{CollectedData, COVERAGE_FILE_HEADER, DETAILS_FILE_HEADER},
     DataCollector, MutableId, ACTIVE_MUTATION,
 };
 
 pub use crate::{call_isolated, data_isolated};
 
 lazy_static! {
-    pub(crate) static ref DATA_COLLECTOR: DataCollector = DataCollector::new_for_test();
+    pub(crate) static ref DATA_COLLECTOR: DataCollector<Vec<u8>> = DataCollector::new_for_test();
 }
 
 #[macro_export]
@@ -106,35 +107,40 @@ impl CollectedData {
     }
 }
 
-impl DataCollector {
+fn csv_headers() -> (Vec<u8>, Vec<u8>) {
+    let mut details_csv = vec![];
+    writeln!(&mut details_csv, "{DETAILS_FILE_HEADER}").unwrap();
+    let mut coverage_csv = vec![];
+    writeln!(&mut coverage_csv, "{COVERAGE_FILE_HEADER}").unwrap();
+
+    (details_csv, coverage_csv)
+}
+
+impl DataCollector<Vec<u8>> {
     fn new_for_test() -> Self {
+        let (details_csv, coverage_csv) = csv_headers();
         DataCollector {
             details: Mutex::new(BTreeSet::new()),
             coverage: Mutex::new(BTreeMap::new()),
-            details_file: Mutex::new(CollectorFile::InMemory(
-                Self::DETAILS_FILE_HEADER.as_bytes().to_vec(),
-            )),
-            coverage_file: Mutex::new(CollectorFile::InMemory(
-                Self::COVERAGE_FILE_HEADER.as_bytes().to_vec(),
-            )),
+            details_file: Some(Mutex::new(details_csv)),
+            coverage_file: Some(Mutex::new(coverage_csv)),
         }
     }
 
     fn extract_data_and_clear(&self, data: &mut CollectedData) {
-        let mut details_csv = Self::DETAILS_FILE_HEADER.as_bytes().to_vec();
-        let mut coverage_csv = Self::COVERAGE_FILE_HEADER.as_bytes().to_vec();
+        let (mut details_csv, mut coverage_csv) = csv_headers();
 
         // lock everything together to ensure isolation
         {
             let mut coverage = self.coverage.lock().unwrap();
             let mut details = self.details.lock().unwrap();
-            let mut details_file = self.details_file.lock().unwrap();
-            let mut coverage_file = self.coverage_file.lock().unwrap();
+            let mut details_file = self.details_file.as_ref().unwrap().lock().unwrap();
+            let mut coverage_file = self.coverage_file.as_ref().unwrap().lock().unwrap();
 
             coverage.clear();
             details.clear();
-            mem::swap(details_file.unwrap_vec_mut(), &mut details_csv);
-            mem::swap(coverage_file.unwrap_vec_mut(), &mut coverage_csv);
+            mem::swap(&mut *details_file, &mut details_csv);
+            mem::swap(&mut *coverage_file, &mut coverage_csv);
         }
 
         data.read_details_csv(&*details_csv)
@@ -144,37 +150,19 @@ impl DataCollector {
     }
 
     fn assert_clear(&self) {
+        let headers = csv_headers();
+
         // lock everything together to ensure isolation
         let coverage = self.coverage.lock().unwrap();
         let details = self.details.lock().unwrap();
-        let details_file = self.details_file.lock().unwrap();
-        let coverage_file = self.coverage_file.lock().unwrap();
+        let details_file = self.details_file.as_ref().unwrap().lock().unwrap();
+        let coverage_file = self.coverage_file.as_ref().unwrap().lock().unwrap();
 
         assert!(coverage.is_empty());
         assert!(details.is_empty());
-        assert_eq!(
-            &*details_file.unwrap_vec(),
-            Self::DETAILS_FILE_HEADER.as_bytes()
-        );
-        assert_eq!(
-            &*coverage_file.unwrap_vec(),
-            Self::COVERAGE_FILE_HEADER.as_bytes()
-        );
-    }
-}
-
-impl CollectorFile {
-    fn unwrap_vec(&self) -> &[u8] {
-        match self {
-            CollectorFile::InMemory(v) => v,
-            _ => panic!("expect in-memory file"),
-        }
-    }
-    fn unwrap_vec_mut(&mut self) -> &mut Vec<u8> {
-        match self {
-            CollectorFile::InMemory(v) => v,
-            _ => panic!("expect in-memory file"),
-        }
+        // TODO: update assertions to new collector API
+        assert_eq!(*details_file, headers.0);
+        assert_eq!(*coverage_file, headers.1);
     }
 }
 

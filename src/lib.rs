@@ -5,7 +5,9 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    fmt, io,
+    fmt,
+    fs::File,
+    io,
     marker::PhantomData,
     str::FromStr,
     sync::{Arc, RwLock},
@@ -51,7 +53,7 @@ lazy_static! {
             &std::env::var(ENV_VAR_MUTTEST_MUTATION).unwrap_or_default(),
         ))
     };
-    static ref DATA_COLLECTOR: DataCollector = DataCollector::new_from_envvar_files()
+    static ref DATA_COLLECTOR: DataCollector<File> = DataCollector::new_from_envvar_files()
         .expect("unable to open mutable-data-collector files");
 }
 
@@ -166,6 +168,16 @@ impl FromStr for MutableId<'static> {
     }
 }
 
+// TODO: this can surely be done cleaner
+macro_rules! with_collector {
+    ($s:expr, $f:ident($($args:expr),*)) => {
+        match () {
+            #[cfg(test)]
+            _ if $s.crate_name.is_empty() => tests::DATA_COLLECTOR.$f($($args,)*),
+            _ => DATA_COLLECTOR.$f($($args,)*),
+        }
+    };
+}
 impl MutableId<'static> {
     pub fn new_isolated(id: usize) -> Self {
         Self::new(id, "")
@@ -179,14 +191,14 @@ impl MutableId<'static> {
 
     /// reports details of mutables gathered by static analysis
     pub fn report_details(&self, loc: BakedLocation, ty: &str, mutations: &str) {
-        self.get_collector().write_details(self, loc, ty, mutations)
+        with_collector!(self, write_details(self, loc, ty, mutations))
     }
 
     /// get the active mutation for a mutable
     ///
     /// calling this function also triggers logging its coverage
     fn get_active_mutation(&self) -> Option<Arc<str>> {
-        self.get_collector().write_coverage(self, None);
+        with_collector!(self, write_coverage(self, None));
 
         ACTIVE_MUTATION
             .read()
@@ -197,15 +209,7 @@ impl MutableId<'static> {
 
     // TODO: this is only a first draft of behavior
     fn report_weak(&self, weak: &str) {
-        self.get_collector().write_coverage(self, Some(weak));
-    }
-
-    fn get_collector(&self) -> &'static DataCollector {
-        #[cfg(test)]
-        if self.crate_name.is_empty() {
-            return &tests::DATA_COLLECTOR;
-        }
-        &*DATA_COLLECTOR
+        with_collector!(self, write_coverage(self, Some(weak)));
     }
 }
 
