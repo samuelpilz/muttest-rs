@@ -25,7 +25,7 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
-    ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type,
+    ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type, Variant,
 };
 
 lazy_static! {
@@ -318,6 +318,9 @@ impl<W: Write> Fold for FoldImpl<'_, W> {
     }
     fn fold_type(&mut self, node: Type) -> Type {
         node
+    }
+    fn fold_variant(&mut self, v: Variant) -> Variant {
+        v
     }
 
     fn fold_item_fn(&mut self, f: ItemFn) -> ItemFn {

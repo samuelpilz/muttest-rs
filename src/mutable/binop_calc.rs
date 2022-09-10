@@ -404,6 +404,18 @@ mod tests {
         assert_eq!(data.mutables.len(), 0);
     }
     #[test]
+    fn enum_discriminant_not_mutated() {
+        #[muttest_codegen::mutate_isolated("binop_calc")]
+        fn _f() {
+            enum X {
+                A = 1 + 2,
+                B = 2,
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
+    #[test]
     fn pattern_guard_mutated() {
         #[muttest_codegen::mutate_isolated("binop_calc")]
         fn f() -> usize {

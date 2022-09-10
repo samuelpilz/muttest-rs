@@ -122,4 +122,16 @@ mod tests {
         let data = data_isolated!(_f);
         assert_eq!(data.mutables.len(), 0);
     }
+    #[test]
+    fn enum_discriminant_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_int")]
+        fn _f() {
+            enum X {
+                A = 1,
+                B = 2,
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
 }
