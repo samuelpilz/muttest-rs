@@ -94,6 +94,8 @@ fn main() -> Result<(), Error> {
     data.read_coverage_csv(File::open(&coverage_path)?)
         .map_err(|e| e.in_csv_file(&coverage_path))?;
 
+    // TODO: calc&print covered mutables
+
     let mut total_mutants = 0;
     let mut killed_mutants = 0;
 
@@ -113,26 +115,30 @@ fn main() -> Result<(), Error> {
             ..
         } = &data.mutables[m_id];
         let coverage = data.coverage.get(m_id);
-        let mutations = mutations_for_mutable(mutable);
         let id = m_id.id;
-        println!("{id}: {location} `{code}` -{kind}-> {mutations:?}; coverage: {coverage:?}");
+        println!("{id}: {location} `{code} ({kind})`");
 
+        let coverage = match coverage {
+            Some(c) => c,
+            None => {
+                println!("  not covered");
+                continue;
+            }
+        };
+
+        let mutations = mutations_for_mutable(mutable);
         let mutations = match mutations {
             Some(m) => m,
-            None => continue,
+            None => {
+                println!("  not mutations");
+                continue;
+            }
         };
 
         for m in mutations {
             total_mutants += 1;
-            println!("  mutation {:5}", format!("{m:?}"));
-
-            let coverage = match coverage {
-                Some(c) => c,
-                None => {
-                    println!("    not covered",);
-                    continue;
-                }
-            };
+            // TODO: display lit_str mutations correctly
+            println!("  mutation `{m}`");
 
             // TODO: improve weak surviving
             if *kind == MutableBinopCmp::NAME
@@ -265,6 +271,7 @@ fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> 
     Ok(())
 }
 
+// TODO: for many mutables, the possible mutations should be clear from context
 pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
     Some(match &*mutable.kind {
         MutableLitInt::NAME => {
