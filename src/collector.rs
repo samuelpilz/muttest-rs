@@ -15,6 +15,7 @@ use crate::{
     MutableDetails, MutableId, MutableLocation,
 };
 
+// TODO: generics for files
 pub struct DataCollector {
     pub(crate) details: Mutex<BTreeSet<MutableId<'static>>>,
     pub(crate) coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
@@ -98,13 +99,13 @@ impl DataCollector {
         }
     }
 }
-pub(crate) enum CollectorFile {
+pub enum CollectorFile {
     None(Sink),
     File(File),
-    #[cfg(test)]
     InMemory(Vec<u8>),
 }
 impl CollectorFile {
+    // TODO: rename
     fn open_collector_file(env_var_name: &'static str) -> Result<Self, Error> {
         match std::env::var(env_var_name) {
             Ok(file) => {
@@ -119,6 +120,7 @@ impl CollectorFile {
             Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
         }
     }
+    // TODO: fn InMemory with_csv_header
 }
 impl Deref for CollectorFile {
     type Target = dyn Write;
@@ -127,7 +129,6 @@ impl Deref for CollectorFile {
         match self {
             CollectorFile::None(s) => s,
             CollectorFile::File(f) => f,
-            #[cfg(test)]
             CollectorFile::InMemory(v) => v,
         }
     }
@@ -138,7 +139,6 @@ impl DerefMut for CollectorFile {
         match self {
             CollectorFile::None(s) => s,
             CollectorFile::File(f) => f,
-            #[cfg(test)]
             CollectorFile::InMemory(v) => v,
         }
     }

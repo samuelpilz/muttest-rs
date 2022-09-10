@@ -48,9 +48,14 @@ pub fn run<'a, T>(
     defs_csv: &str,
     num_mutables: usize,
     action: impl FnOnce() -> T,
-    mutation: impl IntoIterator<Item = (usize, &'a str)>,
+    mutation: Vec<(usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
     let mut data = CollectedData::from_defs(num_mutables, defs_csv);
+    for (m_id, _) in &mutation {
+        if !data.mutables.contains_key(&mutable_id(*m_id)) {
+            panic!("mutable id {m_id} is not a valid mutable id")
+        }
+    }
 
     let l = TEST_LOCK.lock();
 

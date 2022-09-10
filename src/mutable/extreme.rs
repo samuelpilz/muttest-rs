@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::ControlFlow};
+use std::{io::Write, marker::PhantomData, ops::ControlFlow};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -22,7 +22,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         self.span
     }
 
-    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
         let span = self.span;
         let TransformSnippets {
             m_id,

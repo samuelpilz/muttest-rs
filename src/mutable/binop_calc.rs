@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{io::Write, sync::Arc};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
@@ -21,7 +21,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
         self.span
     }
 
-    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();

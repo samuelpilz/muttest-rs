@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, io::Write};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -20,7 +20,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
         self.span
     }
 
-    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
         let span = self.span;
         let lit = self.lit;
 

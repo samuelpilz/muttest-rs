@@ -5,10 +5,8 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    env::VarError,
     fmt, io,
     marker::PhantomData,
-    path::PathBuf,
     str::FromStr,
     sync::{Arc, RwLock},
 };
@@ -48,13 +46,6 @@ pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
 pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
 
 lazy_static! {
-    pub static ref MUTTEST_DIR: Option<PathBuf> = {
-        match std::env::var(ENV_VAR_MUTTEST_DIR) {
-            Ok(d) => Some(PathBuf::from(d)),
-            Err(VarError::NotPresent) => None,
-            Err(e) => panic!("{}", e),
-        }
-    };
     static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, Arc<str>>> = {
         RwLock::new(parse_mutations(
             &std::env::var(ENV_VAR_MUTTEST_MUTATION).unwrap_or_default(),

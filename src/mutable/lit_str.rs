@@ -1,4 +1,5 @@
 use std::{
+    io::Write,
     ops::{Deref, DerefMut},
     sync::RwLock,
 };
@@ -23,7 +24,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
         self.span
     }
 
-    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
         let span = self.span;
         let lit = self.lit;
 

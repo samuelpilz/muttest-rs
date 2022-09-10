@@ -1,19 +1,14 @@
 use std::{
     borrow::Borrow,
-    fs,
     io::Write,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicUsize, Ordering::SeqCst},
-        Mutex,
-    },
+    sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
-use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
-use crate::{display_or_empty_if_none, Error, MutableId, MUTTEST_DIR};
+use crate::{display_or_empty_if_none, MutableId};
 
 pub mod binop_bool;
 pub mod binop_calc;
@@ -23,48 +18,20 @@ pub mod extreme;
 pub mod lit_int;
 pub mod lit_str;
 
-const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
-static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
-
-lazy_static! {
-    static ref TARGET_NAME: String = {
-        let mut target_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
-        let crate_name = std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
-        if crate_name != target_name {
-            target_name.push(':');
-            target_name.push_str(&crate_name);
-        }
-        target_name
-    };
-    static ref MUTABLE_DEFINITIONS_FILE: Mutex<Option<fs::File>> =
-        Mutex::new(open_definitions_file().expect("unable to open definitions file"));
-}
-
-fn open_definitions_file() -> Result<Option<fs::File>, Error> {
-    match &*MUTTEST_DIR {
-        Some(dir) => {
-            let file_name = format!("mutable-definitions-{}.csv", &*TARGET_NAME);
-            let mut file = fs::File::create(PathBuf::from(dir).join(file_name))?;
-            writeln!(&mut file, "{MUTABLE_DEFINITIONS_CSV_HEAD}")?;
-            file.flush()?;
-            file.sync_all()?;
-            Ok(Some(file))
-        }
-        _ => Ok(None),
-    }
-}
+pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
 
 pub trait Mutable<'a> {
     const NAME: &'static str;
 
     fn span(&self) -> Span;
 
-    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream;
+    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream;
 }
 
-pub struct MuttestTransformer {
+pub struct MuttestTransformer<'a, W: Write> {
     pub conf: TransformerConf,
-    pub isolated: Option<TransformerData>,
+    definitions: Option<W>,
+    id: &'a AtomicUsize,
     // TODO: parsed path
     pub path: Vec<String>,
 }
@@ -72,49 +39,18 @@ pub struct TransformerConf {
     pub span: Span,
     pub mutables: MutablesConf,
     pub muttest_api: Option<&'static str>,
+    pub target_name: &'static str,
 }
 pub enum MutablesConf {
     All,
     One(String),
 }
-pub struct TransformerData {
-    pub local_id: usize,
-    pub mutables_csv: Vec<u8>,
-}
-impl MuttestTransformer {
-    pub fn new(span: Span) -> Self {
+impl<'a, W: Write> MuttestTransformer<'a, W> {
+    pub fn new(conf: TransformerConf, definitions: Option<W>, id: &'a AtomicUsize) -> Self {
         Self {
-            conf: TransformerConf {
-                span,
-                mutables: MutablesConf::All,
-                muttest_api: Some("muttest"),
-            },
-            isolated: None,
-            path: vec![],
-        }
-    }
-    pub fn new_isolated(span: Span) -> Self {
-        Self {
-            conf: TransformerConf {
-                span,
-                mutables: MutablesConf::All,
-                muttest_api: None,
-            },
-            isolated: Some(TransformerData {
-                local_id: 0,
-                mutables_csv: format!("{MUTABLE_DEFINITIONS_CSV_HEAD}\n").into_bytes(),
-            }),
-            path: vec![],
-        }
-    }
-    pub fn new_selftest(span: Span) -> Self {
-        Self {
-            conf: TransformerConf {
-                span,
-                mutables: MutablesConf::All,
-                muttest_api: None,
-            },
-            isolated: None,
+            conf,
+            definitions,
+            id,
             path: vec![],
         }
     }
@@ -126,29 +62,10 @@ impl MuttestTransformer {
         }
     }
 
-    fn new_mutable<'a, M: Mutable<'a>>(&mut self, m: &M, code: &str) -> TransformSnippets {
-        let id;
-        match &mut self.isolated {
-            Some(data) => {
-                id = MutableId::new_isolated({
-                    data.local_id += 1;
-                    data.local_id
-                });
-                write_mutable(
-                    &mut data.mutables_csv,
-                    &id,
-                    m,
-                    code,
-                    &self.path,
-                    self.conf.span,
-                );
-            }
-            None => {
-                id = MutableId::new(MUTABLE_ID_NUM.fetch_add(1, SeqCst), &*TARGET_NAME);
-                if let Some(f) = MUTABLE_DEFINITIONS_FILE.lock().unwrap().as_mut() {
-                    write_mutable(f, &id, m, code, &self.path, self.conf.span);
-                }
-            }
+    fn new_mutable<'b, M: Mutable<'b>>(&mut self, m: &M, code: &str) -> TransformSnippets {
+        let id = MutableId::new(self.id.fetch_add(1, SeqCst), self.conf.target_name);
+        if let Some(w) = &mut self.definitions {
+            write_mutable(w, &id, m, code, &self.path, self.conf.span);
         }
 
         let muttest_api = match self.conf.muttest_api {
@@ -194,7 +111,7 @@ fn bake_span(muttest_api: &TokenStream, span: Span) -> TokenStream {
 
 /// register a new mutable
 fn write_mutable<'a, M: Mutable<'a>, W: Write>(
-    mut f: W,
+    mut w: W,
     id: &MutableId,
     m: &M,
     code: &str,
@@ -203,7 +120,7 @@ fn write_mutable<'a, M: Mutable<'a>, W: Write>(
 ) {
     let span = m.span();
     writeln!(
-        f,
+        w,
         "{},{},{},{},{},{},{}",
         id.id,
         M::NAME,
@@ -214,7 +131,7 @@ fn write_mutable<'a, M: Mutable<'a>, W: Write>(
         display_or_empty_if_none(&crate::Span::from(attr_span)),
     )
     .expect("unable to write mutable file");
-    f.flush().expect("unable to flush mutable file");
+    w.flush().expect("unable to flush mutable file");
 }
 
 struct TransformSnippets {

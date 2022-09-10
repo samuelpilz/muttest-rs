@@ -10,8 +10,9 @@ use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
     collector::{CollectedData, DataCollector},
-    mutable::{self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr},
-    transformer::Mutable,
+    mutable::{
+        self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
+    },
     MutableData, ENV_VAR_MUTTEST_DIR,
 };
 use wait_timeout::ChildExt;
