@@ -9,6 +9,7 @@ use std::{
     fs::File,
     io,
     marker::PhantomData,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::{Arc, RwLock},
 };
@@ -65,12 +66,22 @@ pub enum Error {
     EnvVarUnicode(&'static str),
     #[error("failed to read csv file: {0}")]
     Csv(#[from] csv::Error),
+    #[error("failed to read csv file {0}: {1}")]
+    CsvFile(PathBuf, csv::Error),
     #[error("invalid MutableId: '{0}'")]
     MutableIdFormat(String),
     #[error("not a known mutable: '{0}'")]
     UnknownMutable(MutableId<'static>),
     #[error("invalid location: '{0}'")]
     LocationFormat(String),
+}
+impl Error {
+    pub fn in_csv_file(self, f: impl AsRef<Path>) -> Self {
+        match self {
+            Self::Csv(e) => Self::CsvFile(f.as_ref().to_owned(), e),
+            s => s,
+        }
+    }
 }
 
 fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {

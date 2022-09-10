@@ -89,8 +89,10 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    data.read_details_csv(File::open(details_path)?)?;
-    data.read_coverage_csv(File::open(coverage_path)?)?;
+    data.read_details_csv(File::open(&details_path)?)
+        .map_err(|e| e.in_csv_file(&details_path))?;
+    data.read_coverage_csv(File::open(&coverage_path)?)
+        .map_err(|e| e.in_csv_file(&coverage_path))?;
 
     let mut total_mutants = 0;
     let mut killed_mutants = 0;
@@ -257,7 +259,7 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<CollectedData, Error> {
 
 fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> {
     let mut file = File::create(path)?;
-    write!(&mut file, "{head}")?;
+    writeln!(&mut file, "{head}")?;
     file.flush()?;
     file.sync_all()?;
     Ok(())
