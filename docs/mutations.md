@@ -6,30 +6,40 @@
   * integer/float
   * string/byte/char
   * bool
-* comparison operator
-  * change direction
-  * change bounds
-  * change to eq/ne
+* logic
+  * equality
+  * comparison
+  * negation
 * arithmetic Operator
-  * change binop
-  * change/remove unop
+  * change op
+  * remove negation
+  * const one side
   * change assignOp
 * assign
   * remove assign
   * re-target assign
+* match
+  * remove arm
+  * remove guard
+* if
+  * remove else
+  * remove condition
+  * negate condition
+* while loop
+  * convert to if
+* slice
+  * remove entry (only possible for type `&[T]`)
+* loop
+  * make into block (when no break included)
+  * insert break at end (?)
+
+## maybe also possible
+
 * path
   * change path
   * change variable read
   * change field read
-* match
-  * remove arm
-  * remove guard
-  * clear arms
 * loops
-  * ??
-* if
-  * remove else
-  * remove condition
 * range
   * mutate kinds (difficult to implement)
 * return
@@ -38,4 +48,6 @@
   * clear block
   * remove statement
 * edit break/continue label
+* let
+  * remove shadow
 

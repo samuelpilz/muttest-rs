@@ -17,6 +17,10 @@ pub mod binop_eq;
 pub mod extreme;
 pub mod lit_int;
 pub mod lit_str;
+// TODO: 
+// * lits: char, byte, byte_str, float
+// * binop: assign
+// * unop: neg, not
 
 pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
 
