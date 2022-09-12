@@ -13,20 +13,20 @@ use std::{
 use lazy_static::lazy_static;
 use muttest_core::{
     mutable::{
-        binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
-        assign_op::MutableAssignOp, binop_cmp::MutableBinopCmp,
-        binop_eq::MutableBinopEq, extreme::MutableExtreme, lit_int::MutableLitInt,
-        lit_str::MutableLitStr, Mutable, MutablesConf, MuttestTransformer, TransformerConf,
-        MUTABLE_DEFINITIONS_CSV_HEAD,
+        assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
+        binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
+        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, MutablesConf, MuttestTransformer,
+        TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
     },
-    Error, ENV_VAR_MUTTEST_DIR,
+    Error, PathSegment, ENV_VAR_MUTTEST_DIR,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
-    fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprBinary, ExprLit,
-    ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type, Variant, ExprAssignOp,
+    fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprAssignOp,
+    ExprBinary, ExprLit, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr,
+    Pat, Type, Variant,
 };
 
 lazy_static! {
@@ -60,7 +60,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: None,
+        muttest_api: "",
         target_name: "",
     };
     if !attr.is_empty() {
@@ -99,7 +99,7 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: None,
+        muttest_api: "",
         target_name: &*TARGET_NAME,
     };
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
@@ -118,7 +118,7 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: Some("muttest"),
+        muttest_api: "muttest",
         target_name: &*TARGET_NAME,
     };
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
@@ -345,7 +345,7 @@ impl<W: Write> Fold for FoldImpl<'_, W> {
             return f;
         }
 
-        self.path.push(format!("fn {}", f.sig.ident));
+        self.path.push(PathSegment::Fn(f.sig.ident.to_string()));
 
         let f = syn::fold::fold_item_fn(self, f);
 
@@ -359,8 +359,9 @@ impl<W: Write> Fold for FoldImpl<'_, W> {
     }
 
     fn fold_item_impl(&mut self, node: ItemImpl) -> ItemImpl {
-        self.path
-            .push(format!("impl {}", node.self_ty.to_token_stream()));
+        self.path.push(PathSegment::Impl(
+            node.self_ty.to_token_stream().to_string(),
+        ));
 
         let i = syn::fold::fold_item_impl(self, node);
 

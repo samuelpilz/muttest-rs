@@ -161,7 +161,11 @@ impl CollectedData {
                     location: MutableLocation {
                         file: md.file.to_owned(),
                         module: String::new(),
-                        path: md.path.split(':').map(ToOwned::to_owned).collect(),
+                        path: md
+                            .path
+                            .split(':')
+                            .map(|s| s.parse())
+                            .collect::<Result<_, _>>()?,
                         attr_span: parse_or_none_if_empty(&md.attr_span)?,
                         span: parse_or_none_if_empty(&md.span)?,
                     },

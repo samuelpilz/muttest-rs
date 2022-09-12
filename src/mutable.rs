@@ -5,20 +5,20 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
-use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote_spanned, ToTokens};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::{quote_spanned, ToTokens};
 
-use crate::{display_or_empty_if_none, MutableId};
+use crate::{display_or_empty_if_none, MutableId, PathSegment};
 
+pub mod assign_op;
 pub mod binop_bool;
 pub mod binop_calc;
-pub mod assign_op;
 pub mod binop_cmp;
 pub mod binop_eq;
 pub mod extreme;
 pub mod lit_int;
 pub mod lit_str;
-// TODO: 
+// TODO:
 // * lits: char, byte, byte_str, float
 // * unop: neg, not
 
@@ -37,12 +37,12 @@ pub struct MuttestTransformer<'a, W: Write> {
     definitions: Option<W>,
     id: &'a AtomicUsize,
     // TODO: parsed path
-    pub path: Vec<String>,
+    pub path: Vec<PathSegment>,
 }
 pub struct TransformerConf {
     pub span: Span,
     pub mutables: MutablesConf,
-    pub muttest_api: Option<&'static str>,
+    pub muttest_api: &'static str,
     pub target_name: &'static str,
 }
 pub enum MutablesConf {
@@ -73,8 +73,8 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
         }
 
         let muttest_api = match self.conf.muttest_api {
-            Some(cc) => format_ident!("{}", span = m.span(), cc).into_token_stream(),
-            None => quote_spanned! {m.span() => crate::api},
+            "" => quote_spanned! {m.span() => crate::api},
+            api => Ident::new(api, m.span()).into_token_stream(),
         };
 
         let crate_name: &str = id.crate_name.borrow();
@@ -119,7 +119,7 @@ fn write_mutable<'a, M: Mutable<'a>, W: Write>(
     id: &MutableId,
     m: &M,
     code: &str,
-    path: &[String],
+    path: &[PathSegment],
     attr_span: Span,
 ) {
     let span = m.span();
@@ -130,7 +130,10 @@ fn write_mutable<'a, M: Mutable<'a>, W: Write>(
         M::NAME,
         code,
         source_file_path(span).unwrap_or_default().display(),
-        path.join(":"),
+        path.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(":"),
         display_or_empty_if_none(&crate::Span::from(span)),
         display_or_empty_if_none(&crate::Span::from(attr_span)),
     )

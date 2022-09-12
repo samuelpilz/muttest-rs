@@ -74,6 +74,8 @@ pub enum Error {
     UnknownMutable(MutableId<'static>),
     #[error("invalid location: '{0}'")]
     LocationFormat(String),
+    #[error("invalid path: '{0}'")]
+    PathFormat(String),
 }
 impl Error {
     pub fn in_csv_file(self, f: impl AsRef<Path>) -> Self {
@@ -134,7 +136,7 @@ pub struct BakedLocation {
 pub struct MutableLocation {
     pub file: String,
     pub module: String,
-    pub path: Vec<String>,
+    pub path: Vec<PathSegment>,
     pub attr_span: Option<Span>,
     pub span: Option<Span>,
     // TODO: display instance
@@ -152,6 +154,39 @@ pub struct LineColumn {
     pub column: u32,
 }
 
+// TODO: maybe borrow something?
+// TODO: maybe have idents here?
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathSegment {
+    Mod(String),
+    Fn(String),
+    Impl(String),
+}
+impl fmt::Display for PathSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PathSegment::Mod(i) => write!(f, "mod {i}"),
+            PathSegment::Fn(i) => write!(f, "fn {i}"),
+            PathSegment::Impl(i) => write!(f, "impl {i}"),
+        }
+    }
+}
+impl FromStr for PathSegment {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once(' ') {
+            Some(("mod", i)) => Ok(Self::Mod(i.to_owned())),
+            Some(("fn", i)) => Ok(Self::Fn(i.to_owned())),
+            Some(("impl", i)) => Ok(Self::Impl(i.to_owned())),
+            _ => Err(Error::PathFormat(s.to_owned())),
+        }
+    }
+}
+
+// TODO: split into two declarations
+// * BakedMutableId
+// * MutableId
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MutableId<'a> {
     pub crate_name: Cow<'a, str>,
@@ -169,10 +204,10 @@ impl FromStr for MutableId<'static> {
         let id = s
             .split_once(':')
             .ok_or_else(|| Error::MutableIdFormat(s.to_owned()))?;
-        Ok(MutableId {
+        Ok(Self {
             id: id
                 .0
-                .parse::<usize>()
+                .parse()
                 .map_err(|_| Error::MutableIdFormat(s.to_owned()))?,
             crate_name: Cow::Owned(id.1.to_owned()),
         })
@@ -247,7 +282,12 @@ impl fmt::Display for MutableLocation {
             "{}:{} in {}",
             self.file,
             display_or_empty_if_none(&self.span),
-            self.path.join(" => "), // TODO: use `intersperse` instead
+            // TODO: loop instead
+            self.path
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" => "), // TODO: use `intersperse` instead
         )
     }
 }
