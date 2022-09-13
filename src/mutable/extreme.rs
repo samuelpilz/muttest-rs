@@ -3,7 +3,7 @@ use std::{io::Write, marker::PhantomData, ops::ControlFlow};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::MutableId;
+use crate::BakedMutableId;
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -63,7 +63,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
                             )
                         );
 
-                        match #muttest_api::mutable::extreme::run(&#m_id,
+                        match #muttest_api::mutable::extreme::run(#m_id,
                         ) {
                             #muttest_api::ControlFlow::Continue(_) => #block,
                             #muttest_api::ControlFlow::Break(_) => {
@@ -79,7 +79,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
     }
 }
 
-pub fn run(m_id: &MutableId<'static>) -> ControlFlow<()> {
+pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
     match m_id.get_active_mutation().as_deref().unwrap_or_default() {
         "" => ControlFlow::Continue(()),
         "default" => ControlFlow::Break(()),

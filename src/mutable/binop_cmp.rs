@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::BTreeSet, io::Write};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::MutableId;
+use crate::BakedMutableId;
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -39,7 +39,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
                 let (_left, _right) = (&#left, &#right);
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {
-                    #muttest_api::mutable::binop_cmp::run(&#m_id, #op_str, &_left, &_right)
+                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, &_left, &_right)
                 }
             })
         }
@@ -48,7 +48,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run<T: PartialOrd<T1>, T1>(
-    m_id: &MutableId<'static>,
+    m_id: BakedMutableId,
     op_str: &str,
     left: &T,
     right: &T1,

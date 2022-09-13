@@ -3,7 +3,7 @@ use std::{fmt, io::Write};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::{BakedLocation, MutableId};
+use crate::{BakedLocation, BakedMutableId};
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -30,12 +30,12 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
             loc,
         } = transformer.new_mutable(&self, self.base10_digits);
         quote_spanned! {span=>
-            #muttest_api::mutable::lit_int::run(&#m_id, #lit, #loc)
+            #muttest_api::mutable::lit_int::run(#m_id, #lit, #loc)
         }
     }
 }
 
-pub fn run<I: MutableInt>(m_id: &MutableId<'static>, lit: I, loc: BakedLocation) -> I {
+pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I {
     m_id.report_details(loc, I::type_str(), "");
     // TODO: report type instead?
 

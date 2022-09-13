@@ -3,7 +3,7 @@ use std::io::Write;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::MutableId;
+use crate::BakedMutableId;
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -39,7 +39,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
                 let (_left, _right) = (&#left, &#right);
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {
-                    #muttest_api::mutable::binop_eq::run(&#m_id, #op_str, &_left, &_right)
+                    #muttest_api::mutable::binop_eq::run(#m_id, #op_str, &_left, &_right)
                 }
             })
         }
@@ -47,12 +47,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run<T: PartialEq<T1>, T1>(
-    m_id: &MutableId<'static>,
-    op_str: &str,
-    left: &T,
-    right: &T1,
-) -> bool {
+pub fn run<T: PartialEq<T1>, T1>(m_id: BakedMutableId, op_str: &str, left: &T, right: &T1) -> bool {
     let eq = left.eq(right);
     // this reports behavior but is irrelevant for weak mutation testing
     m_id.report_weak(eq_to_str(eq));

@@ -3,7 +3,7 @@ use std::{io::Write, ops::ControlFlow};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::MutableId;
+use crate::BakedMutableId;
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -36,10 +36,10 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
         quote_spanned! {span=>
             #muttest_api::id({
                 (#m_id).report_details(#loc, "bool", "&&:||");
-                match #muttest_api::mutable::binop_bool::run_left(&#m_id, #op_str, #left) {
+                match #muttest_api::mutable::binop_bool::run_left(#m_id, #op_str, #left) {
                     #muttest_api::ControlFlow::Break(b) => b,
                     #muttest_api::ControlFlow::Continue(b) => {
-                        #muttest_api::mutable::binop_bool::run_right(&#m_id, b, #right)
+                        #muttest_api::mutable::binop_bool::run_right(#m_id, b, #right)
                     }
                 }
             })
@@ -47,7 +47,7 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
     }
 }
 
-pub fn run_left(m_id: &MutableId<'static>, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
+pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     // TODO: also report behavior of `true && panic`
     if (left && op_str == "||") || (!left && op_str == "&&") {
         m_id.report_weak(bool_to_str(left, None));
@@ -63,7 +63,7 @@ pub fn run_left(m_id: &MutableId<'static>, op_str: &str, left: bool) -> ControlF
     }
 }
 
-pub fn run_right(m_id: &MutableId<'static>, left: bool, right: bool) -> bool {
+pub fn run_right(m_id: BakedMutableId, left: bool, right: bool) -> bool {
     m_id.report_weak(bool_to_str(left, Some(right)));
     right
 }

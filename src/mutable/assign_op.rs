@@ -3,7 +3,7 @@ use std::{io::Write, sync::Arc};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
-use crate::MutableId;
+use crate::BakedMutableId;
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -78,7 +78,7 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
                             ])
                         );
                         let (mut _left, _right) = (&mut #left, #right);
-                        match &*#muttest_api::mutable::assign_op::run(&#m_id) {
+                        match &*#muttest_api::mutable::assign_op::run(#m_id) {
                             "" => *_left #op _right,
                             #(#op_symbols =>
                                 {
@@ -98,7 +98,7 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
     }
 }
 
-pub fn run(m_id: &MutableId<'static>) -> Arc<str> {
+pub fn run(m_id: BakedMutableId) -> Arc<str> {
     m_id.get_active_mutation().unwrap_or_else(|| Arc::from(""))
 }
 

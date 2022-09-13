@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::{btree_map, BTreeMap, BTreeSet},
     env::VarError,
     fs::File,
@@ -10,8 +9,8 @@ use std::{
 use serde::Deserialize;
 
 use crate::{
-    parse_or_none_if_empty, split_or_empty, BakedLocation, Error, MutableCoverage, MutableData,
-    MutableDetails, MutableId, MutableLocation,
+    parse_or_none_if_empty, split_or_empty, BakedLocation, BakedMutableId, Error, MutableCoverage,
+    MutableData, MutableDetails, MutableId, MutableLocation,
 };
 
 pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
@@ -20,8 +19,8 @@ pub const DETAILS_FILE_HEADER: &str = "id,ty,mutations,file,module,attr_span,spa
 pub const COVERAGE_FILE_HEADER: &str = "id,data";
 
 pub struct DataCollector<F: Write> {
-    pub(crate) details: Mutex<BTreeSet<MutableId<'static>>>,
-    pub(crate) coverage: Mutex<BTreeMap<MutableId<'static>, String>>,
+    pub(crate) details: Mutex<BTreeSet<MutableId>>,
+    pub(crate) coverage: Mutex<BTreeMap<MutableId, String>>,
     pub(crate) details_file: Option<Mutex<F>>,
     pub(crate) coverage_file: Option<Mutex<F>>,
 }
@@ -43,12 +42,13 @@ impl DataCollector<File> {
 impl<F: Write> DataCollector<F> {
     pub(crate) fn write_details(
         &self,
-        m_id: &MutableId<'static>,
+        m_id: BakedMutableId,
         loc: BakedLocation,
         ty: &str,
         mutations: &str,
     ) {
-        let is_new = self.details.lock().unwrap().insert(m_id.clone());
+        // TODO: avoid unnecessary cloning
+        let is_new = self.details.lock().unwrap().insert(m_id.cloned());
         if !is_new {
             return;
         }
@@ -70,11 +70,11 @@ impl<F: Write> DataCollector<F> {
         }
     }
 
-    pub(crate) fn write_coverage(&self, m_id: &MutableId<'static>, weak: Option<&str>) {
+    pub(crate) fn write_coverage(&self, m_id: BakedMutableId, weak: Option<&str>) {
         let mut coverage_map = self.coverage.lock().unwrap();
         let mut update = false;
 
-        let data = match coverage_map.entry(m_id.clone()) {
+        let data = match coverage_map.entry(m_id.cloned()) {
             btree_map::Entry::Occupied(e) => e.into_mut(),
             btree_map::Entry::Vacant(e) => {
                 update = true;
@@ -121,8 +121,8 @@ fn open_collector_file(env_var_name: &'static str) -> Result<Option<File>, Error
 
 #[derive(Debug, Clone, Default)]
 pub struct CollectedData {
-    pub mutables: BTreeMap<MutableId<'static>, MutableData>,
-    pub coverage: BTreeMap<MutableId<'static>, BTreeSet<String>>,
+    pub mutables: BTreeMap<MutableId, MutableData>,
+    pub coverage: BTreeMap<MutableId, BTreeSet<String>>,
 }
 // TODO: tests
 
@@ -151,7 +151,7 @@ impl CollectedData {
             let md = md?;
             let id = MutableId {
                 id: md.id,
-                crate_name: Cow::Owned(mutated_package.to_owned()),
+                crate_name: mutated_package.to_owned(),
             };
             self.mutables.insert(
                 id,

@@ -3,15 +3,15 @@
 //! There are some internals here that are not meant for mutation testing users.
 
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
+    env::VarError,
     fmt,
     fs::File,
     io,
     marker::PhantomData,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use lazy_static::lazy_static;
@@ -30,7 +30,7 @@ pub mod api {
     pub use crate::mutable;
     pub use crate::{
         id, mutation_string_from_bool_list, mutation_string_opt, phantom_for_type, BakedLocation,
-        LineColumn, MutableId, Span,
+        BakedMutableId, LineColumn, Span,
     };
 
     pub use std::{
@@ -46,16 +46,48 @@ macro_rules! env_var_muttest_dir {
 }
 
 pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
+pub const ENV_VAR_MUTTEST_CRATE: &str = "MUTTEST_CRATE";
 pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
 
 lazy_static! {
-    static ref ACTIVE_MUTATION: RwLock<BTreeMap<MutableId<'static>, Arc<str>>> = {
-        RwLock::new(parse_mutations(
-            &std::env::var(ENV_VAR_MUTTEST_MUTATION).unwrap_or_default(),
-        ))
-    };
+    static ref ACTIVE_MUTATION: ActiveMutation =
+        ActiveMutation::new_from_env().expect("unable to read active mutation");
     static ref DATA_COLLECTOR: DataCollector<File> = DataCollector::new_from_envvar_files()
         .expect("unable to open mutable-data-collector files");
+}
+
+#[derive(Debug)]
+struct ActiveMutation {
+    crate_name: Option<String>,
+    mutations: BTreeMap<usize, Arc<str>>,
+}
+
+impl ActiveMutation {
+    fn new_from_env() -> Result<Self, Error> {
+        let crate_name = get_env_var_option(ENV_VAR_MUTTEST_CRATE)?;
+        let mut mutations = BTreeMap::new();
+
+        if crate_name.is_some() {
+            let mutation = get_env_var(ENV_VAR_MUTTEST_MUTATION)?;
+            for m in mutation.split(';') {
+                // TODO: report errors
+                let (id, m) = m.split_once('=').unwrap();
+                let id: usize = id.parse().unwrap();
+                mutations.insert(id, Arc::from(m));
+            }
+        }
+
+        Ok(Self {
+            crate_name,
+            mutations,
+        })
+    }
+    fn get(&self, m_id: BakedMutableId) -> Option<Arc<str>> {
+        if self.crate_name.as_deref() != Some(m_id.crate_name) {
+            return None;
+        }
+        self.mutations.get(&m_id.id).cloned()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -64,14 +96,18 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("unicode error env var {0}")]
     EnvVarUnicode(&'static str),
+    #[error("env var {0} not defined")]
+    EnvVarMissing(&'static str),
     #[error("failed to read csv file: {0}")]
     Csv(#[from] csv::Error),
     #[error("failed to read csv file {0}: {1}")]
     CsvFile(PathBuf, csv::Error),
+    #[error("invalid mutation format: '{0}'")]
+    MutationFormat(String),
     #[error("invalid MutableId: '{0}'")]
     MutableIdFormat(String),
     #[error("not a known mutable: '{0}'")]
-    UnknownMutable(MutableId<'static>),
+    UnknownMutable(MutableId),
     #[error("invalid location: '{0}'")]
     LocationFormat(String),
     #[error("invalid path: '{0}'")]
@@ -86,20 +122,19 @@ impl Error {
     }
 }
 
-fn parse_mutations(env: &str) -> BTreeMap<MutableId<'static>, Arc<str>> {
-    let mut mutations = BTreeMap::new();
-
-    // TODO: report errors
-    for m in env.split(';') {
-        if m.is_empty() {
-            continue;
-        }
-        let (id, m) = m.split_once('=').unwrap();
-        let id = id.parse().unwrap();
-        mutations.insert(id, Arc::from(m));
+pub fn get_env_var_option(var_name: &'static str) -> Result<Option<String>, Error> {
+    match std::env::var(var_name) {
+        Ok(s) => Ok(Some(s)),
+        Err(VarError::NotPresent) => Ok(None),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(var_name)),
     }
-
-    mutations
+}
+pub fn get_env_var(var_name: &'static str) -> Result<String, Error> {
+    match std::env::var(var_name) {
+        Ok(s) => Ok(s),
+        Err(VarError::NotPresent) => Err(Error::EnvVarMissing(var_name)),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(var_name)),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,20 +219,17 @@ impl FromStr for PathSegment {
     }
 }
 
-// TODO: split into two declarations
-// * BakedMutableId
-// * MutableId
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MutableId<'a> {
-    pub crate_name: Cow<'a, str>,
+pub struct MutableId {
+    pub crate_name: String,
     pub id: usize,
 }
-impl fmt::Display for MutableId<'_> {
+impl fmt::Display for MutableId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.id, self.crate_name)
     }
 }
-impl FromStr for MutableId<'static> {
+impl FromStr for MutableId {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -209,8 +241,20 @@ impl FromStr for MutableId<'static> {
                 .0
                 .parse()
                 .map_err(|_| Error::MutableIdFormat(s.to_owned()))?,
-            crate_name: Cow::Owned(id.1.to_owned()),
+            crate_name: id.1.to_owned(),
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BakedMutableId {
+    pub crate_name: &'static str,
+    pub id: usize,
+}
+
+impl fmt::Display for BakedMutableId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.id, self.crate_name)
     }
 }
 
@@ -224,37 +268,41 @@ macro_rules! with_collector {
         }
     };
 }
-impl MutableId<'static> {
+impl BakedMutableId {
     pub fn new_isolated(id: usize) -> Self {
         Self::new(id, "")
     }
     pub fn new(id: usize, crate_name: &'static str) -> Self {
+        Self { id, crate_name }
+    }
+
+    pub fn cloned(self) -> MutableId {
         MutableId {
-            id,
-            crate_name: Cow::Borrowed(crate_name),
+            id: self.id,
+            crate_name: self.crate_name.to_owned(),
         }
     }
 
     /// reports details of mutables gathered by static analysis
-    pub fn report_details(&self, loc: BakedLocation, ty: &str, mutations: &str) {
+    pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
         with_collector!(self, write_details(self, loc, ty, mutations))
     }
 
     /// get the active mutation for a mutable
     ///
     /// calling this function also triggers logging its coverage
-    fn get_active_mutation(&self) -> Option<Arc<str>> {
+    fn get_active_mutation(self) -> Option<Arc<str>> {
         with_collector!(self, write_coverage(self, None));
 
-        ACTIVE_MUTATION
-            .read()
-            .expect("read-lock active mutations")
-            .get(self)
-            .cloned()
+        match () {
+            #[cfg(test)]
+            _ if self.crate_name.is_empty() => tests::ACTIVE_MUTATION.read().unwrap().get(self),
+            _ => ACTIVE_MUTATION.get(self),
+        }
     }
 
     // TODO: this is only a first draft of behavior
-    fn report_weak(&self, weak: &str) {
+    fn report_weak(self, weak: &str) {
         with_collector!(self, write_coverage(self, Some(weak)));
     }
 }
@@ -308,6 +356,7 @@ impl Span {
             return None;
         }
         let end = Some(span.end()).filter(|&end| end.line != 0 && start != end);
+        // TODO: report errors
         Some(Self {
             start: LineColumn {
                 line: start.line.try_into().unwrap(),

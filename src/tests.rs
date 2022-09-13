@@ -1,23 +1,24 @@
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     io::Write,
     mem,
     ops::Deref,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use lazy_static::lazy_static;
 
 use crate::{
     collector::{CollectedData, COVERAGE_FILE_HEADER, DETAILS_FILE_HEADER},
-    DataCollector, MutableId, ACTIVE_MUTATION,
+    ActiveMutation, BakedMutableId, DataCollector, MutableId,
 };
 
 pub use crate::{call_isolated, data_isolated};
 
 lazy_static! {
     pub(crate) static ref DATA_COLLECTOR: DataCollector<Vec<u8>> = DataCollector::new_for_test();
+    pub(crate) static ref ACTIVE_MUTATION: RwLock<ActiveMutation> =
+        RwLock::new(ActiveMutation::new_for_test());
 }
 
 #[macro_export]
@@ -62,13 +63,12 @@ pub fn run<'a, T>(
 
     DATA_COLLECTOR.assert_clear();
 
-    // update ACTIVE_MUTATION
+    // update ACTIVE_MUTATION (the only the one from this module)
     let mut m_map = ACTIVE_MUTATION.write().unwrap();
-    // clear other isolated mutations
-    m_map.retain(|m_id, _| !m_id.crate_name.is_empty());
-    // insert new mutation
+    // clear old mutations & insert new mutation
+    m_map.mutations.clear();
     for (m_id, m) in mutation {
-        m_map.insert(mutable_id(m_id), Arc::from(m));
+        m_map.mutations.insert(m_id, Arc::from(m));
     }
     // release lock on ACTIVE_MUTATION
     std::mem::drop(m_map);
@@ -86,16 +86,25 @@ pub fn run<'a, T>(
 
 // TODO: make different isolated fns have different `crate_name`s
 /// returns a MutableId struct with an id to be used in tests
-pub fn mutable_id(id: usize) -> MutableId<'static> {
+pub fn mutable_id(id: usize) -> MutableId {
     MutableId {
         id,
-        crate_name: Cow::Borrowed(""),
+        crate_name: String::new(),
+    }
+}
+
+impl ActiveMutation {
+    fn new_for_test() -> Self {
+        Self {
+            crate_name: Some("".to_owned()),
+            mutations: BTreeMap::new(),
+        }
     }
 }
 
 impl CollectedData {
     // TODO: also validate against id collisions?
-    pub fn from_defs(num: usize, defs_csv: &str) -> Self {
+    pub(crate) fn from_defs(num: usize, defs_csv: &str) -> Self {
         let mut cd = Self::new();
         cd.read_definition_csv("", defs_csv.as_bytes()).unwrap();
         for id in cd.mutables.keys() {
@@ -208,12 +217,21 @@ impl<T> ToVec<T> for BTreeSet<T> {
 #[test]
 pub fn mutable_id_ord() {
     assert!(
-        MutableId {
-            crate_name: Cow::Borrowed("a"),
+        BakedMutableId {
+            crate_name: "a",
             id: 1,
-        } < MutableId {
-            crate_name: Cow::Borrowed("b"),
+        } < BakedMutableId {
+            crate_name: "b",
             id: 0,
         }
-    )
+    );
+    assert!(
+        MutableId {
+            crate_name: "a".to_owned(),
+            id: 1,
+        } < MutableId {
+            crate_name: "b".to_owned(),
+            id: 0,
+        }
+    );
 }

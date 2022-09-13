@@ -7,7 +7,7 @@ use std::{
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::{BakedLocation, MutableId};
+use crate::{BakedLocation, BakedMutableId};
 
 use super::{Mutable, MuttestTransformer, TransformSnippets};
 
@@ -34,7 +34,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
             loc,
         } = transformer.new_mutable(&self, &self.value);
         quote_spanned! {span=>
-            #muttest_api::mutable::lit_str::mutable_str(&#m_id, #lit, #loc, {
+            #muttest_api::mutable::lit_str::mutable_str(#m_id, #lit, #loc, {
                 static MUTABLE: #muttest_api::RwLock<#muttest_api::Option<&str>> =
                     #muttest_api::RwLock::new(#muttest_api::Option::None);
                 &MUTABLE
@@ -44,7 +44,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
 }
 
 pub fn mutable_str(
-    m_id: &MutableId<'static>,
+    m_id: BakedMutableId,
     s: &'static str,
     loc: BakedLocation,
     mutation: &RwLock<Option<&'static str>>,

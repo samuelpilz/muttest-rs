@@ -8,7 +8,7 @@ use std::{
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::{display_or_empty_if_none, MutableId, PathSegment};
+use crate::{display_or_empty_if_none, BakedMutableId, PathSegment};
 
 pub mod assign_op;
 pub mod binop_bool;
@@ -67,9 +67,9 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
     }
 
     fn new_mutable<'b, M: Mutable<'b>>(&mut self, m: &M, code: &str) -> TransformSnippets {
-        let id = MutableId::new(self.id.fetch_add(1, SeqCst), self.conf.target_name);
+        let id = BakedMutableId::new(self.id.fetch_add(1, SeqCst), self.conf.target_name);
         if let Some(w) = &mut self.definitions {
-            write_mutable(w, &id, m, code, &self.path, self.conf.span);
+            write_mutable(w, id, m, code, &self.path, self.conf.span);
         }
 
         let muttest_api = match self.conf.muttest_api {
@@ -81,7 +81,7 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
         let id = id.id;
 
         let m_id = quote_spanned! {m.span() =>
-            #muttest_api::MutableId {id: #id, crate_name: #muttest_api::Cow::Borrowed(#crate_name)}
+            #muttest_api::BakedMutableId {id: #id, crate_name: #crate_name}
         };
         let span = bake_span(&muttest_api, m.span());
         let attr_span = bake_span(&muttest_api, self.conf.span);
@@ -116,7 +116,7 @@ fn bake_span(muttest_api: &TokenStream, span: Span) -> TokenStream {
 /// register a new mutable
 fn write_mutable<'a, M: Mutable<'a>, W: Write>(
     mut w: W,
-    id: &MutableId,
+    id: BakedMutableId,
     m: &M,
     code: &str,
     path: &[PathSegment],
