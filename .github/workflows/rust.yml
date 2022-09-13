@@ -52,4 +52,16 @@ jobs:
           components: rustfmt
       - name: Check format
         run: cargo fmt --check --all
-# TODO: currently there is a ICE when running clippy
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          components: rustfmt
+      # TODO: currently there is a ICE when running clippy on transformed code
+      - name: Run Clippy on core
+        run: cargo clippy -p muttest-core
+      - name: Run Clippy on codegen
+        run: cargo clippy -p muttest-codegen
