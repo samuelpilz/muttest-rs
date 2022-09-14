@@ -61,12 +61,8 @@ fn main() -> Result<(), Error> {
     // compile libs and test cases
     let mut compilation_result = compile(cargo_exe, &muttest_dir)?;
 
-    println!("{compilation_result:?}");
-
     // read created mutables
     let mut data = read_mutable_defs(&muttest_dir)?;
-
-    println!("mutable definitions {data:?}");
 
     let details_path = muttest_dir.join("mutable-details.csv");
     setup_csv_file(&details_path, collector::DETAILS_FILE_HEADER)?;
@@ -181,7 +177,8 @@ fn main() -> Result<(), Error> {
     }
     println!("{killed_mutants}/{total_mutants} mutants killed");
 
-    println!("{}", serde_json::to_string_pretty(&data).unwrap());
+
+    serde_json::to_writer(File::create(muttest_dir.join("report.json"))?, &data).unwrap();
     Ok(())
 }
 
