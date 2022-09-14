@@ -177,7 +177,6 @@ fn main() -> Result<(), Error> {
     }
     println!("{killed_mutants}/{total_mutants} mutants killed");
 
-
     serde_json::to_writer(File::create(muttest_dir.join("report.json"))?, &data).unwrap();
     Ok(())
 }
