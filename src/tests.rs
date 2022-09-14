@@ -10,15 +10,16 @@ use lazy_static::lazy_static;
 
 use crate::{
     collector::{CollectedData, COVERAGE_FILE_HEADER, DETAILS_FILE_HEADER},
-    ActiveMutation, BakedMutableId, DataCollector, MutableId,
+    BakedMutableId, DataCollector, MutableId, MutationsMap,
 };
 
 pub use crate::{call_isolated, data_isolated};
 
 lazy_static! {
     pub(crate) static ref DATA_COLLECTOR: DataCollector<Vec<u8>> = DataCollector::new_for_test();
-    pub(crate) static ref ACTIVE_MUTATION: RwLock<ActiveMutation> =
-        RwLock::new(ActiveMutation::new_for_test());
+    // TODO: one MutationsMap per testcase
+    pub(crate) static ref TEST_MUTATION: RwLock<MutationsMap> =
+        RwLock::new(MutationsMap::default());
 }
 
 #[macro_export]
@@ -35,7 +36,7 @@ macro_rules! call_isolated {
 #[macro_export]
 macro_rules! data_isolated {
     ($f:ident) => {
-        crate::collector::CollectedData::from_defs($f::NUM_MUTABLES, $f::MUTABLES_CSV)
+        crate::collector::CollectedData::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
     };
 }
 
@@ -52,10 +53,10 @@ pub fn run<'a, T>(
     action: impl FnOnce() -> T,
     mutation: Vec<(usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
-    let mut data = CollectedData::from_defs(num_mutables, defs_csv);
-    for (m_id, _) in &mutation {
-        if !data.mutables.contains_key(&mutable_id(*m_id)) {
-            panic!("mutable id {m_id} is not a valid mutable id")
+    let mut data = CollectedData::from_defs_checked(num_mutables, defs_csv);
+    for (id, _) in &mutation {
+        if !data.mutables.contains_key(&id) {
+            panic!("mutable id {id} is not a valid mutable id")
         }
     }
 
@@ -64,11 +65,11 @@ pub fn run<'a, T>(
     DATA_COLLECTOR.assert_clear();
 
     // update ACTIVE_MUTATION (the only the one from this module)
-    let mut m_map = ACTIVE_MUTATION.write().unwrap();
+    let mut m_map = TEST_MUTATION.write().unwrap();
     // clear old mutations & insert new mutation
-    m_map.mutations.clear();
+    m_map.clear();
     for (m_id, m) in mutation {
-        m_map.mutations.insert(m_id, Arc::from(m));
+        m_map.insert(m_id, Arc::from(m));
     }
     // release lock on ACTIVE_MUTATION
     std::mem::drop(m_map);
@@ -84,32 +85,13 @@ pub fn run<'a, T>(
     IsolatedFnCall { res, data }
 }
 
-// TODO: make different isolated fns have different `crate_name`s
-/// returns a MutableId struct with an id to be used in tests
-pub fn mutable_id(id: usize) -> MutableId {
-    MutableId {
-        id,
-        crate_name: String::new(),
-    }
-}
-
-impl ActiveMutation {
-    fn new_for_test() -> Self {
-        Self {
-            crate_name: Some("".to_owned()),
-            mutations: BTreeMap::new(),
-        }
-    }
-}
-
 impl CollectedData {
     // TODO: also validate against id collisions?
-    pub(crate) fn from_defs(num: usize, defs_csv: &str) -> Self {
-        let mut cd = Self::new();
-        cd.read_definition_csv("", defs_csv.as_bytes()).unwrap();
-        for id in cd.mutables.keys() {
-            if num < id.id {
-                panic!("invalid id {}. max: {num}", id.id);
+    pub(crate) fn from_defs_checked(num: usize, defs_csv: &str) -> Self {
+        let cd = Self::from_definition_csv(defs_csv.as_bytes()).unwrap();
+        for &id in cd.mutables.keys() {
+            if num < id {
+                panic!("invalid id {id}. max: {num}");
             }
         }
         cd

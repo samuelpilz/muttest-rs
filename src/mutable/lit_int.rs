@@ -106,7 +106,7 @@ mod tests {
         }
         let data = data_isolated!(_f);
         assert_eq!(data.mutables.len(), 1);
-        assert_eq!(data.mutables[&mutable_id(1)].code, "1");
+        assert_eq!(data.mutables[&1].code, "1");
     }
 
     #[test]

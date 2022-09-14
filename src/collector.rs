@@ -1,35 +1,44 @@
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
-    env::VarError,
     fs::File,
     io::{Read, Write},
+    path::Path,
     sync::Mutex,
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    parse_or_none_if_empty, split_or_empty, BakedLocation, BakedMutableId, Error, MutableCoverage,
-    MutableData, MutableDetails, MutableId, MutableLocation,
+    parse_or_none_if_empty, split_or_empty, BakedLocation, Error, MutableCoverage, MutableData,
+    MutableDetails, MutableLocation, MuttestConf,
 };
 
-pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
-pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
 pub const DETAILS_FILE_HEADER: &str = "id,ty,mutations,file,module,attr_span,span";
 pub const COVERAGE_FILE_HEADER: &str = "id,data";
 
+// TODO: make collector only for single crate_name
 pub struct DataCollector<F: Write> {
-    pub(crate) details: Mutex<BTreeSet<MutableId>>,
-    pub(crate) coverage: Mutex<BTreeMap<MutableId, String>>,
+    pub(crate) details: Mutex<BTreeSet<usize>>,
+    pub(crate) coverage: Mutex<BTreeMap<usize, String>>,
     pub(crate) details_file: Option<Mutex<F>>,
     pub(crate) coverage_file: Option<Mutex<F>>,
 }
 
 impl DataCollector<File> {
-    pub fn new_from_envvar_files() -> Result<Self, Error> {
-        let details_file = open_collector_file(ENV_VAR_DETAILS_FILE)?.map(Mutex::new);
+    pub(crate) fn new_from_conf(conf: &MuttestConf) -> Result<Self, Error> {
+        let details_file = conf
+            .details_file
+            .as_deref()
+            .map(open_collector_file)
+            .transpose()?
+            .map(Mutex::new);
         // TODO: fully read details the file (reading coverage does not make much sense)
-        let coverage_file = open_collector_file(ENV_VAR_COVERAGE_FILE)?.map(Mutex::new);
+        let coverage_file = conf
+            .coverage_file
+            .as_deref()
+            .map(open_collector_file)
+            .transpose()?
+            .map(Mutex::new);
         Ok(DataCollector {
             details: Mutex::new(Default::default()),
             coverage: Mutex::new(Default::default()),
@@ -40,15 +49,9 @@ impl DataCollector<File> {
 }
 
 impl<F: Write> DataCollector<F> {
-    pub(crate) fn write_details(
-        &self,
-        m_id: BakedMutableId,
-        loc: BakedLocation,
-        ty: &str,
-        mutations: &str,
-    ) {
+    pub(crate) fn write_details(&self, id: usize, loc: BakedLocation, ty: &str, mutations: &str) {
         // TODO: avoid unnecessary cloning
-        let is_new = self.details.lock().unwrap().insert(m_id.cloned());
+        let is_new = self.details.lock().unwrap().insert(id);
         if !is_new {
             return;
         }
@@ -63,18 +66,18 @@ impl<F: Write> DataCollector<F> {
             } = loc;
             writeln!(
                 f,
-                "{m_id},{ty},{mutations},{file},{module},{attr_span},{span}"
+                "{id},{ty},{mutations},{file},{module},{attr_span},{span}"
             )
             .expect("unable to write mutable detail");
             f.flush().expect("unable to flush mutable detail");
         }
     }
 
-    pub(crate) fn write_coverage(&self, m_id: BakedMutableId, weak: Option<&str>) {
+    pub(crate) fn write_coverage(&self, id: usize, weak: Option<&str>) {
         let mut coverage_map = self.coverage.lock().unwrap();
         let mut update = false;
 
-        let data = match coverage_map.entry(m_id.cloned()) {
+        let data = match coverage_map.entry(id) {
             btree_map::Entry::Occupied(e) => e.into_mut(),
             btree_map::Entry::Vacant(e) => {
                 update = true;
@@ -97,44 +100,30 @@ impl<F: Write> DataCollector<F> {
         if update {
             if let Some(f) = &self.coverage_file {
                 let mut f = f.lock().unwrap();
-                writeln!(f, "{m_id},{data}").expect("unable to write mutable detail");
+                writeln!(f, "{id},{data}").expect("unable to write mutable detail");
                 f.flush().expect("unable to flush mutable detail");
             }
         }
     }
 }
 
-fn open_collector_file(env_var_name: &'static str) -> Result<Option<File>, Error> {
-    match std::env::var(env_var_name) {
-        Ok(file) => {
-            let file = File::options()
-                .read(true)
-                .write(true)
-                .append(true)
-                .open(file)?;
-            Ok(Some(file))
-        }
-        Err(VarError::NotPresent) => Ok(None),
-        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(env_var_name)),
-    }
+fn open_collector_file(path: &Path) -> Result<File, Error> {
+    Ok(File::options()
+        .read(true)
+        .write(true)
+        .append(true)
+        .open(path)?)
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CollectedData {
-    pub mutables: BTreeMap<MutableId, MutableData>,
-    pub coverage: BTreeMap<MutableId, BTreeSet<String>>,
+    pub mutables: BTreeMap<usize, MutableData>,
+    pub coverage: BTreeMap<usize, BTreeSet<String>>,
 }
 // TODO: tests
 
 impl CollectedData {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn read_definition_csv(
-        &mut self,
-        mutated_package: &str,
-        definitions: impl Read,
-    ) -> Result<(), Error> {
+    pub fn from_definition_csv(definitions: impl Read) -> Result<Self, Error> {
         #[derive(Debug, Deserialize)]
         struct MutableDefinitionCsvLine {
             id: usize,
@@ -146,15 +135,16 @@ impl CollectedData {
             span: String,
         }
 
+        let mut data = CollectedData {
+            mutables: BTreeMap::default(),
+            coverage: BTreeMap::default(),
+        };
+
         let mut reader = csv::ReaderBuilder::new().from_reader(definitions);
         for md in reader.deserialize::<MutableDefinitionCsvLine>() {
             let md = md?;
-            let id = MutableId {
-                id: md.id,
-                crate_name: mutated_package.to_owned(),
-            };
-            self.mutables.insert(
-                id,
+            data.mutables.insert(
+                md.id,
                 MutableData {
                     kind: md.kind,
                     code: md.code,
@@ -173,13 +163,13 @@ impl CollectedData {
                 },
             );
         }
-        Ok(())
+        Ok(data)
     }
     // TODO: report errors more gracefully
     pub fn read_details_csv(&mut self, details: impl Read) -> Result<(), Error> {
         #[derive(Debug, Deserialize)]
         struct MutableDetailsCsvLine {
-            id: String,
+            id: usize,
             ty: String,
             mutations: String,
             file: String,
@@ -192,7 +182,6 @@ impl CollectedData {
         for md in reader.deserialize::<MutableDetailsCsvLine>() {
             let md = md?;
 
-            let id = md.id.parse::<MutableId>()?;
             // TODO: enhance location info
             let details = MutableDetails {
                 mutable_type: md.ty,
@@ -201,8 +190,8 @@ impl CollectedData {
             // TODO: enhance mutable location
             let mutable = self
                 .mutables
-                .get_mut(&id)
-                .ok_or(Error::UnknownMutable(id))?;
+                .get_mut(&md.id)
+                .ok_or(Error::UnknownMutable(md.id))?;
 
             if mutable.location.span.is_none() {
                 mutable.location.span = parse_or_none_if_empty(&md.span)?;
@@ -220,8 +209,7 @@ impl CollectedData {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
         for md in reader.deserialize::<MutableCoverage>() {
             let md = md?;
-            self.coverage
-                .insert(md.id.parse()?, split_or_empty(&md.data, ":"));
+            self.coverage.insert(md.id, split_or_empty(&md.data, ":"));
         }
         Ok(())
     }

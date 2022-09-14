@@ -91,7 +91,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)].to_vec_ref(), &["TF"]);
+        assert_eq!(&res.data.coverage[&1].to_vec_ref(), &["TF"]);
     }
 
     #[test]
@@ -103,7 +103,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
-        assert_eq!(&res.data.coverage[&mutable_id(1)].to_vec_ref(), &["T"]);
+        assert_eq!(&res.data.coverage[&1].to_vec_ref(), &["T"]);
     }
 
     #[test]
@@ -118,8 +118,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
-        assert_ne!(res.data.mutables[&mutable_id(1)].details, None);
-        assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
+        assert_ne!(res.data.mutables[&1].details, None);
+        assert_eq!(res.data.coverage.get(&1), None);
     }
 
     // TODO: tests

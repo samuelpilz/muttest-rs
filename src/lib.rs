@@ -15,7 +15,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::collector::DataCollector;
 
@@ -48,41 +48,65 @@ macro_rules! env_var_muttest_dir {
 pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
 pub const ENV_VAR_MUTTEST_CRATE: &str = "MUTTEST_CRATE";
 pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
+pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
+pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
 
 lazy_static! {
-    static ref ACTIVE_MUTATION: ActiveMutation =
-        ActiveMutation::new_from_env().expect("unable to read active mutation");
-    static ref DATA_COLLECTOR: DataCollector<File> = DataCollector::new_from_envvar_files()
+    static ref MUTTEST_CONF: MuttestConf =
+        MuttestConf::new_from_env().expect("unable to read active mutation");
+    static ref DATA_COLLECTOR: DataCollector<File> = DataCollector::new_from_conf(&MUTTEST_CONF)
         .expect("unable to open mutable-data-collector files");
 }
+// TODO: make `MuttestRuntime` (or other name) which is `Map crate-name->(ActiveMutation & Collector)`
 
-#[derive(Debug)]
-struct ActiveMutation {
+pub type MutationsMap = BTreeMap<usize, Arc<str>>;
+#[derive(Debug, Default)]
+struct MuttestConf {
     crate_name: Option<String>,
-    mutations: BTreeMap<usize, Arc<str>>,
+    mutations: MutationsMap,
+    details_file: Option<PathBuf>,
+    coverage_file: Option<PathBuf>,
 }
 
-impl ActiveMutation {
+impl MuttestConf {
     fn new_from_env() -> Result<Self, Error> {
         let crate_name = get_env_var_option(ENV_VAR_MUTTEST_CRATE)?;
-        let mut mutations = BTreeMap::new();
-
-        if crate_name.is_some() {
-            let mutation = get_env_var(ENV_VAR_MUTTEST_MUTATION)?;
-            for m in mutation.split(';') {
-                // TODO: report errors
-                let (id, m) = m.split_once('=').unwrap();
-                let id: usize = id.parse().unwrap();
-                mutations.insert(id, Arc::from(m));
-            }
+        if crate_name.is_none() {
+            return Ok(Self::default());
         }
+
+        let mutations = get_env_var_option(ENV_VAR_MUTTEST_MUTATION)?
+            .map(|mutation| {
+                mutation
+                    .split(';')
+                    .map(|m| {
+                        let (id, m) = m.split_once('=').unwrap();
+                        let id: usize = id.parse().unwrap();
+                        (id, Arc::from(m))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         Ok(Self {
             crate_name,
             mutations,
+            details_file: get_env_var_pathbuf_option(ENV_VAR_DETAILS_FILE),
+            coverage_file: get_env_var_pathbuf_option(ENV_VAR_COVERAGE_FILE),
         })
     }
-    fn get(&self, m_id: BakedMutableId) -> Option<Arc<str>> {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        #[cfg(test)]
+        if m_id.is_isolated_mutable() {
+            return true;
+        }
+        self.crate_name.as_deref() == Some(m_id.crate_name)
+    }
+    fn get_mutation(&self, m_id: BakedMutableId) -> Option<Arc<str>> {
+        #[cfg(test)]
+        if m_id.crate_name.is_empty() {
+            return tests::TEST_MUTATION.read().unwrap().get(&m_id.id).cloned();
+        }
         if self.crate_name.as_deref() != Some(m_id.crate_name) {
             return None;
         }
@@ -107,7 +131,7 @@ pub enum Error {
     #[error("invalid MutableId: '{0}'")]
     MutableIdFormat(String),
     #[error("not a known mutable: '{0}'")]
-    UnknownMutable(MutableId),
+    UnknownMutable(usize), // TODO: somehow encode crate_name?
     #[error("invalid location: '{0}'")]
     LocationFormat(String),
     #[error("invalid path: '{0}'")]
@@ -137,14 +161,18 @@ pub fn get_env_var(var_name: &'static str) -> Result<String, Error> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub fn get_env_var_pathbuf_option(var_name: &'static str) -> Option<PathBuf> {
+    std::env::var_os(var_name).map(|e| PathBuf::from(e))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MutableData {
     pub kind: String,
     pub code: String,
     pub location: MutableLocation,
     pub details: Option<MutableDetails>,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MutableDetails {
     // TODO: merge location with other
     pub mutable_type: String,
@@ -153,7 +181,7 @@ pub struct MutableDetails {
 
 #[derive(Debug, Deserialize)]
 pub struct MutableCoverage {
-    id: String,
+    id: usize,
     data: String,
 }
 
@@ -166,7 +194,7 @@ pub struct BakedLocation {
     // TODO: add more end location info for feature proc_macro_span / proc_macro_span_shrink
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[allow(unused)]
 pub struct MutableLocation {
     pub file: String,
@@ -178,12 +206,12 @@ pub struct MutableLocation {
 }
 
 // TODO: use proc-macro2 structs instead??
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Span {
     pub start: LineColumn,
     pub end: Option<LineColumn>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct LineColumn {
     pub line: u32,
     pub column: u32,
@@ -191,7 +219,7 @@ pub struct LineColumn {
 
 // TODO: maybe borrow something?
 // TODO: maybe have idents here?
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum PathSegment {
     Mod(String),
     Fn(String),
@@ -259,12 +287,13 @@ impl fmt::Display for BakedMutableId {
 }
 
 // TODO: this can surely be done cleaner
-macro_rules! with_collector {
+macro_rules! do_with_collector {
     ($s:expr, $f:ident($($args:expr),*)) => {
         match () {
             #[cfg(test)]
-            _ if $s.crate_name.is_empty() => tests::DATA_COLLECTOR.$f($($args,)*),
-            _ => DATA_COLLECTOR.$f($($args,)*),
+            _ if $s.is_isolated_mutable() => tests::DATA_COLLECTOR.$f($($args,)*),
+            _ if MUTTEST_CONF.tracks_mutable($s) => DATA_COLLECTOR.$f($($args,)*),
+            _ => {}
         }
     };
 }
@@ -276,6 +305,11 @@ impl BakedMutableId {
         Self { id, crate_name }
     }
 
+    #[cfg(test)]
+    fn is_isolated_mutable(self) -> bool {
+        self.crate_name.is_empty()
+    }
+
     pub fn cloned(self) -> MutableId {
         MutableId {
             id: self.id,
@@ -285,25 +319,21 @@ impl BakedMutableId {
 
     /// reports details of mutables gathered by static analysis
     pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
-        with_collector!(self, write_details(self, loc, ty, mutations))
+        do_with_collector!(self, write_details(self.id, loc, ty, mutations))
     }
 
     /// get the active mutation for a mutable
     ///
     /// calling this function also triggers logging its coverage
     fn get_active_mutation(self) -> Option<Arc<str>> {
-        with_collector!(self, write_coverage(self, None));
+        do_with_collector!(self, write_coverage(self.id, None));
 
-        match () {
-            #[cfg(test)]
-            _ if self.crate_name.is_empty() => tests::ACTIVE_MUTATION.read().unwrap().get(self),
-            _ => ACTIVE_MUTATION.get(self),
-        }
+        MUTTEST_CONF.get_mutation(self)
     }
 
     // TODO: this is only a first draft of behavior
     fn report_weak(self, weak: &str) {
-        with_collector!(self, write_coverage(self, Some(weak)));
+        do_with_collector!(self, write_coverage(self.id, Some(weak)));
     }
 }
 

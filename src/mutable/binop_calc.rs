@@ -201,7 +201,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
+            res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -223,8 +223,8 @@ mod tests {
 
         let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 2);
-        assert_eq!(&data.mutables[&mutable_id(1)].code, "*");
-        assert_eq!(&data.mutables[&mutable_id(2)].code, "+");
+        assert_eq!(&data.mutables[&1].code, "*");
+        assert_eq!(&data.mutables[&2].code, "+");
 
         assert_eq!(call_isolated! {f()}.res, 11);
         assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
@@ -242,7 +242,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            &res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -288,7 +288,7 @@ mod tests {
         let res = call_isolated! {f1()};
         assert_eq!(res.res, O1);
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            &res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -299,7 +299,7 @@ mod tests {
         let res = call_isolated! {f2()};
         assert_eq!(res.res, O2);
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            &res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -319,7 +319,7 @@ mod tests {
         let now = Instant::now();
         let res = call_isolated! {f(now)};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            &res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -343,9 +343,9 @@ mod tests {
         }
 
         let data = data_isolated!(f);
-        assert_eq!(&data.mutables[&mutable_id(1)].code, "*");
-        assert_eq!(&data.mutables[&mutable_id(2)].code, "*");
-        assert_eq!(&data.mutables[&mutable_id(3)].code, "+");
+        assert_eq!(&data.mutables[&1].code, "*");
+        assert_eq!(&data.mutables[&2].code, "*");
+        assert_eq!(&data.mutables[&3].code, "+");
 
         let res = call_isolated! {f(-4, 7)};
         assert_eq!(res.res, 16 + 49);
@@ -367,7 +367,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            &res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -444,7 +444,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(5, res.res);
-        assert_ne!(res.data.mutables[&mutable_id(1)].details, None);
-        assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
+        assert_ne!(res.data.mutables[&1].details, None);
+        assert_eq!(res.data.coverage.get(&1), None);
     }
 }

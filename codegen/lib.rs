@@ -96,6 +96,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
 pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
+    // TODO: maybe honor `CARGO_PRIMARY_PACKAGE` env var
     let conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,

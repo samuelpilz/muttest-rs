@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -13,7 +14,8 @@ use muttest_core::{
     mutable::{
         self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
     },
-    MutableData, ENV_VAR_MUTTEST_DIR,
+    MutableData, ENV_VAR_COVERAGE_FILE, ENV_VAR_DETAILS_FILE, ENV_VAR_MUTTEST_CRATE,
+    ENV_VAR_MUTTEST_DIR, ENV_VAR_MUTTEST_MUTATION,
 };
 use wait_timeout::ChildExt;
 
@@ -72,27 +74,29 @@ fn main() -> Result<(), Error> {
     setup_csv_file(&coverage_path, collector::COVERAGE_FILE_HEADER)?;
 
     // run test suites without mutations for coverage
-    for test_bin in &mut compilation_result.test_bins {
-        println!("call {}", &test_bin.name);
-        let start_time = Instant::now();
-        let status = Command::new(&test_bin.path)
-            .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
-            .env(collector::ENV_VAR_DETAILS_FILE, &details_path)
-            .env(collector::ENV_VAR_COVERAGE_FILE, &coverage_path)
-            .stdout(Stdio::inherit())
-            .spawn()?
-            .wait()?;
-        test_bin.exec_time = Some(start_time.elapsed());
-        // TODO: better error report
-        if !status.success() {
-            panic!("test suite fails")
+    for (crate_name, data) in &mut data {
+        for test_bin in &mut compilation_result.test_bins {
+            println!("call {}", &test_bin.name);
+            let start_time = Instant::now();
+            let status = Command::new(&test_bin.path)
+                .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
+                .env(ENV_VAR_MUTTEST_CRATE, crate_name)
+                .env(ENV_VAR_DETAILS_FILE, &details_path)
+                .env(ENV_VAR_COVERAGE_FILE, &coverage_path)
+                .stdout(Stdio::inherit())
+                .spawn()?
+                .wait()?;
+            test_bin.exec_time = Some(start_time.elapsed());
+            // TODO: better error report
+            if !status.success() {
+                panic!("test suite fails")
+            }
         }
+        data.read_details_csv(File::open(&details_path)?)
+            .map_err(|e| e.in_csv_file(&details_path))?;
+        data.read_coverage_csv(File::open(&coverage_path)?)
+            .map_err(|e| e.in_csv_file(&coverage_path))?;
     }
-
-    data.read_details_csv(File::open(&details_path)?)
-        .map_err(|e| e.in_csv_file(&details_path))?;
-    data.read_coverage_csv(File::open(&coverage_path)?)
-        .map_err(|e| e.in_csv_file(&coverage_path))?;
 
     // TODO: calc&print covered mutables
 
@@ -100,91 +104,84 @@ fn main() -> Result<(), Error> {
     let mut killed_mutants = 0;
 
     // evaluate mutations
-    let m_ids = data.mutables.keys().cloned().collect::<Vec<_>>();
-    let mut crate_name = None;
-    for m_id in &m_ids {
-        if crate_name == Some(&m_id.crate_name) {
-            println!("crate {}", m_id.crate_name);
-            crate_name = Some(&m_id.crate_name);
-        }
+    for (crate_name, data) in &mut data {
+        let ids = data.mutables.keys().cloned().collect::<Vec<_>>();
+        for &id in &ids {
+            let mutable @ MutableData {
+                code,
+                kind,
+                location,
+                ..
+            } = &data.mutables[&id];
+            let coverage = data.coverage.get(&id);
+            println!("{id}: {location} `{code}` ({kind})");
 
-        let mutable @ MutableData {
-            code,
-            kind,
-            location,
-            ..
-        } = &data.mutables[m_id];
-        let coverage = data.coverage.get(m_id);
-        let id = m_id.id;
-        println!("{id}: {location} `{code} ({kind})`");
+            let coverage = match coverage {
+                Some(c) => c,
+                None => {
+                    println!("  not covered");
+                    continue;
+                }
+            };
 
-        let coverage = match coverage {
-            Some(c) => c,
-            None => {
-                println!("  not covered");
-                continue;
-            }
-        };
+            let mutations = mutations_for_mutable(mutable);
+            let mutations = match mutations {
+                Some(m) => m,
+                None => {
+                    println!("  not mutations");
+                    continue;
+                }
+            };
 
-        let mutations = mutations_for_mutable(mutable);
-        let mutations = match mutations {
-            Some(m) => m,
-            None => {
-                println!("  not mutations");
-                continue;
-            }
-        };
+            for m in mutations {
+                total_mutants += 1;
+                // TODO: display lit_str mutations correctly
+                println!("  mutation `{m}`");
 
-        for m in mutations {
-            total_mutants += 1;
-            // TODO: display lit_str mutations correctly
-            println!("  mutation `{m}`");
+                // TODO: improve weak surviving
+                if *kind == MutableBinopCmp::NAME
+                    && mutable::binop_cmp::identical_behavior(code, &m, coverage)
+                {
+                    println!("    survived weak mutation testing");
+                    continue;
+                }
 
-            // TODO: improve weak surviving
-            if *kind == MutableBinopCmp::NAME
-                && mutable::binop_cmp::identical_behavior(code, &m, coverage)
-            {
-                println!("    survived weak mutation testing");
-                continue;
-            }
-
-            // run test suites without mutations for coverage
-            for test_bin in &compilation_result.test_bins {
-                println!("    call {}", &test_bin.name);
-                let mut test = Command::new(&test_bin.path)
-                    .env(
-                        "MUTTEST_MUTATION",
-                        format!("{}:{}={m}", m_id.id, m_id.crate_name),
-                    )
-                    // TODO: think about details in mutated runs
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()?;
-                // TODO: make timeout parameters into config options
-                let result = test.wait_timeout(
-                    Duration::from_millis(500).max(3 * test_bin.exec_time.unwrap()),
-                )?;
-                let result = match result {
-                    Some(r) => r,
-                    None => {
-                        test.kill()?;
-                        test.wait()?
-                    }
-                };
-                let result = if result.success() {
-                    "survived"
-                } else {
-                    killed_mutants += 1;
-                    "killed"
-                };
-                println!("      {}", result);
-                // TODO: run tests in finer granularity
+                // run test suites without mutations for coverage
+                for test_bin in &compilation_result.test_bins {
+                    println!("    call {}", &test_bin.name);
+                    let mut test = Command::new(&test_bin.path)
+                        .env(ENV_VAR_MUTTEST_CRATE, crate_name)
+                        .env(ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
+                        // TODO: think about details in mutated runs
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()?;
+                    // TODO: make timeout parameters into config options
+                    let result = test.wait_timeout(
+                        Duration::from_millis(500).max(3 * test_bin.exec_time.unwrap()),
+                    )?;
+                    let result = match result {
+                        Some(r) => r,
+                        None => {
+                            test.kill()?;
+                            test.wait()?
+                        }
+                    };
+                    let result = if result.success() {
+                        "survived"
+                    } else {
+                        killed_mutants += 1;
+                        "killed"
+                    };
+                    println!("      {}", result);
+                    // TODO: run tests in finer granularity
+                }
             }
         }
     }
-
     println!("{killed_mutants}/{total_mutants} mutants killed");
 
+    println!("{}", serde_json::to_string_pretty(&data).unwrap());
     Ok(())
 }
 
@@ -199,7 +196,7 @@ struct TestBin {
     name: String,
     exec_time: Option<Duration>,
 }
-/// execute `cargo test --no-run --message-format=json` and collect output
+/// execute `cargo test --no-run --message-format=json` and collect relevant output
 fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
     let mut result = CompilationResult::default();
 
@@ -214,6 +211,7 @@ fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult
     let reader = std::io::BufReader::new(compile_out.stdout.take().unwrap());
     for msg in cargo_metadata::Message::parse_stream(reader) {
         let test_artifact = match msg? {
+            // TODO: use `fresh` field
             cargo_metadata::Message::CompilerArtifact(a) if a.profile.test => a,
             cargo_metadata::Message::CompilerMessage(m) => {
                 eprintln!("{}", m.message);
@@ -243,8 +241,8 @@ fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult
     Ok(result)
 }
 
-fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<CollectedData, Error> {
-    let mut data = CollectedData::default();
+fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<String, CollectedData>, Error> {
+    let mut mutated_crates = BTreeMap::default();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
         let file_name = file.file_name().into_string().unwrap();
@@ -258,9 +256,12 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<CollectedData, Error> {
 
         // TODO: try to delete outdated muttest files
         let file_path = muttest_dir.join(&file_name);
-        data.read_definition_csv(mutated_package, File::open(file_path)?)?;
+        mutated_crates.insert(
+            mutated_package.to_owned(),
+            CollectedData::from_definition_csv(File::open(file_path)?)?,
+        );
     }
-    Ok(data)
+    Ok(mutated_crates)
 }
 
 fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> {

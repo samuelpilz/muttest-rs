@@ -192,7 +192,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.data.mutables[&mutable_id(1)]
+            res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()
@@ -215,7 +215,7 @@ mod tests {
         let res = call_isolated! {f("a".to_owned())};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            &res.data.mutables[&mutable_id(1)]
+            &res.data.mutables[&1]
                 .details
                 .as_ref()
                 .unwrap()

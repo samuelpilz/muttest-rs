@@ -80,10 +80,7 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
-        assert_eq!(
-            &res.data.coverage[&mutable_id(1)].iter().collect::<Vec<_>>(),
-            &["NE"]
-        );
+        assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
         assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
     }
 
@@ -131,7 +128,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(1, res.res);
-        assert_ne!(res.data.mutables[&mutable_id(1)].details, None);
-        assert_eq!(res.data.coverage.get(&mutable_id(1)), None);
+        assert_ne!(res.data.mutables[&1].details, None);
+        assert_eq!(res.data.coverage.get(&1), None);
     }
 }
