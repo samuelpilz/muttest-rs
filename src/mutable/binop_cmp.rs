@@ -3,9 +3,12 @@ use std::{cmp::Ordering, collections::BTreeSet, io::Write};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::BakedMutableId;
+use crate::{
+    transformer::{MuttestTransformer, TransformSnippets},
+    BakedMutableId,
+};
 
-use super::{Mutable, MuttestTransformer, TransformSnippets};
+use super::Mutable;
 
 pub struct MutableBinopCmp<'a> {
     pub left: &'a dyn ToTokens,

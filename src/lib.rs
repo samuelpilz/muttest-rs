@@ -21,6 +21,7 @@ use crate::collector::DataCollector;
 
 pub mod collector;
 pub mod mutable;
+pub mod transformer;
 
 #[cfg(test)]
 mod tests;
@@ -355,6 +356,7 @@ pub fn mutation_string_opt(mutation: &str, opt: bool) -> &str {
 
 impl fmt::Display for MutableLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: only print known information
         write!(
             f,
             "{}:{} in {}",

@@ -3,9 +3,12 @@ use std::{io::Write, sync::Arc};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
-use crate::BakedMutableId;
+use crate::{
+    transformer::{MuttestTransformer, TransformSnippets},
+    BakedMutableId,
+};
 
-use super::{Mutable, MuttestTransformer, TransformSnippets};
+use super::Mutable;
 
 pub struct MutableAssignOp<'a> {
     pub left: &'a dyn ToTokens,

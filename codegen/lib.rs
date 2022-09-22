@@ -15,9 +15,9 @@ use muttest_core::{
     mutable::{
         assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
         binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
-        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, MutablesConf, MuttestTransformer,
-        TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
+        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, MUTABLE_DEFINITIONS_CSV_HEAD,
     },
+    transformer::{MutablesConf, MuttestTransformer, TransformerConf},
     Error, PathSegment, ENV_VAR_MUTTEST_DIR,
 };
 use proc_macro::TokenStream;

@@ -3,9 +3,12 @@ use std::{io::Write, marker::PhantomData, ops::ControlFlow};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::BakedMutableId;
+use crate::{
+    transformer::{MuttestTransformer, TransformSnippets},
+    BakedMutableId,
+};
 
-use super::{Mutable, MuttestTransformer, TransformSnippets};
+use super::Mutable;
 
 // TODO: mutate (some) blocks instead of `ItemFn`s
 pub struct MutableExtreme<'a> {

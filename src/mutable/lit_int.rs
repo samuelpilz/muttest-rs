@@ -3,9 +3,12 @@ use std::{fmt, io::Write};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
-use crate::{BakedLocation, BakedMutableId};
+use crate::{
+    transformer::{MuttestTransformer, TransformSnippets},
+    BakedLocation, BakedMutableId,
+};
 
-use super::{Mutable, MuttestTransformer, TransformSnippets};
+use super::Mutable;
 
 pub struct MutableLitInt<'a> {
     pub base10_digits: &'a str,

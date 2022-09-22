@@ -11,9 +11,7 @@ use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
     collector::{self, CollectedData},
-    mutable::{
-        self, binop_cmp::MutableBinopCmp, lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
-    },
+    mutable::{self, binop_cmp::MutableBinopCmp, Mutable, mutations_for_mutable},
     MutableData, ENV_VAR_COVERAGE_FILE, ENV_VAR_DETAILS_FILE, ENV_VAR_MUTTEST_CRATE,
     ENV_VAR_MUTTEST_DIR, ENV_VAR_MUTTEST_MUTATION,
 };
@@ -79,7 +77,7 @@ fn main() -> Result<(), Error> {
                 .env(ENV_VAR_MUTTEST_CRATE, crate_name)
                 .env(ENV_VAR_DETAILS_FILE, &details_path)
                 .env(ENV_VAR_COVERAGE_FILE, &coverage_path)
-                .stdout(Stdio::inherit())
+                .stdout(Stdio::null())
                 .spawn()?
                 .wait()?;
             test_bin.exec_time = Some(start_time.elapsed());
@@ -96,6 +94,13 @@ fn main() -> Result<(), Error> {
 
     // TODO: calc&print covered mutables
 
+    for (crate_name, data) in &data {
+        let total_mutables = data.mutables.len();
+        let covered_mutables = data.coverage.len();
+        println!("{crate_name}: {covered_mutables}/{total_mutables} mutables covered");
+    }
+    println!();
+
     let mut total_mutants = 0;
     let mut killed_mutants = 0;
 
@@ -110,7 +115,7 @@ fn main() -> Result<(), Error> {
                 ..
             } = &data.mutables[&id];
             let coverage = data.coverage.get(&id);
-            println!("{id}: {location} `{code}` ({kind})");
+            println!("{id}: `{code}` ({kind}) in {location} ");
 
             let coverage = match coverage {
                 Some(c) => c,
@@ -131,6 +136,7 @@ fn main() -> Result<(), Error> {
 
             for m in mutations {
                 total_mutants += 1;
+
                 // TODO: display lit_str mutations correctly
                 println!("  mutation `{m}`");
 
@@ -266,36 +272,6 @@ fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> 
     file.flush()?;
     file.sync_all()?;
     Ok(())
-}
-
-// TODO: for many mutables, the possible mutations should be clear from context
-pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
-    Some(match &*mutable.kind {
-        MutableLitInt::NAME => {
-            let i = mutable.code.parse::<u128>().expect("unable to parse int");
-            let mut m = vec![];
-            if i != 0 {
-                m.push((i - 1).to_string());
-            }
-            m.push((i + 1).to_string());
-            m
-        }
-        MutableLitStr::NAME => {
-            if mutable.code.is_empty() {
-                vec![]
-            } else {
-                vec![String::new()]
-            }
-        }
-        // fallback to mutable's description of possible mutations
-        _ => mutable
-            .details
-            .iter()
-            .flat_map(|m| &m.possible_mutations)
-            .filter(|&x| x != &mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
-    })
 }
 
 type CoreError = muttest_core::Error;
