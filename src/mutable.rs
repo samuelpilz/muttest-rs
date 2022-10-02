@@ -2,7 +2,7 @@ use std::io::Write;
 
 use proc_macro2::{Span, TokenStream};
 
-use crate::{transformer::MuttestTransformer, MutableData};
+use crate::{transformer::MuttestTransformer, Error, MutableData};
 
 pub mod assign_op;
 pub mod binop_bool;
@@ -27,8 +27,8 @@ pub trait Mutable<'a> {
 }
 
 // TODO: for many mutables, the possible mutations should be clear from context
-pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
-    Some(match &*mutable.kind {
+pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>>, Error> {
+    let mutation = match &*mutable.kind {
         lit_int::MutableLitInt::NAME => {
             let i = mutable.code.parse::<u128>().expect("unable to parse int");
             let mut m = vec![];
@@ -39,12 +39,30 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
             m
         }
         lit_str::MutableLitStr::NAME => {
-            if mutable.code.is_empty() {
+            if mutable.code == "" {
                 vec![]
             } else {
                 vec![String::new()]
             }
         }
+        binop_cmp::MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
+            .iter()
+            .copied()
+            .filter(|&x| x != &mutable.code)
+            .map(ToOwned::to_owned)
+            .collect(),
+        binop_eq::MutableBinopEq::NAME => ["==", "!="]
+            .iter()
+            .copied()
+            .filter(|&x| x != &mutable.code)
+            .map(ToOwned::to_owned)
+            .collect(),
+        binop_bool::MutableBinopBool::NAME => ["&&", "||"]
+            .iter()
+            .copied()
+            .filter(|&x| x != &mutable.code)
+            .map(ToOwned::to_owned)
+            .collect(),
         // fallback to mutable's description of possible mutations
         _ => mutable
             .details
@@ -53,7 +71,8 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Option<Vec<String>> {
             .filter(|&x| x != &mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
-    })
+    };
+    Ok(Some(mutation))
 }
 
 // TODO: tests

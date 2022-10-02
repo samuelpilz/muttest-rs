@@ -38,7 +38,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                (#m_id).report_details(#loc, "", "<:<=:>=:>");
+                (#m_id).report_details(#loc, "", "");
                 let (_left, _right) = (&#left, &#right);
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {

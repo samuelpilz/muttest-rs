@@ -38,7 +38,7 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                (#m_id).report_details(#loc, "bool", "&&:||");
+                (#m_id).report_details(#loc, "bool", "");
                 match #muttest_api::mutable::binop_bool::run_left(#m_id, #op_str, #left) {
                     #muttest_api::ControlFlow::Break(b) => b,
                     #muttest_api::ControlFlow::Continue(b) => {

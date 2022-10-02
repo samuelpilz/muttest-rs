@@ -35,7 +35,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
             m_id,
             muttest_api,
             loc,
-        } = transformer.new_mutable(&self, &self.value);
+        } = transformer.new_mutable(&self, &format!("{:?}", self.value));
         quote_spanned! {span=>
             #muttest_api::mutable::lit_str::mutable_str(#m_id, #lit, #loc, {
                 static MUTABLE: #muttest_api::RwLock<#muttest_api::Option<&str>> =

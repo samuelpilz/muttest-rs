@@ -11,7 +11,7 @@ use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
     collector::{self, CollectedData},
-    mutable::{self, binop_cmp::MutableBinopCmp, Mutable, mutations_for_mutable},
+    mutable::{self, binop_cmp::MutableBinopCmp, mutations_for_mutable, Mutable},
     MutableData, ENV_VAR_COVERAGE_FILE, ENV_VAR_DETAILS_FILE, ENV_VAR_MUTTEST_CRATE,
     ENV_VAR_MUTTEST_DIR, ENV_VAR_MUTTEST_MUTATION,
 };
@@ -117,26 +117,27 @@ fn main() -> Result<(), Error> {
             let coverage = data.coverage.get(&id);
             println!("{id}: `{code}` ({kind}) in {location} ");
 
-            let coverage = match coverage {
-                Some(c) => c,
+            let mutations = mutations_for_mutable(mutable)?;
+            let mutations = match mutations {
+                Some(m) => m,
                 None => {
-                    println!("  not covered");
+                    // TODO: check covered
+                    println!("  no mutations");
                     continue;
                 }
             };
 
-            let mutations = mutations_for_mutable(mutable);
-            let mutations = match mutations {
-                Some(m) => m,
+            total_mutants += mutations.len();
+
+            let coverage = match coverage {
+                Some(c) => c,
                 None => {
-                    println!("  not mutations");
+                    println!("  not covered ({} mutations)", mutations.len());
                     continue;
                 }
             };
 
             for m in mutations {
-                total_mutants += 1;
-
                 // TODO: display lit_str mutations correctly
                 println!("  mutation `{m}`");
 
