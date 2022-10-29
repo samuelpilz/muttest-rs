@@ -121,7 +121,6 @@ fn main() -> Result<(), Error> {
             let mutations = match mutations {
                 Some(m) => m,
                 None => {
-                    // TODO: check covered
                     println!("  no mutations");
                     continue;
                 }
@@ -139,19 +138,19 @@ fn main() -> Result<(), Error> {
 
             for m in mutations {
                 // TODO: display lit_str mutations correctly
-                println!("  mutation `{m}`");
+                print!("  mutation `{m}` ... ");
+                std::io::stdout().flush()?;
 
                 // TODO: improve weak surviving
                 if *kind == MutableBinopCmp::NAME
                     && mutable::binop_cmp::identical_behavior(code, &m, coverage)
                 {
-                    println!("    survived weak mutation testing");
+                    println!("survived weak mutation testing");
                     continue;
                 }
 
                 // run test suites without mutations for coverage
                 for test_bin in &compilation_result.test_bins {
-                    println!("    call {}", &test_bin.name);
                     let mut test = Command::new(&test_bin.path)
                         .env(ENV_VAR_MUTTEST_CRATE, crate_name)
                         .env(ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
@@ -176,7 +175,7 @@ fn main() -> Result<(), Error> {
                         killed_mutants += 1;
                         "killed"
                     };
-                    println!("      {}", result);
+                    println!("{}", result);
                     // TODO: run tests in finer granularity
                 }
             }

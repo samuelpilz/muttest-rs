@@ -26,7 +26,9 @@ pub trait Mutable<'a> {
     fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream;
 }
 
-// TODO: for many mutables, the possible mutations should be clear from context
+// TODO: for many mutables, the possible mutations should be clear from definition
+// TODO: tests
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>>, Error> {
     let mutation = match &*mutable.kind {
         lit_int::MutableLitInt::NAME => {
@@ -42,7 +44,7 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>
             if mutable.code == "" {
                 vec![]
             } else {
-                vec![String::new()]
+                vec![r#""""#.to_owned()]
             }
         }
         binop_cmp::MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
@@ -74,5 +76,3 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>
     };
     Ok(Some(mutation))
 }
-
-// TODO: tests

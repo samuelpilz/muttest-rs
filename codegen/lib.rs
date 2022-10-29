@@ -22,7 +22,7 @@ use muttest_core::{
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprAssignOp,
     ExprBinary, ExprLit, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr,
@@ -57,10 +57,21 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: hide behind feature (unnecessary codegen)
     let input = parse_macro_input!(input as ItemFn);
 
+    if std::env::var("CARGO_PKG_NAME").unwrap() != "muttest-core" {
+        // TODO: compiler error instead of panic
+        panic!("`mutate_isolated` should only be used for internal testing");
+    }
+
+    let is_lib_test = std::env::var("CARGO_CRATE_NAME").unwrap() == "muttest_core";
+
     let mut conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: "",
+        muttest_api: if is_lib_test {
+            quote!(crate::api)
+        } else {
+            quote!(::muttest_core::api)
+        },
         target_name: "",
     };
     if !attr.is_empty() {
@@ -75,7 +86,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut transformer = MuttestTransformer::new(conf, Some(&mut definitions_csv), &id);
     let result = FoldImpl(&mut transformer).fold_item_fn(input);
 
-    // write muttest "logs"
+    // write muttest "logs" to variables
     let definitions_csv = std::str::from_utf8(&definitions_csv).unwrap();
     let num_mutables = id.load(Ordering::SeqCst);
 
@@ -96,13 +107,13 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
 pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
-    // TODO: maybe honor `CARGO_PRIMARY_PACKAGE` env var
     let conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: "",
+        muttest_api: quote! {crate::api},
         target_name: &*TARGET_NAME,
     };
+
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
 
     let mut transformer = MuttestTransformer::new(conf, definitions_file.as_mut(), &MUTABLE_ID_NUM);
@@ -114,12 +125,13 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: maybe only transform if env-vars set
+    // TODO: maybe honor `CARGO_PRIMARY_PACKAGE` env var
     let input = parse_macro_input!(input as File);
 
     let conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: "muttest",
+        muttest_api: quote!(muttest),
         target_name: &*TARGET_NAME,
     };
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();

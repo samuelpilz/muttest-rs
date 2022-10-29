@@ -5,8 +5,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote_spanned, ToTokens};
+use proc_macro2::{Span, TokenStream};
+use quote::quote_spanned;
 
 use crate::{display_or_empty_if_none, mutable::Mutable, BakedMutableId, PathSegment};
 
@@ -20,7 +20,7 @@ pub struct MuttestTransformer<'a, W: Write> {
 pub struct TransformerConf {
     pub span: Span,
     pub mutables: MutablesConf,
-    pub muttest_api: &'static str,
+    pub muttest_api: TokenStream,
     pub target_name: &'static str,
 }
 pub enum MutablesConf {
@@ -54,11 +54,7 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
             write_mutable(w, id, m, code, &self.path, self.conf.span);
         }
 
-        let muttest_api = match self.conf.muttest_api {
-            "" => quote_spanned! {m.span() => crate::api},
-            api => Ident::new(api, m.span()).into_token_stream(),
-        };
-
+        let muttest_api = self.conf.muttest_api.clone();
         let crate_name: &str = id.crate_name.borrow();
         let id = id.id;
 
