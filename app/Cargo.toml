@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "3.1.9", features = ["derive", "cargo"] }
+clap = { version = "4.0", features = ["derive", "cargo"] }
 cargo_metadata = "0.15"
-thiserror = "1.0.30"
+thiserror = "1.0"
 csv = "1.1"
 serde = "1"
 muttest-core = { path = ".." }
 wait-timeout = "0.2.0"
-serde_json = "1.0.85"
+serde_json = "1.0"
 
 [[bin]]
 name = "cargo-muttest"
