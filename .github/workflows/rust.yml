@@ -66,6 +66,20 @@ jobs:
       - name: Run Clippy on codegen
         run: cargo clippy -p muttest-codegen
 
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+      - name: Cache
+        uses: actions/cache@v3.0.8
+        with:
+          path: target ~/.cargo
+          key: cargo-cache
+      - name: Run selftest
+        run: cargo run -p cargo-muttest -- muttest -p muttest-core
+        # TODO: selftest other packages?
+
   examples:
     runs-on: ubuntu-latest
     steps:
@@ -76,5 +90,5 @@ jobs:
         with:
           path: target ~/.cargo
           key: cargo-cache
-      - name: Build
-        run: cargo run -p cargo-muttest -- muttest
+      - name: Run examples
+        run: cargo run -p cargo-muttest -- muttest -p muttest-examples

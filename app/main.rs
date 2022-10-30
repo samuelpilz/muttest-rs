@@ -24,6 +24,9 @@ struct Opt {
 
     #[clap(long)]
     all_features: bool,
+
+    #[clap(short, long)]
+    package: String,
 }
 #[derive(Debug, Parser)]
 enum OptCargoPlugin {
