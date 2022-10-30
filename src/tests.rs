@@ -18,8 +18,8 @@ pub use crate::{call_isolated, data_isolated};
 lazy_static! {
     pub(crate) static ref DATA_COLLECTOR: DataCollector<Vec<u8>> = DataCollector::new_for_test();
     // TODO: one MutationsMap per testcase
-    pub(crate) static ref TEST_MUTATION: RwLock<MutationsMap> =
-        RwLock::new(MutationsMap::default());
+    pub(crate) static ref TEST_MUTATION: RwLock<Option<MutationsMap>> =
+        RwLock::new(None);
 }
 
 #[macro_export]
@@ -60,22 +60,24 @@ pub fn run<'a, T>(
         }
     }
 
-    let l = TEST_LOCK.lock();
+    // TODO: correctly recover from failed tests
+    let l = TEST_LOCK.lock().expect("previous test failed");
 
     DATA_COLLECTOR.assert_clear();
 
-    // update ACTIVE_MUTATION (the only the one from this module)
-    let mut m_map = TEST_MUTATION.write().unwrap();
-    // clear old mutations & insert new mutation
-    m_map.clear();
-    for (m_id, m) in mutation {
-        m_map.insert(m_id, Arc::from(m));
-    }
-    // release lock on ACTIVE_MUTATION
-    std::mem::drop(m_map);
+    // setup test mutation
+    *TEST_MUTATION.write().unwrap() = Some(
+        mutation
+            .into_iter()
+            .map(|(m_id, m)| (m_id, Arc::from(m)))
+            .collect(),
+    );
 
     // perform action
     let res = action();
+
+    // remove test mutation
+    *TEST_MUTATION.write().unwrap() = None;
 
     DATA_COLLECTOR.extract_data_and_clear(&mut data);
 

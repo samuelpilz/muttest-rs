@@ -58,7 +58,7 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
                 match 0 {
                     1 => {
                         // underscores are used
-                        let (mut _left, _right) = (&mut #left, #right);
+                        let (mut _left, _right) = (&mut (#left), #right);
                         left_type = #muttest_api::phantom_for_type(&_left);
                         right_type = #muttest_api::phantom_for_type(&_right);
                         *_left #op _right;

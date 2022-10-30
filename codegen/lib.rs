@@ -64,6 +64,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
 
     let is_lib_test = std::env::var("CARGO_CRATE_NAME").unwrap() == "muttest_core";
 
+    // TODO: encode path to target_name to enable concurrent test executions
     let mut conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
@@ -209,8 +210,8 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopEq<'a> {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
             }) if is_eq_op(*op) => Some(Self {
-                left: strip_expr_parens(left),
-                right: strip_expr_parens(right),
+                left,
+                right,
                 op,
                 span: op.span(),
             }),

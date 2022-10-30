@@ -39,35 +39,25 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
         quote_spanned! {span=>
             #muttest_api::id({
                 (#m_id).report_details(#loc,"","");
-                let (_left, _right) = (&#left, &#right);
-                // for type-inference, keep the original expression in the first branch
-                if false {_left #op _right} else {
-                    #muttest_api::mutable::binop_eq::run(#m_id, #op_str, &_left, &_right)
-                }
+
+                // for improved type-inference and `!`-type handling call the eq-operation here.
+                let _eq = #left #op #right;
+
+                #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _eq)
             })
         }
     }
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run<T: PartialEq<T1>, T1>(m_id: BakedMutableId, op_str: &str, left: &T, right: &T1) -> bool {
-    let eq = left.eq(right);
+pub fn run(m_id: BakedMutableId, op_str: &str, eq: bool) -> bool {
     // this reports behavior but is irrelevant for weak mutation testing
-    m_id.report_weak(eq_to_str(eq));
+    m_id.report_weak(if eq { "EQ" } else { "NE" });
 
     match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
         "==" => eq,
         "!=" => !eq,
         _ => todo!(),
-    }
-}
-
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
-fn eq_to_str(eq: bool) -> &'static str {
-    if eq {
-        "EQ"
-    } else {
-        "NE"
     }
 }
 
@@ -133,5 +123,16 @@ mod tests {
         assert_eq!(1, res.res);
         assert_ne!(res.data.mutables[&1].details, None);
         assert_eq!(res.data.coverage.get(&1), None);
+    }
+
+    #[test]
+    fn assign_as_expr() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        fn f() {
+            let mut _x = 1;
+            let b = (_x = 2) == (_x = 3);
+            assert!(b);
+        }
+        call_isolated! {f()};
     }
 }

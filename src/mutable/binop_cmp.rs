@@ -39,10 +39,10 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
         quote_spanned! {span=>
             #muttest_api::id({
                 (#m_id).report_details(#loc, "", "");
-                let (_left, _right) = (&#left, &#right);
+                let (_left, _right) = (&(#left), &(#right));
                 // for type-inference, keep the original expression in the first branch
                 if false {_left #op _right} else {
-                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, &_left, &_right)
+                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, _left, _right)
                 }
             })
         }
@@ -50,7 +50,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run<T: PartialOrd<T1>, T1>(
+pub fn run<T: PartialOrd<T1> + ?Sized, T1: ?Sized>(
     m_id: BakedMutableId,
     op_str: &str,
     left: &T,
@@ -173,5 +173,15 @@ mod tests {
         assert_eq!(false, res.res);
         assert_ne!(res.data.mutables[&1].details, None);
         assert_eq!(res.data.coverage.get(&1), None);
+    }
+    #[test]
+    fn assign_as_expr() {
+        #[muttest_codegen::mutate_isolated("binop_cmp")]
+        fn f() {
+            let mut _x = 1;
+            let b = (_x = 2) <= (_x = 3);
+            assert!(b);
+        }
+        call_isolated! {f()};
     }
 }

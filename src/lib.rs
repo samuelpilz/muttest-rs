@@ -106,7 +106,13 @@ impl MuttestConf {
     fn get_mutation(&self, m_id: BakedMutableId) -> Option<Arc<str>> {
         #[cfg(test)]
         if m_id.crate_name.is_empty() {
-            return tests::TEST_MUTATION.read().unwrap().get(&m_id.id).cloned();
+            return tests::TEST_MUTATION
+                .read()
+                .unwrap()
+                .as_ref()
+                .expect("no mutation set")
+                .get(&m_id.id)
+                .cloned();
         }
         if self.crate_name.as_deref() != Some(m_id.crate_name) {
             return None;

@@ -1,10 +1,9 @@
+#![allow(unreachable_code, dead_code, unused_parens)]
 //! from: https://github.com/rust-lang/rust/blob/master/src/test/ui/weird-exprs.rs
 
 #[muttest_codegen::mutate_isolated]
-#[allow(unreachable_code, dead_code, unused_parens)]
 fn weird() {
     use std::cell::Cell;
-
 
     fn strange() -> bool {
         let _x: bool = return true;
@@ -51,23 +50,22 @@ fn weird() {
         }
     }
 
-    // TODO: enable when fixed
-    // fn notsure() {
-    //     let mut _x: isize;
-    //     let mut _y = (_x = 0) == (_x = 0);
-    //     let mut _z = (_x = 0) < (_x = 0);
-    //     let _a = (_x += 0) == (_x = 0);
-    //     let _b = std::mem::swap(&mut _y, &mut _z) == std::mem::swap(&mut _y, &mut _z);
-    // }
+    fn notsure() {
+        let mut _x: isize;
+        let mut _y = (_x = 0) == (_x = 0);
+        let mut _z = (_x = 0) < (_x = 0);
+        let _a = (_x += 0) == (_x = 0);
+        let _b = std::mem::swap(&mut _y, &mut _z) == std::mem::swap(&mut _y, &mut _z);
+    }
 
-    // fn canttouchthis() -> usize {
-    //     fn p() -> bool {
-    //         true
-    //     }
-    //     let _a = (assert!((true)) == (assert!(p())));
-    //     let _c = (assert!((p())) == ());
-    //     let _b: bool = (println!("{}", 0) == (return 0));
-    // }
+    fn canttouchthis() -> usize {
+        fn p() -> bool {
+            true
+        }
+        let _a = (assert!((true)) == (assert!(p())));
+        let _c = (assert!((p())) == ());
+        let _b: bool = (println!("{}", 0) == (return 0));
+    }
 
     fn angrydome() {
         loop {
