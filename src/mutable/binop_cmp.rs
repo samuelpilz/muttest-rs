@@ -56,11 +56,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run(
-    m_id: BakedMutableId,
-    op_str: &str,
-    ord: Option<Ordering>,
-) -> bool {
+pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
     m_id.report_weak(match ord {
         None => "",
         Some(Ordering::Less) => "LT",
