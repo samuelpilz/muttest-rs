@@ -76,15 +76,19 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String>) -> bool {
-    // TODO: better structure for this
-    (code == "<" && mutation == "<=" && !coverage.contains("EQ"))
-        || (code == "<=" && mutation == "<" && !coverage.contains("EQ"))
-        || (code == ">" && mutation == ">=" && !coverage.contains("EQ"))
-        || (code == ">=" && mutation == ">" && !coverage.contains("EQ"))
-        || (code == "<=" && mutation == ">=" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
-        || (code == ">=" && mutation == "<=" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
-        || (code == "<" && mutation == ">" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
-        || (code == ">" && mutation == "<" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
+    // TODO: less stringy-typed
+    fn behavior(op: &str, ord: &str) -> bool {
+        match op {
+            "<" => ord == "LT",
+            "<=" => ord != "GT",
+            ">=" => ord != "LT",
+            ">" => ord == "GT",
+            _ => unimplemented!(),
+        }
+    }
+    coverage
+        .iter()
+        .all(|ord| behavior(code, ord) == behavior(mutation, ord))
 }
 
 pub struct Yes;
