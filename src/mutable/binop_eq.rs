@@ -135,4 +135,16 @@ mod tests {
         }
         call_isolated! {f()};
     }
+
+    #[test]
+    fn never_type_expr() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        #[allow(unreachable_code)]
+        fn f() {
+            let _a = () == return;
+            panic!();
+        }
+
+        call_isolated! {f()};
+    }
 }

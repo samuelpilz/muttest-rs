@@ -41,8 +41,14 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
                 (#m_id).report_details(#loc, "", "");
                 let (_left, _right) = (&(#left), &(#right));
                 // for type-inference, keep the original expression in the first branch
-                if false {_left #op _right} else {
-                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, _left, _right)
+                if false {*_left #op *_right} else {
+                    // this is required for handling comparisons where one side has type `!`
+                    #[allow(unused_imports)]
+                    use #muttest_api::mutable::binop_cmp::{IsNo, IsYes};
+                    let ord = (&(&_left, &_right))
+                        .get_impl()
+                        .run(_left, _right);
+                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, ord)
                 }
             })
         }
@@ -50,14 +56,17 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run<T: PartialOrd<T1> + ?Sized, T1: ?Sized>(
+pub fn run(
     m_id: BakedMutableId,
     op_str: &str,
-    left: &T,
-    right: &T1,
+    ord: Option<Ordering>,
 ) -> bool {
-    let ord = left.partial_cmp(right);
-    m_id.report_weak(ord_to_str(ord));
+    m_id.report_weak(match ord {
+        None => "",
+        Some(Ordering::Less) => "LT",
+        Some(Ordering::Equal) => "EQ",
+        Some(Ordering::Greater) => "GT",
+    });
 
     match (ord, m_id.get_active_mutation().as_deref().unwrap_or(op_str)) {
         (None, _) => false,
@@ -81,19 +90,46 @@ pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String
         || (code == "<" && mutation == ">" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
         || (code == ">" && mutation == "<" && *coverage.iter().collect::<Vec<_>>() == ["EQ"])
 }
-// TODO: test this
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
-fn ord_to_str(ord: Option<Ordering>) -> &'static str {
-    match ord {
-        None => "",
-        Some(Ordering::Less) => "LT",
-        Some(Ordering::Equal) => "EQ",
-        Some(Ordering::Greater) => "GT",
+pub struct Yes;
+pub struct No;
+
+pub trait IsYes {
+    fn get_impl(&self) -> Yes;
+}
+pub trait IsNo {
+    fn get_impl(&self) -> No;
+}
+impl<L: PartialOrd<R> + ?Sized, R: ?Sized> IsYes for (&L, &R) {
+    fn get_impl(&self) -> Yes {
+        Yes
     }
 }
-
-// TODO: move weak-check to here
+impl<L: ?Sized, R: ?Sized> IsNo for &(&L, &R) {
+    fn get_impl(&self) -> No {
+        No
+    }
+}
+impl Yes {
+    pub fn is_impl(&self) -> bool {
+        true
+    }
+    pub fn run<L: PartialOrd<R> + ?Sized, R: ?Sized>(
+        self,
+        left: &L,
+        right: &R,
+    ) -> Option<Ordering> {
+        <L as PartialOrd<R>>::partial_cmp(left, right)
+    }
+}
+impl No {
+    pub fn is_impl(&self) -> bool {
+        false
+    }
+    pub fn run<L, R, O>(self, _: L, _: R) -> O {
+        unreachable!()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -181,6 +217,17 @@ mod tests {
             let mut _x = 1;
             let b = (_x = 2) <= (_x = 3);
             assert!(b);
+        }
+        call_isolated! {f()};
+    }
+
+    #[test]
+    fn never_type_expr() {
+        #[muttest_codegen::mutate_isolated("binop_cmp")]
+        #[allow(unreachable_code)]
+        fn f() {
+            let _a = () < return;
+            panic!();
         }
         call_isolated! {f()};
     }
