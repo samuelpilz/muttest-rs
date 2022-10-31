@@ -70,7 +70,7 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
         (Some(ord), "<=") => ord.is_le(),
         (Some(ord), ">=") => ord.is_ge(),
         (Some(ord), ">") => ord.is_gt(),
-        _ => todo!(), // TODO: some lock is held here
+        _ => todo!(),
     }
 }
 

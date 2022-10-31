@@ -26,8 +26,9 @@ struct Opt {
     all_features: bool,
 
     #[clap(short, long)]
-    package: String,
+    package: Option<String>,
 }
+
 #[derive(Debug, Parser)]
 enum OptCargoPlugin {
     #[clap(name = "muttest", version, author, dont_collapse_args_in_usage = true)]
@@ -39,6 +40,7 @@ impl From<OptCargoPlugin> for Opt {
     }
 }
 
+// TODO: enable logging for cargo-calls
 fn main() -> Result<(), Error> {
     let is_cargo_plugin = std::env::var_os("CARGO").is_some();
     let opt = if is_cargo_plugin {
@@ -48,22 +50,21 @@ fn main() -> Result<(), Error> {
     };
     println!("{opt:?}");
 
-    // TODO: pass features from opts
     // read cargo metadata
     let cargo_exe = std::env::var_os("CARGO");
     let cargo_exe = cargo_exe
         .as_ref()
         .map(Path::new)
         .unwrap_or_else(|| Path::new("cargo"));
+    // TODO: pass opts to metadata command
     let cargo_metadata = cargo_metadata::MetadataCommand::new().exec()?;
     let muttest_dir = cargo_metadata.target_directory.join("muttest");
     fs::create_dir_all(&muttest_dir)?;
 
-    // compile libs and test cases
-    let mut compilation_result = compile(cargo_exe, &muttest_dir)?;
+    // TODO: bundle all cargo-relevant data into new struct
 
-    // read created mutables
-    let mut data = read_mutable_defs(&muttest_dir)?;
+    // compile libs and tests and read mutable defs
+    let mut report = compile(&opt, cargo_exe, &muttest_dir)?;
 
     let details_path = muttest_dir.join("mutable-details.csv");
     setup_csv_file(&details_path, collector::DETAILS_FILE_HEADER)?;
@@ -71,8 +72,8 @@ fn main() -> Result<(), Error> {
     setup_csv_file(&coverage_path, collector::COVERAGE_FILE_HEADER)?;
 
     // run test suites without mutations for coverage
-    for (crate_name, data) in &mut data {
-        for test_bin in &mut compilation_result.test_bins {
+    for (crate_name, data) in &mut report.muttest_crates {
+        for test_bin in &mut report.test_bins {
             println!("call {}", &test_bin.name);
             let start_time = Instant::now();
             let status = Command::new(&test_bin.path)
@@ -97,7 +98,7 @@ fn main() -> Result<(), Error> {
 
     // TODO: calc&print covered mutables
 
-    for (crate_name, data) in &data {
+    for (crate_name, data) in &report.muttest_crates {
         let total_mutables = data.mutables.len();
         let covered_mutables = data.coverage.len();
         println!("{crate_name}: {covered_mutables}/{total_mutables} mutables covered");
@@ -108,7 +109,7 @@ fn main() -> Result<(), Error> {
     let mut killed_mutants = 0;
 
     // evaluate mutations
-    for (crate_name, data) in &mut data {
+    for (crate_name, data) in &mut report.muttest_crates {
         let ids = data.mutables.keys().cloned().collect::<Vec<_>>();
         for &id in &ids {
             let mutable @ MutableData {
@@ -152,8 +153,10 @@ fn main() -> Result<(), Error> {
                     continue;
                 }
 
+                let mut survived = true;
+
                 // run test suites without mutations for coverage
-                for test_bin in &compilation_result.test_bins {
+                for test_bin in &report.test_bins {
                     let mut test = Command::new(&test_bin.path)
                         .env(ENV_VAR_MUTTEST_CRATE, crate_name)
                         .env(ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
@@ -172,26 +175,31 @@ fn main() -> Result<(), Error> {
                             test.wait()?
                         }
                     };
-                    let result = if result.success() {
-                        "survived"
-                    } else {
-                        killed_mutants += 1;
-                        "killed"
-                    };
-                    println!("{}", result);
+                    if !result.success() {
+                        survived = false;
+                    }
                     // TODO: run tests in finer granularity
                 }
+                if !survived {
+                    killed_mutants += 1;
+                }
+                println!("{}", if survived { "survived" } else { "killed" });
             }
         }
     }
     println!("{killed_mutants}/{total_mutants} mutants killed");
 
-    serde_json::to_writer(File::create(muttest_dir.join("report.json"))?, &data).unwrap();
+    serde_json::to_writer(
+        File::create(muttest_dir.join("report.json"))?,
+        &report.muttest_crates,
+    )
+    .unwrap();
     Ok(())
 }
 
 #[derive(Debug, Default)]
-struct CompilationResult {
+struct MuttestReport {
+    muttest_crates: BTreeMap<String, CollectedData>,
     test_bins: Vec<TestBin>,
 }
 
@@ -202,12 +210,18 @@ struct TestBin {
     exec_time: Option<Duration>,
 }
 /// execute `cargo test --no-run --message-format=json` and collect relevant output
-fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult, Error> {
-    let mut result = CompilationResult::default();
+fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<MuttestReport, Error> {
+    let mut report = MuttestReport::default();
 
     // TODO: pass features from opts
     let mut compile_out = Command::new(cargo_exe)
         .args(&["test", "--no-run", "--message-format=json"])
+        .args(
+            opt.package
+                .as_deref()
+                .map(|p| vec!["--package", p])
+                .unwrap_or_default(),
+        )
         .env("MUTTEST_DIR", muttest_dir)
         .stderr(Stdio::inherit())
         .stdout(Stdio::piped())
@@ -235,7 +249,7 @@ fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult
             exec_time: None,
         };
 
-        result.test_bins.push(test_exe);
+        report.test_bins.push(test_exe);
     }
 
     let status = compile_out.wait().map_err(|_| Error::Cargo("test", None))?;
@@ -243,11 +257,6 @@ fn compile(cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<CompilationResult
         return Err(Error::Cargo("test", status.code()));
     }
 
-    Ok(result)
-}
-
-fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<String, CollectedData>, Error> {
-    let mut mutated_crates = BTreeMap::default();
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
         let file_name = file.file_name().into_string().unwrap();
@@ -258,15 +267,22 @@ fn read_mutable_defs(muttest_dir: &Utf8Path) -> Result<BTreeMap<String, Collecte
             None => continue,
             Some(n) => n,
         };
+        // skip packages not considered
+        if opt.package.is_some()
+            && opt.package.as_deref() != mutated_package.split_once(":").map(|x| x.0)
+        {
+            continue;
+        }
 
         // TODO: try to delete outdated muttest files
         let file_path = muttest_dir.join(&file_name);
-        mutated_crates.insert(
+        report.muttest_crates.insert(
             mutated_package.to_owned(),
             CollectedData::from_definition_csv(File::open(file_path)?)?,
         );
     }
-    Ok(mutated_crates)
+
+    Ok(report)
 }
 
 fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> {

@@ -1,12 +1,12 @@
 [tasks.examples]
 description = "Run Mutation Testing on exampes"
 command = "cargo"
-args = ["run", "-p", "cargo-muttest", "--", "muttest"]
+args = ["run", "-p", "cargo-muttest", "--", "muttest", "-p", "muttest-examples"]
 workspace = false
 cwd = "examples"
 
 [tasks.selftest]
 description = "Run Mutation Testing on muttest-rs itself"
 command = "cargo"
-args = ["run", "-p", "cargo-muttest", "--", "muttest"]
+args = ["run", "-p", "cargo-muttest", "--", "muttest", "-p", "muttest-core"]
 workspace = false

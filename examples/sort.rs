@@ -5,9 +5,7 @@ fn bubblesort(arr: &mut [u8]) {
         i -= 1;
         let mut j = 1;
         while j <= i {
-            println!("test {} {}", j - 1, j);
             if arr[j - 1] > arr[j] {
-                println!("swap {} {}", j - 1, j);
                 arr.swap(j - 1, j);
             }
             j += 1;
@@ -17,17 +15,17 @@ fn bubblesort(arr: &mut [u8]) {
 
 #[muttest::mutate]
 fn stooge_sort(arr: &mut [u8]) {
-    if arr.len() <= 1 {
+    let len = arr.len();
+    if len <= 1 {
         return;
     }
-    let last = arr.len() - 1;
-    if arr[0] > arr[last] {
-        arr.swap(0, last);
-    }
-    if last <= 1 {
+    if len == 2 {
+        if arr[0] > arr[1] {
+            arr.swap(0, 1);
+        }
         return;
     }
-    let t = (last + 1) / 3;
+    let t = len / 3;
     stooge_sort(&mut arr[..2 * t]);
     stooge_sort(&mut arr[t..]);
     stooge_sort(&mut arr[..2 * t]);

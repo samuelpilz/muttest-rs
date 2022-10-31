@@ -17,6 +17,7 @@ pub mod lit_str;
 // * unop: neg, not
 
 pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
+// TODO: add attr_id to enable grouping
 
 pub trait Mutable<'a> {
     const NAME: &'static str;

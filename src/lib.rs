@@ -46,6 +46,11 @@ macro_rules! env_var_muttest_dir {
     };
 }
 
+// recompile core for selftest
+#[cfg(test)]
+#[allow(dead_code)]
+const RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!(env_var_muttest_dir!());
+
 pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
 pub const ENV_VAR_MUTTEST_CRATE: &str = "MUTTEST_CRATE";
 pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
@@ -81,8 +86,8 @@ impl MuttestConf {
                 mutation
                     .split(';')
                     .map(|m| {
-                        let (id, m) = m.split_once('=').unwrap();
-                        let id: usize = id.parse().unwrap();
+                        let (id, m) = m.split_once('=').expect("invalid mutation format");
+                        let id: usize = id.parse().expect("invalid mutation format");
                         (id, Arc::from(m))
                     })
                     .collect()
@@ -209,7 +214,6 @@ pub struct MutableLocation {
     pub path: Vec<PathSegment>,
     pub attr_span: Option<Span>,
     pub span: Option<Span>,
-    // TODO: display instance
 }
 
 // TODO: use proc-macro2 structs instead??

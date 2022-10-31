@@ -61,9 +61,9 @@ pub fn run<'a, T>(
     }
 
     // TODO: correctly recover from failed tests
-    let l = TEST_LOCK.lock().expect("previous test failed");
+    let l = TEST_LOCK.lock();
 
-    DATA_COLLECTOR.assert_clear();
+    DATA_COLLECTOR.clear();
 
     // setup test mutation
     *TEST_MUTATION.write().unwrap() = Some(
@@ -142,20 +142,19 @@ impl DataCollector<Vec<u8>> {
             .expect("unable to read csv data");
     }
 
-    fn assert_clear(&self) {
+    fn clear(&self) {
         let headers = csv_headers();
 
         // lock everything together to ensure isolation
-        let coverage = self.coverage.lock().unwrap();
-        let details = self.details.lock().unwrap();
-        let details_file = self.details_file.as_ref().unwrap().lock().unwrap();
-        let coverage_file = self.coverage_file.as_ref().unwrap().lock().unwrap();
+        let mut coverage = self.coverage.lock().unwrap();
+        let mut details = self.details.lock().unwrap();
+        let mut details_file = self.details_file.as_ref().unwrap().lock().unwrap();
+        let mut coverage_file = self.coverage_file.as_ref().unwrap().lock().unwrap();
 
-        assert!(coverage.is_empty());
-        assert!(details.is_empty());
-        // TODO: update assertions to new collector API
-        assert_eq!(*details_file, headers.0);
-        assert_eq!(*coverage_file, headers.1);
+        coverage.clear();
+        details.clear();
+        *details_file = headers.0;
+        *coverage_file = headers.1;
     }
 }
 

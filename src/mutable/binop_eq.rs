@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, sync::atomic::Ordering::SeqCst};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -41,24 +41,38 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
                 (#m_id).report_details(#loc,"","");
 
                 // for improved type-inference and `!`-type handling call the eq-operation here.
-                let _eq = #left #op #right;
+                let _res = #left #op #right;
 
-                #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _eq)
+                #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _res)
             })
         }
     }
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run(m_id: BakedMutableId, op_str: &str, eq: bool) -> bool {
+pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
+    // TODO: this is required for selftest
+    static NESTING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+    let nesting = NESTING.fetch_add(1, SeqCst);
+    if nesting >= 2 {
+        NESTING.fetch_sub(1, SeqCst);
+        return res;
+    }
+
+    debug_assert!(matches!(op_str, "==" | "!="));
+
+    let eq = (op_str == "==") == res;
+
     // this reports behavior but is irrelevant for weak mutation testing
     m_id.report_weak(if eq { "EQ" } else { "NE" });
 
-    match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
+    let res = match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
         "==" => eq,
         "!=" => !eq,
         _ => todo!(),
-    }
+    };
+    NESTING.fetch_sub(1, SeqCst);
+    res
 }
 
 #[cfg(test)]
@@ -73,8 +87,20 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
+        // assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
+        // assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
+    }
+
+    #[test]
+    fn ne_ints() {
+        #[muttest_codegen::mutate_isolated("binop_eq")]
+        fn f() -> bool {
+            1 != 2
+        }
+        let res = call_isolated! {f()};
+        assert_eq!(true, res.res);
         assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
-        assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
+        assert_eq!(false, call_isolated! {f() where 1 => "=="}.res);
     }
 
     #[test]
@@ -133,6 +159,7 @@ mod tests {
             let b = (_x = 2) == (_x = 3);
             assert!(b);
         }
+
         call_isolated! {f()};
     }
 

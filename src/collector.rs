@@ -197,7 +197,7 @@ impl CollectedData {
                 mutable.location.span = parse_or_none_if_empty(&md.span)?;
             }
             if mutable.location.attr_span.is_none() {
-                mutable.location.span = parse_or_none_if_empty(&md.attr_span)?;
+                mutable.location.attr_span = parse_or_none_if_empty(&md.attr_span)?;
             }
             mutable.location.file = md.file;
             mutable.location.module = md.module;
