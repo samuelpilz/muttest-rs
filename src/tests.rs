@@ -17,6 +17,7 @@ lazy_static::lazy_static! {
         RwLock::new(BTreeMap::new());
 }
 
+#[derive(Debug)]
 pub(crate) struct TestContext {
     pub(crate) mutations: MutationsMap,
     pub(crate) collector: DataCollector<Vec<u8>>,
@@ -77,19 +78,26 @@ pub fn run<'a, T>(
         }
     }
 
-    TEST_CONTEXT.write().unwrap().insert(
-        target_name.to_owned(),
-        Arc::new(TestContext {
-            mutations: mutation
-                .into_iter()
-                .map(|(m_id, m)| (m_id, Arc::from(m)))
-                .collect(),
-            collector: DataCollector::new_for_test(),
-        }),
-    );
+    TEST_CONTEXT
+        .write()
+        .unwrap()
+        .insert(
+            target_name.to_owned(),
+            Arc::new(TestContext {
+                mutations: mutation
+                    .into_iter()
+                    .map(|(m_id, m)| (m_id, Arc::from(m)))
+                    .collect(),
+                collector: DataCollector::new_for_test(),
+            }),
+        )
+        .ok_or(())
+        .expect_err("concurrent execution of test ");
 
     // perform action
     let res = action();
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // extract data
     let context = TEST_CONTEXT.write().unwrap().remove(target_name).unwrap();

@@ -17,6 +17,7 @@ pub const DETAILS_FILE_CSV_HEAD: &str = "id,ty,mutations,file,module,attr_span,s
 pub const COVERAGE_FILE_CSV_HEAD: &str = "id,data\n";
 
 // TODO: make collector only for single crate_name
+#[derive(Debug)]
 pub struct DataCollector<F: Write> {
     pub(crate) details: Mutex<BTreeSet<usize>>,
     pub(crate) coverage: Mutex<BTreeMap<usize, String>>,
