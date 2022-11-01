@@ -97,8 +97,6 @@ pub fn run<'a, T>(
     // perform action
     let res = action();
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
     // extract data
     let context = TEST_CONTEXT.write().unwrap().remove(target_name).unwrap();
     let context = Arc::try_unwrap(context)
