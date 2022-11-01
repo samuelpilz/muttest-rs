@@ -1,11 +1,11 @@
-use std::{io::Write, sync::atomic::Ordering::SeqCst};
+use std::io::Write;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId,
+    BakedMutableId, Mutation,
 };
 
 use super::Mutable;
@@ -51,11 +51,9 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
-    // TODO: this is required for selftest
-    static NESTING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-    let nesting = NESTING.fetch_add(1, SeqCst);
-    if nesting >= 2 {
-        NESTING.fetch_sub(1, SeqCst);
+    let mutation = m_id.get_active_mutation();
+
+    if matches!(mutation, Mutation::Skip) {
         return res;
     }
 
@@ -66,12 +64,11 @@ pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
     // this reports behavior but is irrelevant for weak mutation testing
     m_id.report_weak(if eq { "EQ" } else { "NE" });
 
-    let res = match m_id.get_active_mutation().as_option().unwrap_or(op_str) {
+    let res = match mutation.as_option().unwrap_or(op_str) {
         "==" => eq,
         "!=" => !eq,
         _ => todo!(),
     };
-    NESTING.fetch_sub(1, SeqCst);
     res
 }
 

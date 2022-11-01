@@ -8,8 +8,6 @@ use std::{
     fmt,
     fs::File,
     io,
-    marker::PhantomData,
-    ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -31,13 +29,21 @@ mod tests;
 pub mod api {
     pub use crate::mutable;
     pub use crate::{
-        id, mutation_string_from_bool_list, mutation_string_opt, phantom_for_type, BakedLocation,
-        BakedMutableId, LineColumn, Span,
+        mutation_string_from_bool_list, mutation_string_opt, BakedLocation, BakedMutableId,
+        LineColumn, Span,
     };
 
     pub use std::{
         borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
     };
+
+    pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
+        PhantomData
+    }
+
+    pub fn id<T>(t: T) -> T {
+        t
+    }
 }
 
 #[macro_export]
@@ -64,7 +70,7 @@ lazy_static! {
     static ref DATA_COLLECTOR: DataCollector<File> = DataCollector::new_from_conf(&MUTTEST_CONF)
         .expect("unable to open mutable-data-collector files");
 }
-// TODO: make `MuttestRuntime` (or other name) which is `Map crate-name->(ActiveMutation & Collector)`
+// TODO: make `MuttestContext` which is `Map crate-name->(Mutations & Collector)` (also: merge with collector module)
 
 pub type MutationsMap = BTreeMap<usize, Arc<str>>;
 #[derive(Debug, Default)]
@@ -77,7 +83,8 @@ struct MuttestConf {
 
 pub enum Mutation {
     Unchanged,
-    Mutate(Box<dyn Deref<Target = str>>),
+    Mutate(Arc<str>),
+    Skip,
 }
 
 impl MuttestConf {
@@ -114,29 +121,42 @@ impl MuttestConf {
         }
         self.crate_name.as_deref() == Some(m_id.crate_name)
     }
+
     fn get_mutation(&self, m_id: BakedMutableId) -> Mutation {
         #[cfg(test)]
+        if tests::MUTATION_TRACE.with(|t| {
+            let last = t.borrow_mut().push(format!("{m_id}"));
+            // println!("{} push {m_id}", t.borrow().len());
+            t.borrow().len() > 1
+        }) {
+            return Mutation::Skip;
+        }
+
+        pub fn get_from_map(mutations: &MutationsMap, m_id: BakedMutableId) -> Mutation {
+            match mutations.get(&m_id.id).cloned() {
+                Some(m) => Mutation::Mutate(m),
+                None => Mutation::Unchanged,
+            }
+        }
+
+        #[cfg(test)]
         if m_id.is_isolated_mutable() {
-            return Mutation::from_option_arc(m_id.test_context().mutations.get(&m_id.id).cloned());
+            return get_from_map(&m_id.test_context().mutations, m_id);
         }
         if self.crate_name.as_deref() != Some(m_id.crate_name) {
             return Mutation::Unchanged;
         }
-        Mutation::from_option_arc(self.mutations.get(&m_id.id).cloned())
+
+        get_from_map(&self.mutations, m_id)
     }
 }
 
 impl Mutation {
-    fn from_option_arc(m: Option<Arc<str>>) -> Self {
-        match m {
-            Some(m) => Mutation::Mutate(Box::new(m)),
-            None => Mutation::Unchanged,
-        }
-    }
     pub fn as_option(&self) -> Option<&str> {
         match self {
             Mutation::Unchanged => None,
-            Mutation::Mutate(m) => Some(&***m),
+            Mutation::Mutate(m) => Some(&*m),
+            Mutation::Skip => None,
         }
     }
 }
@@ -471,12 +491,4 @@ fn split_or_empty<T: FromIterator<String>>(s: &str, sep: &str) -> T {
     } else {
         s.split(sep).map(ToOwned::to_owned).collect()
     }
-}
-
-pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
-    PhantomData
-}
-
-pub fn id<T>(t: T) -> T {
-    t
 }

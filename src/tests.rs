@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     ops::Deref,
     sync::{Arc, Mutex, RwLock},
@@ -6,7 +7,7 @@ use std::{
 
 use crate::{
     collector::{CollectedData, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
-    BakedMutableId, DataCollector, MutableId, MutationsMap,
+    BakedMutableId, DataCollector, MutableId, MutationsMap, Mutation,
 };
 
 pub use crate::{call_isolated, data_isolated};
@@ -15,6 +16,19 @@ pub use crate::{call_isolated, data_isolated};
 lazy_static::lazy_static! {
     static ref TEST_CONTEXT: RwLock<BTreeMap<String, Arc<TestContext>>> =
         RwLock::new(BTreeMap::new());
+}
+
+thread_local! {
+    pub static MUTATION_TRACE: RefCell<Vec<String>> = RefCell::new(vec![]);
+}
+
+impl Drop for Mutation {
+    fn drop(&mut self) {
+        MUTATION_TRACE.with(|t| {
+            let last = t.borrow_mut().pop().unwrap();
+            // println!("{} pop {last}", t.borrow().len());
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -71,9 +85,9 @@ pub fn run<'a, T>(
     let mut data = CollectedData::from_defs_checked(num_mutables, defs_csv);
     for (id, _) in &mutation {
         if !data.mutables.contains_key(&id) {
-            println!("mutation {mutation:?}");
-            println!("data:");
-            println!("{defs_csv}");
+            eprintln!("mutation {mutation:?}");
+            eprintln!("data:");
+            eprintln!("{defs_csv}");
             panic!("mutable id {id} is not a valid mutable id")
         }
     }
@@ -101,7 +115,7 @@ pub fn run<'a, T>(
     let context = TEST_CONTEXT.write().unwrap().remove(target_name).unwrap();
     let context = Arc::try_unwrap(context)
         .ok()
-        .expect("someone still has a refereence to this context");
+        .expect("someone still has a reference to this context");
     context.collector.extract_data(&mut data);
 
     IsolatedFnCall { res, data }
