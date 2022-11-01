@@ -1,13 +1,15 @@
 use std::{
-    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     ops::Deref,
-    sync::{Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering::SeqCst},
+        Arc, Mutex, RwLock,
+    },
 };
 
 use crate::{
     collector::{CollectedData, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
-    BakedMutableId, DataCollector, MutableId, MutationsMap, Mutation,
+    BakedMutableId, DataCollector, MutableId, Mutation, MutationsMap,
 };
 
 pub use crate::{call_isolated, data_isolated};
@@ -19,14 +21,14 @@ lazy_static::lazy_static! {
 }
 
 thread_local! {
-    pub static MUTATION_TRACE: RefCell<Vec<String>> = RefCell::new(vec![]);
+    /// describes the nesting in the testcase for selftest
+    pub static MUTATION_NESTING: AtomicUsize = AtomicUsize::new(0);
 }
 
 impl Drop for Mutation {
     fn drop(&mut self) {
-        MUTATION_TRACE.with(|t| {
-            let last = t.borrow_mut().pop().unwrap();
-            // println!("{} pop {last}", t.borrow().len());
+        MUTATION_NESTING.with(|n| {
+            n.fetch_sub(1, SeqCst);
         });
     }
 }

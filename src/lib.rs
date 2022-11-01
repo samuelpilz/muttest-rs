@@ -124,11 +124,8 @@ impl MuttestConf {
 
     fn get_mutation(&self, m_id: BakedMutableId) -> Mutation {
         #[cfg(test)]
-        if tests::MUTATION_TRACE.with(|t| {
-            let last = t.borrow_mut().push(format!("{m_id}"));
-            // println!("{} push {m_id}", t.borrow().len());
-            t.borrow().len() > 1
-        }) {
+        if tests::MUTATION_NESTING.with(|n| n.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 2)
+        {
             return Mutation::Skip;
         }
 
