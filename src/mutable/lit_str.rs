@@ -37,7 +37,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
             loc,
         } = transformer.new_mutable(&self, &format!("{:?}", self.value));
         quote_spanned! {span=>
-            #muttest_api::mutable::lit_str::mutable_str(#m_id, #lit, #loc, {
+            #muttest_api::mutable::lit_str::run(#m_id, #lit, #loc, {
                 static MUTABLE: #muttest_api::RwLock<#muttest_api::Option<&str>> =
                     #muttest_api::RwLock::new(#muttest_api::Option::None);
                 &MUTABLE
@@ -46,7 +46,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
     }
 }
 
-pub fn mutable_str(
+pub fn run(
     m_id: BakedMutableId,
     s: &'static str,
     loc: BakedLocation,
@@ -54,7 +54,7 @@ pub fn mutable_str(
 ) -> &'static str {
     m_id.report_details(loc, "&'static str", "");
 
-    match m_id.get_active_mutation().as_deref() {
+    match m_id.get_active_mutation().as_option() {
         None => s,
         Some(s_mut) => {
             let r_lock = mutation.read().unwrap();

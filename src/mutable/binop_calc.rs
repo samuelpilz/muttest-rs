@@ -1,4 +1,4 @@
-use std::{io::Write, sync::Arc};
+use std::io::Write;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
@@ -103,8 +103,12 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
     }
 }
 
-pub fn run(m_id: BakedMutableId) -> Arc<str> {
-    m_id.get_active_mutation().unwrap_or_else(|| Arc::from(""))
+// TODO: avoid clone
+pub fn run(m_id: BakedMutableId) -> String {
+    m_id.get_active_mutation()
+        .as_option()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 macro_rules! binop_calc_traits {

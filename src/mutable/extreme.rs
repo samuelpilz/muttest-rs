@@ -83,9 +83,9 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
 }
 
 pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
-    match m_id.get_active_mutation().as_deref().unwrap_or_default() {
-        "" => ControlFlow::Continue(()),
-        "default" => ControlFlow::Break(()),
+    match m_id.get_active_mutation().as_option() {
+        None => ControlFlow::Continue(()),
+        Some("default") => ControlFlow::Break(()),
         _ => todo!(),
     }
 }

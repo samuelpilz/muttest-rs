@@ -58,7 +58,7 @@ pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<b
 
     match (
         left,
-        m_id.get_active_mutation().as_deref().unwrap_or(op_str),
+        m_id.get_active_mutation().as_option().unwrap_or(op_str),
     ) {
         (false, "&&") | (true, "||") => ControlFlow::Break(left),
         (true, "&&") | (false, "||") => ControlFlow::Continue(left),

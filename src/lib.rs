@@ -9,6 +9,7 @@ use std::{
     fs::File,
     io,
     marker::PhantomData,
+    ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -74,6 +75,11 @@ struct MuttestConf {
     coverage_file: Option<PathBuf>,
 }
 
+pub enum Mutation {
+    Unchanged,
+    Mutate(Box<dyn Deref<Target = str>>),
+}
+
 impl MuttestConf {
     fn new_from_env() -> Result<Self, Error> {
         let crate_name = get_env_var_option(ENV_VAR_MUTTEST_CRATE)?;
@@ -108,21 +114,30 @@ impl MuttestConf {
         }
         self.crate_name.as_deref() == Some(m_id.crate_name)
     }
-    fn get_mutation(&self, m_id: BakedMutableId) -> Option<Arc<str>> {
+    fn get_mutation(&self, m_id: BakedMutableId) -> Mutation {
         #[cfg(test)]
-        if m_id.crate_name.is_empty() {
-            return tests::TEST_MUTATION
-                .read()
-                .unwrap()
-                .as_ref()
-                .expect("no mutation set")
-                .get(&m_id.id)
-                .cloned();
+        if m_id.is_isolated_mutable() {
+            return Mutation::from_option_arc(m_id.test_context().mutations.get(&m_id.id).cloned());
         }
         if self.crate_name.as_deref() != Some(m_id.crate_name) {
-            return None;
+            return Mutation::Unchanged;
         }
-        self.mutations.get(&m_id.id).cloned()
+        Mutation::from_option_arc(self.mutations.get(&m_id.id).cloned())
+    }
+}
+
+impl Mutation {
+    fn from_option_arc(m: Option<Arc<str>>) -> Self {
+        match m {
+            Some(m) => Mutation::Mutate(Box::new(m)),
+            None => Mutation::Unchanged,
+        }
+    }
+    pub fn as_option(&self) -> Option<&str> {
+        match self {
+            Mutation::Unchanged => None,
+            Mutation::Mutate(m) => Some(&***m),
+        }
     }
 }
 
@@ -302,7 +317,7 @@ macro_rules! do_with_collector {
     ($s:expr, $f:ident($($args:expr),*)) => {
         match () {
             #[cfg(test)]
-            _ if $s.is_isolated_mutable() => tests::DATA_COLLECTOR.$f($($args,)*),
+            _ if $s.is_isolated_mutable() => $s.test_context().collector.$f($($args,)*),
             _ if MUTTEST_CONF.tracks_mutable($s) => DATA_COLLECTOR.$f($($args,)*),
             _ => {}
         }
@@ -314,11 +329,6 @@ impl BakedMutableId {
     }
     pub fn new(id: usize, crate_name: &'static str) -> Self {
         Self { id, crate_name }
-    }
-
-    #[cfg(test)]
-    fn is_isolated_mutable(self) -> bool {
-        self.crate_name.is_empty()
     }
 
     pub fn cloned(self) -> MutableId {
@@ -336,7 +346,7 @@ impl BakedMutableId {
     /// get the active mutation for a mutable
     ///
     /// calling this function also triggers logging its coverage
-    fn get_active_mutation(self) -> Option<Arc<str>> {
+    fn get_active_mutation(self) -> Mutation {
         do_with_collector!(self, write_coverage(self.id, None));
 
         MUTTEST_CONF.get_mutation(self)

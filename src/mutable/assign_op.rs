@@ -1,11 +1,11 @@
-use std::{io::Write, sync::Arc};
+use std::io::Write;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId,
+    BakedMutableId, Mutation,
 };
 
 use super::Mutable;
@@ -81,9 +81,9 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
                             ])
                         );
                         let (mut _left, _right) = (&mut #left, #right);
-                        match &*#muttest_api::mutable::assign_op::run(#m_id) {
-                            "" => *_left #op _right,
-                            #(#op_symbols =>
+                        match #muttest_api::mutable::assign_op::run(#m_id).as_option() {
+                            #muttest_api::Option::None => *_left #op _right,
+                            #(#muttest_api::Option::Some(#op_symbols) =>
                                 {
                                     #[allow(unused_imports)]
                                     use #muttest_api::mutable::assign_op::#op_names::{IsNo, IsYes};
@@ -101,8 +101,8 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
     }
 }
 
-pub fn run(m_id: BakedMutableId) -> Arc<str> {
-    m_id.get_active_mutation().unwrap_or_else(|| Arc::from(""))
+pub fn run(m_id: BakedMutableId) -> Mutation {
+    m_id.get_active_mutation()
 }
 
 macro_rules! assign_op_traits {

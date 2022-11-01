@@ -64,7 +64,10 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
         Some(Ordering::Greater) => "GT",
     });
 
-    match (ord, m_id.get_active_mutation().as_deref().unwrap_or(op_str)) {
+    match (
+        ord,
+        m_id.get_active_mutation().as_option().unwrap_or(op_str),
+    ) {
         (None, _) => false,
         (Some(ord), "<") => ord.is_lt(),
         (Some(ord), "<=") => ord.is_le(),

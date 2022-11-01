@@ -66,7 +66,7 @@ pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
     // this reports behavior but is irrelevant for weak mutation testing
     m_id.report_weak(if eq { "EQ" } else { "NE" });
 
-    let res = match m_id.get_active_mutation().as_deref().unwrap_or(op_str) {
+    let res = match m_id.get_active_mutation().as_option().unwrap_or(op_str) {
         "==" => eq,
         "!=" => !eq,
         _ => todo!(),

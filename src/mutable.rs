@@ -16,7 +16,7 @@ pub mod lit_str;
 // * lits: char, byte, byte_str, float
 // * unop: neg, not
 
-pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span";
+pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span\n";
 // TODO: add attr_id to enable grouping
 
 pub trait Mutable<'a> {

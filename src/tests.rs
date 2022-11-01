@@ -1,25 +1,39 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Write,
-    mem,
     ops::Deref,
     sync::{Arc, Mutex, RwLock},
 };
 
-use lazy_static::lazy_static;
-
 use crate::{
-    collector::{CollectedData, COVERAGE_FILE_HEADER, DETAILS_FILE_HEADER},
+    collector::{CollectedData, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
     BakedMutableId, DataCollector, MutableId, MutationsMap,
 };
 
 pub use crate::{call_isolated, data_isolated};
 
-lazy_static! {
-    pub(crate) static ref DATA_COLLECTOR: DataCollector<Vec<u8>> = DataCollector::new_for_test();
-    // TODO: one MutationsMap per testcase
-    pub(crate) static ref TEST_MUTATION: RwLock<Option<MutationsMap>> =
-        RwLock::new(None);
+// TODO: BTreeMap::new is not yet const :/
+lazy_static::lazy_static! {
+    static ref TEST_CONTEXT: RwLock<BTreeMap<String, Arc<TestContext>>> =
+        RwLock::new(BTreeMap::new());
+}
+
+pub(crate) struct TestContext {
+    pub(crate) mutations: MutationsMap,
+    pub(crate) collector: DataCollector<Vec<u8>>,
+}
+
+impl BakedMutableId {
+    pub(crate) fn is_isolated_mutable(self) -> bool {
+        self.crate_name.starts_with("#")
+    }
+    pub(crate) fn test_context(self) -> Arc<TestContext> {
+        TEST_CONTEXT
+            .read()
+            .unwrap()
+            .get(self.crate_name)
+            .expect("mutation for this testcase not set")
+            .clone()
+    }
 }
 
 #[macro_export]
@@ -28,6 +42,7 @@ macro_rules! call_isolated {
         crate::tests::run$(::<$t>)?(
             $f::MUTABLES_CSV,
             $f::NUM_MUTABLES,
+            $f::TARGET_NAME,
             || $f($($args),*),
             vec![$(($m_id, $m))?]
         )
@@ -45,44 +60,43 @@ pub struct IsolatedFnCall<T> {
     pub data: CollectedData,
 }
 
-static TEST_LOCK: Mutex<()> = Mutex::new(());
-
 pub fn run<'a, T>(
     defs_csv: &str,
     num_mutables: usize,
+    target_name: &str,
     action: impl FnOnce() -> T,
     mutation: Vec<(usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
     let mut data = CollectedData::from_defs_checked(num_mutables, defs_csv);
     for (id, _) in &mutation {
         if !data.mutables.contains_key(&id) {
+            println!("mutation {mutation:?}");
+            println!("data:");
+            println!("{defs_csv}");
             panic!("mutable id {id} is not a valid mutable id")
         }
     }
 
-    // TODO: correctly recover from failed tests
-    let l = TEST_LOCK.lock();
-
-    DATA_COLLECTOR.clear();
-
-    // setup test mutation
-    *TEST_MUTATION.write().unwrap() = Some(
-        mutation
-            .into_iter()
-            .map(|(m_id, m)| (m_id, Arc::from(m)))
-            .collect(),
+    TEST_CONTEXT.write().unwrap().insert(
+        target_name.to_owned(),
+        Arc::new(TestContext {
+            mutations: mutation
+                .into_iter()
+                .map(|(m_id, m)| (m_id, Arc::from(m)))
+                .collect(),
+            collector: DataCollector::new_for_test(),
+        }),
     );
 
     // perform action
     let res = action();
 
-    // remove test mutation
-    *TEST_MUTATION.write().unwrap() = None;
-
-    DATA_COLLECTOR.extract_data_and_clear(&mut data);
-
-    // release test lock
-    std::mem::drop(l);
+    // extract data
+    let context = TEST_CONTEXT.write().unwrap().remove(target_name).unwrap();
+    let context = Arc::try_unwrap(context)
+        .ok()
+        .expect("someone still has a refereence to this context");
+    context.collector.extract_data(&mut data);
 
     IsolatedFnCall { res, data }
 }
@@ -100,61 +114,21 @@ impl CollectedData {
     }
 }
 
-fn csv_headers() -> (Vec<u8>, Vec<u8>) {
-    let mut details_csv = vec![];
-    writeln!(&mut details_csv, "{DETAILS_FILE_HEADER}").unwrap();
-    let mut coverage_csv = vec![];
-    writeln!(&mut coverage_csv, "{COVERAGE_FILE_HEADER}").unwrap();
-
-    (details_csv, coverage_csv)
-}
-
 impl DataCollector<Vec<u8>> {
     fn new_for_test() -> Self {
-        let (details_csv, coverage_csv) = csv_headers();
         DataCollector {
             details: Mutex::new(BTreeSet::new()),
             coverage: Mutex::new(BTreeMap::new()),
-            details_file: Some(Mutex::new(details_csv)),
-            coverage_file: Some(Mutex::new(coverage_csv)),
+            details_file: Some(Mutex::new(DETAILS_FILE_CSV_HEAD.as_bytes().to_vec())),
+            coverage_file: Some(Mutex::new(COVERAGE_FILE_CSV_HEAD.as_bytes().to_vec())),
         }
     }
 
-    fn extract_data_and_clear(&self, data: &mut CollectedData) {
-        let (mut details_csv, mut coverage_csv) = csv_headers();
-
-        // lock everything together to ensure isolation
-        {
-            let mut coverage = self.coverage.lock().unwrap();
-            let mut details = self.details.lock().unwrap();
-            let mut details_file = self.details_file.as_ref().unwrap().lock().unwrap();
-            let mut coverage_file = self.coverage_file.as_ref().unwrap().lock().unwrap();
-
-            coverage.clear();
-            details.clear();
-            mem::swap(&mut *details_file, &mut details_csv);
-            mem::swap(&mut *coverage_file, &mut coverage_csv);
-        }
-
-        data.read_details_csv(&*details_csv)
+    fn extract_data(self, data: &mut CollectedData) {
+        data.read_details_csv(&*self.details_file.unwrap().into_inner().unwrap())
             .expect("unable to read csv data");
-        data.read_coverage_csv(&*coverage_csv)
+        data.read_coverage_csv(&*self.coverage_file.unwrap().into_inner().unwrap())
             .expect("unable to read csv data");
-    }
-
-    fn clear(&self) {
-        let headers = csv_headers();
-
-        // lock everything together to ensure isolation
-        let mut coverage = self.coverage.lock().unwrap();
-        let mut details = self.details.lock().unwrap();
-        let mut details_file = self.details_file.as_ref().unwrap().lock().unwrap();
-        let mut coverage_file = self.coverage_file.as_ref().unwrap().lock().unwrap();
-
-        coverage.clear();
-        details.clear();
-        *details_file = headers.0;
-        *coverage_file = headers.1;
     }
 }
 

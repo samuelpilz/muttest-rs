@@ -13,8 +13,8 @@ use crate::{
     MutableDetails, MutableLocation, MuttestConf,
 };
 
-pub const DETAILS_FILE_HEADER: &str = "id,ty,mutations,file,module,attr_span,span";
-pub const COVERAGE_FILE_HEADER: &str = "id,data";
+pub const DETAILS_FILE_CSV_HEAD: &str = "id,ty,mutations,file,module,attr_span,span\n";
+pub const COVERAGE_FILE_CSV_HEAD: &str = "id,data\n";
 
 // TODO: make collector only for single crate_name
 pub struct DataCollector<F: Write> {

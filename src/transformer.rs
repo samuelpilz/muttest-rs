@@ -8,7 +8,7 @@ use std::{
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
-use crate::{display_or_empty_if_none, mutable::Mutable, BakedMutableId, PathSegment};
+use crate::{display_or_empty_if_none, mutable::Mutable, MutableId, PathSegment};
 
 pub struct MuttestTransformer<'a, W: Write> {
     pub conf: TransformerConf,
@@ -21,7 +21,7 @@ pub struct TransformerConf {
     pub span: Span,
     pub mutables: MutablesConf,
     pub muttest_api: TokenStream,
-    pub target_name: &'static str,
+    pub target_name: String,
 }
 pub enum MutablesConf {
     All,
@@ -49,9 +49,12 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
         m: &M,
         code: &str,
     ) -> TransformSnippets {
-        let id = BakedMutableId::new(self.id.fetch_add(1, SeqCst), self.conf.target_name);
+        let id = MutableId {
+            id: self.id.fetch_add(1, SeqCst),
+            crate_name: self.conf.target_name.clone(),
+        };
         if let Some(w) = &mut self.definitions {
-            write_mutable(w, id, m, code, &self.path, self.conf.span);
+            write_mutable(w, &id, m, code, &self.path, self.conf.span);
         }
 
         let muttest_api = self.conf.muttest_api.clone();
@@ -94,7 +97,7 @@ fn bake_span(muttest_api: &TokenStream, span: Span) -> TokenStream {
 /// register a new mutable
 fn write_mutable<'a, M: Mutable<'a>, W: Write>(
     mut w: W,
-    id: BakedMutableId,
+    id: &MutableId,
     m: &M,
     code: &str,
     path: &[PathSegment],

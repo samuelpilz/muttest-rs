@@ -50,6 +50,7 @@ lazy_static! {
         Mutex::new(open_definitions_file().expect("unable to open definitions file"));
 }
 static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
+static ISOLATED_MUTATION: AtomicUsize = AtomicUsize::new(1);
 
 /// isolated mutation for testing purposes
 #[proc_macro_attribute]
@@ -61,10 +62,12 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         // TODO: compiler error instead of panic
         panic!("`mutate_isolated` should only be used for internal testing");
     }
-
     let is_lib_test = std::env::var("CARGO_CRATE_NAME").unwrap() == "muttest_core";
 
-    // TODO: encode path to target_name to enable concurrent test executions
+    let target_name = format!(
+        "#isolated-{}",
+        ISOLATED_MUTATION.fetch_add(1, Ordering::SeqCst)
+    );
     let mut conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
@@ -73,17 +76,16 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         } else {
             quote!(::muttest_core::api)
         },
-        target_name: "",
+        target_name: target_name.clone(),
     };
     if !attr.is_empty() {
         let s = parse_macro_input!(attr as LitStr);
         conf.mutables = MutablesConf::One(s.value());
     }
 
+    // perform transformation
+    let mut definitions_csv = MUTABLE_DEFINITIONS_CSV_HEAD.as_bytes().to_vec();
     let id = AtomicUsize::new(1);
-    let mut definitions_csv = <Vec<u8>>::new();
-    writeln!(&mut definitions_csv, "{MUTABLE_DEFINITIONS_CSV_HEAD}").unwrap();
-
     let mut transformer = MuttestTransformer::new(conf, Some(&mut definitions_csv), &id);
     let result = FoldImpl(&mut transformer).fold_item_fn(input);
 
@@ -91,6 +93,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let definitions_csv = std::str::from_utf8(&definitions_csv).unwrap();
     let num_mutables = id.load(Ordering::SeqCst);
 
+    // write context of transformation next to transformed function
     let mut mod_ident = result.sig.ident.clone();
     mod_ident.set_span(Span::call_site());
     let result: File = parse_quote! {
@@ -98,6 +101,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         mod #mod_ident {
             pub const MUTABLES_CSV: &str = #definitions_csv;
             pub const NUM_MUTABLES: usize = #num_mutables;
+            pub const TARGET_NAME: &str = #target_name;
         }
     };
 
@@ -112,7 +116,7 @@ pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: quote! {crate::api},
-        target_name: &*TARGET_NAME,
+        target_name: TARGET_NAME.clone(),
     };
 
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
@@ -133,7 +137,7 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: quote!(muttest),
-        target_name: &*TARGET_NAME,
+        target_name: TARGET_NAME.clone(),
     };
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
 
@@ -148,7 +152,7 @@ fn open_definitions_file() -> Result<Option<fs::File>, Error> {
         Some(dir) => {
             let file_name = format!("mutable-definitions-{}.csv", &*TARGET_NAME);
             let mut file = fs::File::create(PathBuf::from(dir).join(file_name))?;
-            writeln!(&mut file, "{MUTABLE_DEFINITIONS_CSV_HEAD}")?;
+            write!(&mut file, "{MUTABLE_DEFINITIONS_CSV_HEAD}")?;
             file.flush()?;
             file.sync_all()?;
             Ok(Some(file))

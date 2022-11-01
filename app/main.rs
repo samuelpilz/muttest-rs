@@ -67,9 +67,9 @@ fn main() -> Result<(), Error> {
     let mut report = compile(&opt, cargo_exe, &muttest_dir)?;
 
     let details_path = muttest_dir.join("mutable-details.csv");
-    setup_csv_file(&details_path, collector::DETAILS_FILE_HEADER)?;
+    setup_csv_file(&details_path, collector::DETAILS_FILE_CSV_HEAD)?;
     let coverage_path = muttest_dir.join("coverage.csv");
-    setup_csv_file(&coverage_path, collector::COVERAGE_FILE_HEADER)?;
+    setup_csv_file(&coverage_path, collector::COVERAGE_FILE_CSV_HEAD)?;
 
     // run test suites without mutations for coverage
     for (crate_name, data) in &mut report.muttest_crates {
@@ -287,7 +287,7 @@ fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<Muttes
 
 fn setup_csv_file(path: &impl AsRef<Path>, head: &str) -> Result<(), CoreError> {
     let mut file = File::create(path)?;
-    writeln!(&mut file, "{head}")?;
+    write!(&mut file, "{head}")?;
     file.flush()?;
     file.sync_all()?;
     Ok(())

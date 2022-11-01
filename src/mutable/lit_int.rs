@@ -42,7 +42,7 @@ pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I
     m_id.report_details(loc, I::type_str(), "");
     // TODO: report type instead?
 
-    match m_id.get_active_mutation().as_deref() {
+    match m_id.get_active_mutation().as_option() {
         None => lit,
         Some(p) if p.chars().all(|c| c.is_numeric()) => I::parse(p),
         _ => todo!(), // TODO: panic and report
