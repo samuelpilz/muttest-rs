@@ -53,7 +53,7 @@ lazy_static! {
 static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
 static ISOLATED_MUTATION: AtomicUsize = AtomicUsize::new(1);
 
-/// isolated mutation for testing purposes
+/// isolated mutation for unit testing of `muttest-core` itself.
 #[proc_macro_attribute]
 pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: hide behind feature (unnecessary codegen)
@@ -109,25 +109,48 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     result.into_token_stream().into()
 }
 
+/// Transformer macro to be used to perform mutation testing on `muttest-core` itself.
+///
+/// This macro is not exported in `muttest` and is only intended for internal use.
 #[proc_macro_attribute]
-pub fn mutate_selftest(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as File);
+pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemFn);
 
+    let muttest_api = quote! {crate::api};
     let conf = TransformerConf {
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: quote! {crate::api},
+        muttest_api: muttest_api.clone(),
         target_name: TARGET_NAME.clone(),
     };
 
     let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
 
     let mut transformer = MuttestTransformer::new(conf, definitions_file.as_mut(), &MUTABLE_ID_NUM);
-    let result = FoldImpl(&mut transformer).fold_file(input);
+    let mut result = FoldImpl(&mut transformer).fold_item_fn(input);
+
+    if !attr.is_empty() {
+        // TODO: this is not a good interface
+        let default_expr = parse_macro_input!(attr as Expr);
+        let block = result.block;
+        // TODO: auto-detect `m_id` name.
+        result.block = parse_quote!(
+            {
+                crate::tests::return_early_if_nesting!(
+                    m_id,
+                    // TODO: use this macro's id for instead
+                    #muttest_api::concat!(#muttest_api::file!(), ":", #muttest_api::line!(), ":", #muttest_api::column!()),
+                    #default_expr
+                );
+                #block
+            }
+        );
+    }
 
     result.into_token_stream().into()
 }
 
+/// Macro to enable mutation testing.
 #[proc_macro_attribute]
 pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: maybe only transform if env-vars set

@@ -49,11 +49,8 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(test, muttest_codegen::mutate_selftest(res))]
 pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
-    #[cfg(test)]
-    crate::tests::return_early_if_nesting!(m_id, "binop_bool", res);
-
     let mutation = m_id.get_active_mutation();
 
     debug_assert!(matches!(op_str, "==" | "!="));
@@ -63,12 +60,11 @@ pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
     // this reports behavior but is irrelevant for weak mutation testing
     m_id.report_coverage(Some(if eq { "EQ" } else { "NE" }));
 
-    let res = match mutation.as_option().unwrap_or(op_str) {
+    match mutation.as_option().unwrap_or(op_str) {
         "==" => eq,
         "!=" => !eq,
         _ => todo!(),
-    };
-    res
+    }
 }
 
 #[cfg(test)]

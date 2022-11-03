@@ -82,8 +82,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
     }
 }
 
-// TODO: current nesting-catch strategies fail....
-// #[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(test, muttest_codegen::mutate_selftest(ControlFlow::Continue(())))]
 pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
     m_id.report_coverage(None);
 

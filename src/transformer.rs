@@ -69,8 +69,8 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
 
         let loc = quote_spanned! {m.span()=>
             #muttest_api::BakedLocation {
-                file: file!(),
-                module: module_path!(),
+                file: #muttest_api::file!(),
+                module: #muttest_api::module_path!(),
                 attr_span: #attr_span,
                 span: #span,
             }
@@ -88,7 +88,7 @@ fn bake_span(muttest_api: &TokenStream, span: Span) -> TokenStream {
     // TODO: use Span::before/after when available to get the entire range
     quote_spanned! {span=>
         #muttest_api::Span {
-            start: #muttest_api::LineColumn {line: line!(), column: column!() },
+            start: #muttest_api::LineColumn {line: #muttest_api::line!(), column: #muttest_api::column!() },
             end: #muttest_api::Option::None,
         }
     }

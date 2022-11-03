@@ -38,6 +38,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I {
     m_id.report_coverage(None);
 

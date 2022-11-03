@@ -63,7 +63,7 @@ impl Drop for NestingToken {
 }
 #[macro_export]
 macro_rules! return_early_if_nesting {
-    ($m_id:expr, $name:literal, $e:expr) => {
+    ($m_id:expr, $name:expr, $e:expr) => {
         let __muttest_nesting_token = match crate::tests::NestingToken::create($m_id, $name) {
             crate::tests::NestingToken::Nested => return $e,
             t => t,

@@ -38,6 +38,7 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>
             if i != 0 {
                 m.push((i - 1).to_string());
             }
+            // TODO: type-sensitive detection of max
             m.push((i + 1).to_string());
             m
         }
@@ -75,5 +76,9 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>
             .map(ToOwned::to_owned)
             .collect(),
     };
-    Ok(Some(mutation))
+    if mutation.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(mutation))
+    }
 }

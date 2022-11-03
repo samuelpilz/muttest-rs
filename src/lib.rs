@@ -30,7 +30,8 @@ pub mod api {
     pub use crate::{BakedLocation, BakedMutableId, LineColumn, Span};
 
     pub use std::{
-        borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
+        borrow::Cow, column, concat, file, line, marker::PhantomData, module_path,
+        ops::ControlFlow, option::Option, sync::RwLock,
     };
 
     pub fn phantom_for_type<T>(_: &T) -> PhantomData<T> {
