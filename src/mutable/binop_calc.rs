@@ -105,6 +105,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
 
 // TODO: avoid clone
 pub fn run(m_id: BakedMutableId) -> String {
+    m_id.report_coverage(None);
     m_id.get_active_mutation()
         .as_option()
         .unwrap_or_default()

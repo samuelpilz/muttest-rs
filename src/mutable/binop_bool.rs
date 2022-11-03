@@ -53,7 +53,10 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
 pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     // TODO: also report behavior of `true && panic`
     if (left && op_str == "||") || (!left && op_str == "&&") {
-        m_id.report_weak(bool_to_str(left, None));
+        m_id.report_coverage(Some(bool_to_str(left, None)));
+    } else {
+        // TODO: test that
+        m_id.report_coverage(None);
     }
 
     match (
@@ -67,7 +70,7 @@ pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<b
 }
 
 pub fn run_right(m_id: BakedMutableId, left: bool, right: bool) -> bool {
-    m_id.report_weak(bool_to_str(left, Some(right)));
+    m_id.report_coverage(Some(bool_to_str(left, Some(right))));
     right
 }
 fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {

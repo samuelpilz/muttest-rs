@@ -5,7 +5,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId, Mutation,
+    BakedMutableId,
 };
 
 use super::Mutable;
@@ -51,18 +51,17 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
-    let mutation = m_id.get_active_mutation();
+    #[cfg(test)]
+    crate::tests::return_early_if_nesting!(m_id, "binop_bool", res);
 
-    if matches!(mutation, Mutation::Skip) {
-        return res;
-    }
+    let mutation = m_id.get_active_mutation();
 
     debug_assert!(matches!(op_str, "==" | "!="));
 
     let eq = (op_str == "==") == res;
 
     // this reports behavior but is irrelevant for weak mutation testing
-    m_id.report_weak(if eq { "EQ" } else { "NE" });
+    m_id.report_coverage(Some(if eq { "EQ" } else { "NE" }));
 
     let res = match mutation.as_option().unwrap_or(op_str) {
         "==" => eq,
@@ -84,8 +83,8 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
-        // assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
-        // assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
+        assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
+        assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
     }
 
     #[test]
@@ -97,7 +96,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
         assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
-        assert_eq!(false, call_isolated! {f() where 1 => "=="}.res);
+        // assert_eq!(false, call_isolated! {f() where 1 => "=="}.res);
     }
 
     #[test]

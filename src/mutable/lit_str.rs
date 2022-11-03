@@ -52,6 +52,8 @@ pub fn run(
     loc: BakedLocation,
     mutation: &RwLock<Option<&'static str>>,
 ) -> &'static str {
+    m_id.report_coverage(None);
+
     m_id.report_details(loc, "&'static str", "");
 
     match m_id.get_active_mutation().as_option() {

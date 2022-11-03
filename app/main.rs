@@ -10,10 +10,9 @@ use std::{
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use muttest_core::{
-    collector::{self, CollectedData},
+    context::{self, CollectedData},
     mutable::{self, binop_cmp::MutableBinopCmp, mutations_for_mutable, Mutable},
-    MutableData, ENV_VAR_COVERAGE_FILE, ENV_VAR_DETAILS_FILE, ENV_VAR_MUTTEST_CRATE,
-    ENV_VAR_MUTTEST_DIR, ENV_VAR_MUTTEST_MUTATION,
+    MutableData,
 };
 use wait_timeout::ChildExt;
 
@@ -67,9 +66,9 @@ fn main() -> Result<(), Error> {
     let mut report = compile(&opt, cargo_exe, &muttest_dir)?;
 
     let details_path = muttest_dir.join("mutable-details.csv");
-    setup_csv_file(&details_path, collector::DETAILS_FILE_CSV_HEAD)?;
+    setup_csv_file(&details_path, context::DETAILS_FILE_CSV_HEAD)?;
     let coverage_path = muttest_dir.join("coverage.csv");
-    setup_csv_file(&coverage_path, collector::COVERAGE_FILE_CSV_HEAD)?;
+    setup_csv_file(&coverage_path, context::COVERAGE_FILE_CSV_HEAD)?;
 
     // run test suites without mutations for coverage
     for (crate_name, data) in &mut report.muttest_crates {
@@ -77,10 +76,10 @@ fn main() -> Result<(), Error> {
             println!("call {}", &test_bin.name);
             let start_time = Instant::now();
             let status = Command::new(&test_bin.path)
-                .env(ENV_VAR_MUTTEST_DIR, &muttest_dir)
-                .env(ENV_VAR_MUTTEST_CRATE, crate_name)
-                .env(ENV_VAR_DETAILS_FILE, &details_path)
-                .env(ENV_VAR_COVERAGE_FILE, &coverage_path)
+                .env(context::ENV_VAR_MUTTEST_DIR, &muttest_dir)
+                .env(context::ENV_VAR_MUTTEST_CRATE, crate_name)
+                .env(context::ENV_VAR_DETAILS_FILE, &details_path)
+                .env(context::ENV_VAR_COVERAGE_FILE, &coverage_path)
                 .stdout(Stdio::null())
                 .spawn()?
                 .wait()?;
@@ -158,8 +157,8 @@ fn main() -> Result<(), Error> {
                 // run test suites without mutations for coverage
                 for test_bin in &report.test_bins {
                     let mut test = Command::new(&test_bin.path)
-                        .env(ENV_VAR_MUTTEST_CRATE, crate_name)
-                        .env(ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
+                        .env(context::ENV_VAR_MUTTEST_CRATE, crate_name)
+                        .env(context::ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
                         // TODO: think about details in mutated runs
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())

@@ -3,8 +3,7 @@
 //! There are some internals here that are not meant for mutation testing users.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    env::VarError,
+    collections::BTreeSet,
     fmt,
     fs::File,
     io,
@@ -16,22 +15,19 @@ use std::{
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
-use crate::collector::DataCollector;
+use crate::context::MuttestContext;
 
-pub mod collector;
+pub mod context;
 pub mod mutable;
 pub mod transformer;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::{
-        mutation_string_from_bool_list, mutation_string_opt, BakedLocation, BakedMutableId,
-        LineColumn, Span,
-    };
+    pub use crate::{BakedLocation, BakedMutableId, LineColumn, Span};
 
     pub use std::{
         borrow::Cow, marker::PhantomData, ops::ControlFlow, option::Option, sync::RwLock,
@@ -43,6 +39,22 @@ pub mod api {
 
     pub fn id<T>(t: T) -> T {
         t
+    }
+
+    /// make a correct string of possible mutations from a (&str,bool) tuple list
+    pub fn mutation_string_from_bool_list(l: &[(&'static str, bool)]) -> String {
+        l.iter()
+            .filter(|(_, ok)| *ok)
+            .map(|(m, _)| *m)
+            .collect::<Vec<_>>()
+            .join(":")
+    }
+    pub fn mutation_string_opt(mutation: &str, opt: bool) -> &str {
+        if opt {
+            mutation
+        } else {
+            ""
+        }
     }
 }
 
@@ -58,94 +70,15 @@ macro_rules! env_var_muttest_dir {
 #[allow(dead_code)]
 const RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!(env_var_muttest_dir!());
 
-pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
-pub const ENV_VAR_MUTTEST_CRATE: &str = "MUTTEST_CRATE";
-pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
-pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
-pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
-
 lazy_static! {
-    static ref MUTTEST_CONF: MuttestConf =
-        MuttestConf::new_from_env().expect("unable to read active mutation");
-    static ref DATA_COLLECTOR: DataCollector<File> = DataCollector::new_from_conf(&MUTTEST_CONF)
-        .expect("unable to open mutable-data-collector files");
-}
-// TODO: make `MuttestContext` which is `Map crate-name->(Mutations & Collector)` (also: merge with collector module)
-
-pub type MutationsMap = BTreeMap<usize, Arc<str>>;
-#[derive(Debug, Default)]
-struct MuttestConf {
-    crate_name: Option<String>,
-    mutations: MutationsMap,
-    details_file: Option<PathBuf>,
-    coverage_file: Option<PathBuf>,
+    static ref MUTTEST_CONTEXT: Option<MuttestContext<File>> =
+        MuttestContext::new_from_env().expect("unable to create muttest context");
 }
 
+#[derive(Debug)]
 pub enum Mutation {
     Unchanged,
     Mutate(Arc<str>),
-    Skip,
-}
-
-impl MuttestConf {
-    fn new_from_env() -> Result<Self, Error> {
-        let crate_name = get_env_var_option(ENV_VAR_MUTTEST_CRATE)?;
-        if crate_name.is_none() {
-            return Ok(Self::default());
-        }
-
-        let mutations = get_env_var_option(ENV_VAR_MUTTEST_MUTATION)?
-            .map(|mutation| {
-                mutation
-                    .split(';')
-                    .map(|m| {
-                        let (id, m) = m.split_once('=').expect("invalid mutation format");
-                        let id: usize = id.parse().expect("invalid mutation format");
-                        (id, Arc::from(m))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Ok(Self {
-            crate_name,
-            mutations,
-            details_file: get_env_var_pathbuf_option(ENV_VAR_DETAILS_FILE),
-            coverage_file: get_env_var_pathbuf_option(ENV_VAR_COVERAGE_FILE),
-        })
-    }
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
-        #[cfg(test)]
-        if m_id.is_isolated_mutable() {
-            return true;
-        }
-        self.crate_name.as_deref() == Some(m_id.crate_name)
-    }
-
-    fn get_mutation(&self, m_id: BakedMutableId) -> Mutation {
-        #[cfg(test)]
-        if tests::MUTATION_NESTING.with(|n| n.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 2)
-        {
-            return Mutation::Skip;
-        }
-
-        pub fn get_from_map(mutations: &MutationsMap, m_id: BakedMutableId) -> Mutation {
-            match mutations.get(&m_id.id).cloned() {
-                Some(m) => Mutation::Mutate(m),
-                None => Mutation::Unchanged,
-            }
-        }
-
-        #[cfg(test)]
-        if m_id.is_isolated_mutable() {
-            return get_from_map(&m_id.test_context().mutations, m_id);
-        }
-        if self.crate_name.as_deref() != Some(m_id.crate_name) {
-            return Mutation::Unchanged;
-        }
-
-        get_from_map(&self.mutations, m_id)
-    }
 }
 
 impl Mutation {
@@ -153,7 +86,6 @@ impl Mutation {
         match self {
             Mutation::Unchanged => None,
             Mutation::Mutate(m) => Some(&*m),
-            Mutation::Skip => None,
         }
     }
 }
@@ -190,25 +122,6 @@ impl Error {
     }
 }
 
-pub fn get_env_var_option(var_name: &'static str) -> Result<Option<String>, Error> {
-    match std::env::var(var_name) {
-        Ok(s) => Ok(Some(s)),
-        Err(VarError::NotPresent) => Ok(None),
-        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(var_name)),
-    }
-}
-pub fn get_env_var(var_name: &'static str) -> Result<String, Error> {
-    match std::env::var(var_name) {
-        Ok(s) => Ok(s),
-        Err(VarError::NotPresent) => Err(Error::EnvVarMissing(var_name)),
-        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(var_name)),
-    }
-}
-
-pub fn get_env_var_pathbuf_option(var_name: &'static str) -> Option<PathBuf> {
-    std::env::var_os(var_name).map(|e| PathBuf::from(e))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MutableData {
     pub kind: String,
@@ -218,7 +131,6 @@ pub struct MutableData {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MutableDetails {
-    // TODO: merge location with other
     pub mutable_type: String,
     pub possible_mutations: BTreeSet<String>,
 }
@@ -229,7 +141,6 @@ pub struct MutableCoverage {
     data: String,
 }
 
-// TODO: name
 pub struct BakedLocation {
     pub file: &'static str,
     pub module: &'static str,
@@ -260,8 +171,6 @@ pub struct LineColumn {
     pub column: u32,
 }
 
-// TODO: maybe borrow something?
-// TODO: maybe have idents here?
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum PathSegment {
     Mod(String),
@@ -319,6 +228,7 @@ impl FromStr for MutableId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BakedMutableId {
+    // TODO: rename to `target`
     pub crate_name: &'static str,
     pub id: usize,
 }
@@ -329,14 +239,14 @@ impl fmt::Display for BakedMutableId {
     }
 }
 
-// TODO: this can surely be done cleaner
-macro_rules! do_with_collector {
-    ($s:expr, $f:ident($($args:expr),*)) => {
-        match () {
+// TODO: this should be done cleaner
+macro_rules! with_context {
+    ($s:expr, $f:ident($($args:expr),*) $(, $d:expr)?) => {
+        match &*MUTTEST_CONTEXT {
             #[cfg(test)]
-            _ if $s.is_isolated_mutable() => $s.test_context().collector.$f($($args,)*),
-            _ if MUTTEST_CONF.tracks_mutable($s) => DATA_COLLECTOR.$f($($args,)*),
-            _ => {}
+            _ if $s.is_isolated() => $s.test_context().$f($($args,)*),
+            Some(ctx) if ctx.tracks_mutable($s) => ctx.$f($($args,)*),
+            _ => {$($d)?}
         }
     };
 }
@@ -357,37 +267,17 @@ impl BakedMutableId {
 
     /// reports details of mutables gathered by static analysis
     pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
-        do_with_collector!(self, write_details(self.id, loc, ty, mutations))
+        with_context!(self, write_details(self.id, loc, ty, mutations))
+    }
+
+    // TODO: ensure this function is used everywhere
+    pub fn report_coverage(self, behavior: Option<&str>) {
+        with_context!(self, write_coverage(self.id, behavior));
     }
 
     /// get the active mutation for a mutable
-    ///
-    /// calling this function also triggers logging its coverage
     fn get_active_mutation(self) -> Mutation {
-        do_with_collector!(self, write_coverage(self.id, None));
-
-        MUTTEST_CONF.get_mutation(self)
-    }
-
-    // TODO: this is only a first draft of behavior
-    fn report_weak(self, weak: &str) {
-        do_with_collector!(self, write_coverage(self.id, Some(weak)));
-    }
-}
-
-/// make a correct string of possible mutations from a (&str,bool) tuple list
-pub fn mutation_string_from_bool_list(l: &[(&'static str, bool)]) -> String {
-    l.iter()
-        .filter(|(_, ok)| *ok)
-        .map(|(m, _)| *m)
-        .collect::<Vec<_>>()
-        .join(":")
-}
-pub fn mutation_string_opt(mutation: &str, opt: bool) -> &str {
-    if opt {
-        mutation
-    } else {
-        ""
+        with_context!(self, get_mutation(self), Mutation::Unchanged)
     }
 }
 

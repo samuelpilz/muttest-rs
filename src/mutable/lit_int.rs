@@ -39,8 +39,9 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
 }
 
 pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I {
+    m_id.report_coverage(None);
+
     m_id.report_details(loc, I::type_str(), "");
-    // TODO: report type instead?
 
     match m_id.get_active_mutation().as_option() {
         None => lit,

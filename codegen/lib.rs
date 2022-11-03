@@ -12,13 +12,14 @@ use std::{
 
 use lazy_static::lazy_static;
 use muttest_core::{
+    context::ENV_VAR_MUTTEST_DIR,
     mutable::{
         assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
         binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
         lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, MUTABLE_DEFINITIONS_CSV_HEAD,
     },
     transformer::{MutablesConf, MuttestTransformer, TransformerConf},
-    Error, PathSegment, ENV_VAR_MUTTEST_DIR,
+    Error, PathSegment,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;

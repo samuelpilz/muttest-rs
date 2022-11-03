@@ -1,63 +1,118 @@
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
+    env::VarError,
     fs::File,
     io::{Read, Write},
-    path::Path,
-    sync::Mutex,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    parse_or_none_if_empty, split_or_empty, BakedLocation, Error, MutableCoverage, MutableData,
-    MutableDetails, MutableLocation, MuttestConf,
+    env_var_muttest_dir, parse_or_none_if_empty, split_or_empty, BakedLocation, BakedMutableId,
+    Error, MutableCoverage, MutableData, MutableDetails, MutableLocation, Mutation,
 };
 
 pub const DETAILS_FILE_CSV_HEAD: &str = "id,ty,mutations,file,module,attr_span,span\n";
 pub const COVERAGE_FILE_CSV_HEAD: &str = "id,data\n";
 
-// TODO: make collector only for single crate_name
+pub const ENV_VAR_MUTTEST_DIR: &str = env_var_muttest_dir!();
+pub const ENV_VAR_MUTTEST_CRATE: &str = "MUTTEST_CRATE";
+pub const ENV_VAR_MUTTEST_MUTATION: &str = "MUTTEST_MUTATION";
+pub const ENV_VAR_DETAILS_FILE: &str = "MUTTEST_DETAILS_FILE";
+pub const ENV_VAR_COVERAGE_FILE: &str = "MUTTEST_COVERAGE_FILE";
+
 #[derive(Debug)]
-pub struct DataCollector<F: Write> {
+pub(crate) struct MuttestContext<F> {
+    pub(crate) target: String,
+    pub(crate) mutations: MutationsMap,
+    pub(crate) collector: DataCollector<F>,
+}
+
+pub type MutationsMap = BTreeMap<usize, Arc<str>>;
+
+// TODO: inline into context
+#[derive(Debug)]
+pub struct DataCollector<F> {
     pub(crate) details: Mutex<BTreeSet<usize>>,
     pub(crate) coverage: Mutex<BTreeMap<usize, String>>,
     pub(crate) details_file: Option<Mutex<F>>,
     pub(crate) coverage_file: Option<Mutex<F>>,
 }
 
-impl DataCollector<File> {
-    pub(crate) fn new_from_conf(conf: &MuttestConf) -> Result<Self, Error> {
-        let details_file = conf
-            .details_file
+impl MuttestContext<File> {
+    pub(crate) fn new_from_env() -> Result<Option<Self>, Error> {
+        let target = get_env_var_option(ENV_VAR_MUTTEST_CRATE)?;
+        let target = match target {
+            None => return Ok(None),
+            Some(t) => t,
+        };
+
+        let mutations = get_env_var_option(ENV_VAR_MUTTEST_MUTATION)?
+            .map(|mutation| {
+                mutation
+                    .split(';')
+                    .map(|m| {
+                        let (id, m) = m.split_once('=').expect("invalid mutation format");
+                        let id: usize = id.parse().expect("invalid mutation format");
+                        (id, Arc::from(m))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let details_file = get_env_var_pathbuf_option(ENV_VAR_DETAILS_FILE)
             .as_deref()
             .map(open_collector_file)
             .transpose()?
             .map(Mutex::new);
-        // TODO: fully read details the file (reading coverage does not make much sense)
-        let coverage_file = conf
-            .coverage_file
+        // TODO: fully read details the file
+        let coverage_file = get_env_var_pathbuf_option(ENV_VAR_COVERAGE_FILE)
             .as_deref()
             .map(open_collector_file)
             .transpose()?
             .map(Mutex::new);
-        Ok(DataCollector {
-            details: Mutex::new(Default::default()),
-            coverage: Mutex::new(Default::default()),
-            details_file,
-            coverage_file,
-        })
+
+        Ok(Some(MuttestContext {
+            target,
+            mutations,
+            collector: DataCollector {
+                details: Mutex::new(Default::default()),
+                coverage: Mutex::new(Default::default()),
+                details_file,
+                coverage_file,
+            },
+        }))
     }
 }
 
-impl<F: Write> DataCollector<F> {
+impl<F> MuttestContext<F> {
+    pub(crate) fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        self.target == m_id.crate_name
+    }
+    pub(crate) fn get_mutation(&self, m_id: BakedMutableId) -> Mutation {
+        debug_assert!(
+            self.tracks_mutable(m_id),
+            "context for {} called for {m_id}",
+            self.target
+        );
+
+        match self.mutations.get(&m_id.id).cloned() {
+            Some(m) => Mutation::Mutate(m),
+            None => Mutation::Unchanged,
+        }
+    }
+}
+
+impl<F: Write> MuttestContext<F> {
     pub(crate) fn write_details(&self, id: usize, loc: BakedLocation, ty: &str, mutations: &str) {
-        // TODO: avoid unnecessary cloning
-        let is_new = self.details.lock().unwrap().insert(id);
+        let is_new = self.collector.details.lock().unwrap().insert(id);
         if !is_new {
             return;
         }
 
-        if let Some(f) = &self.details_file {
+        if let Some(f) = &self.collector.details_file {
             let mut f = f.lock().unwrap();
             let BakedLocation {
                 file,
@@ -74,8 +129,8 @@ impl<F: Write> DataCollector<F> {
         }
     }
 
-    pub(crate) fn write_coverage(&self, id: usize, weak: Option<&str>) {
-        let mut coverage_map = self.coverage.lock().unwrap();
+    pub(crate) fn write_coverage(&self, id: usize, behavior: Option<&str>) {
+        let mut coverage_map = self.collector.coverage.lock().unwrap();
         let mut update = false;
 
         let data = match coverage_map.entry(id) {
@@ -86,20 +141,20 @@ impl<F: Write> DataCollector<F> {
             }
         };
 
-        if let Some(weak) = weak {
-            debug_assert!(!weak.contains(':'));
+        if let Some(behavior) = behavior {
+            debug_assert!(!behavior.contains(':'));
             if data.is_empty() {
-                *data = weak.to_owned();
+                *data = behavior.to_owned();
                 update = true;
-            } else if data.split(':').all(|x| x != weak) {
+            } else if data.split(':').all(|x| x != behavior) {
                 data.push(':');
-                data.push_str(weak);
+                data.push_str(behavior);
                 update = true;
             }
         }
 
         if update {
-            if let Some(f) = &self.coverage_file {
+            if let Some(f) = &self.collector.coverage_file {
                 let mut f = f.lock().unwrap();
                 writeln!(f, "{id},{data}").expect("unable to write mutable detail");
                 f.flush().expect("unable to flush mutable detail");
@@ -214,4 +269,23 @@ impl CollectedData {
         }
         Ok(())
     }
+}
+
+pub fn get_env_var_option(var_name: &'static str) -> Result<Option<String>, Error> {
+    match std::env::var(var_name) {
+        Ok(s) => Ok(Some(s)),
+        Err(VarError::NotPresent) => Ok(None),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(var_name)),
+    }
+}
+pub fn get_env_var(var_name: &'static str) -> Result<String, Error> {
+    match std::env::var(var_name) {
+        Ok(s) => Ok(s),
+        Err(VarError::NotPresent) => Err(Error::EnvVarMissing(var_name)),
+        Err(VarError::NotUnicode(_)) => Err(Error::EnvVarUnicode(var_name)),
+    }
+}
+
+pub fn get_env_var_pathbuf_option(var_name: &'static str) -> Option<PathBuf> {
+    std::env::var_os(var_name).map(|e| PathBuf::from(e))
 }

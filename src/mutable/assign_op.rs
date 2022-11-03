@@ -102,6 +102,7 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
 }
 
 pub fn run(m_id: BakedMutableId) -> Mutation {
+    m_id.report_coverage(None);
     m_id.get_active_mutation()
 }
 

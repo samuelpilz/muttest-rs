@@ -1,18 +1,18 @@
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     ops::Deref,
-    sync::{
-        atomic::{AtomicUsize, Ordering::SeqCst},
-        Arc, Mutex, RwLock,
-    },
+    sync::{Arc, Mutex, RwLock},
 };
 
 use crate::{
-    collector::{CollectedData, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
-    BakedMutableId, DataCollector, MutableId, Mutation, MutationsMap,
+    context::{
+        CollectedData, DataCollector, MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD,
+    },
+    BakedMutableId, MutableId,
 };
 
-pub use crate::{call_isolated, data_isolated};
+pub use crate::{call_isolated, data_isolated, return_early_if_nesting};
 
 // TODO: BTreeMap::new is not yet const :/
 lazy_static::lazy_static! {
@@ -22,25 +22,59 @@ lazy_static::lazy_static! {
 
 thread_local! {
     /// describes the nesting in the testcase for selftest
-    pub static MUTATION_NESTING: AtomicUsize = AtomicUsize::new(0);
+    pub static MUTATION_NESTING: RefCell<Vec<&'static str>> = RefCell::new(vec![]);
 }
 
-impl Drop for Mutation {
-    fn drop(&mut self) {
-        MUTATION_NESTING.with(|n| {
-            n.fetch_sub(1, SeqCst);
-        });
+pub enum NestingToken {
+    Isolated,
+    Selftest(&'static str),
+    Nested,
+}
+
+impl NestingToken {
+    pub fn create(m_id: BakedMutableId, s: &'static str) -> Self {
+        // if this is compiled in `cfg(test)`, then only possible mutations are isolated and selftest
+        if m_id.is_isolated() {
+            return Self::Isolated;
+        }
+        assert_eq!(m_id.crate_name, "muttest-core:muttest_core");
+
+        MUTATION_NESTING.with(move |v| {
+            let mut v = v.borrow_mut();
+            if v.contains(&s) {
+                Self::Nested
+            } else {
+                v.push(s);
+                Self::Selftest(s)
+            }
+        })
     }
 }
-
-#[derive(Debug)]
-pub(crate) struct TestContext {
-    pub(crate) mutations: MutationsMap,
-    pub(crate) collector: DataCollector<Vec<u8>>,
+impl Drop for NestingToken {
+    fn drop(&mut self) {
+        match self {
+            Self::Selftest(s) => MUTATION_NESTING.with(|v| {
+                let last = v.borrow_mut().pop().expect("nesting is empty");
+                assert_eq!(last, *s, "invalid nesting");
+            }),
+            _ => {}
+        }
+    }
+}
+#[macro_export]
+macro_rules! return_early_if_nesting {
+    ($m_id:expr, $name:literal, $e:expr) => {
+        let __muttest_nesting_token = match crate::tests::NestingToken::create($m_id, $name) {
+            crate::tests::NestingToken::Nested => return $e,
+            t => t,
+        };
+    };
 }
 
+type TestContext = MuttestContext<Vec<u8>>;
+
 impl BakedMutableId {
-    pub(crate) fn is_isolated_mutable(self) -> bool {
+    pub(crate) fn is_isolated(self) -> bool {
         self.crate_name.starts_with("#")
     }
     pub(crate) fn test_context(self) -> Arc<TestContext> {
@@ -68,7 +102,7 @@ macro_rules! call_isolated {
 #[macro_export]
 macro_rules! data_isolated {
     ($f:ident) => {
-        crate::collector::CollectedData::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
+        crate::context::CollectedData::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
     };
 }
 
@@ -94,19 +128,18 @@ pub fn run<'a, T>(
         }
     }
 
+    let context = TestContext {
+        target: target_name.to_owned(),
+        mutations: mutation
+            .into_iter()
+            .map(|(m_id, m)| (m_id, Arc::from(m)))
+            .collect(),
+        collector: DataCollector::new_for_test(),
+    };
     TEST_CONTEXT
         .write()
         .unwrap()
-        .insert(
-            target_name.to_owned(),
-            Arc::new(TestContext {
-                mutations: mutation
-                    .into_iter()
-                    .map(|(m_id, m)| (m_id, Arc::from(m)))
-                    .collect(),
-                collector: DataCollector::new_for_test(),
-            }),
-        )
+        .insert(target_name.to_owned(), Arc::new(context))
         .ok_or(())
         .expect_err("concurrent execution of test ");
 
