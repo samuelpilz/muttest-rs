@@ -1,8 +1,6 @@
-use std::io::Write;
-
 use proc_macro2::{Span, TokenStream};
 
-use crate::{transformer::MuttestTransformer, Error, MutableData};
+use crate::{report::MutableAnalysis, transformer::MuttestTransformer, Error};
 
 pub mod assign_op;
 pub mod binop_bool;
@@ -16,22 +14,19 @@ pub mod lit_str;
 // * lits: char, byte, byte_str, float
 // * unop: neg, not
 
-pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "id,kind,code,file,path,attr_span,span\n";
-// TODO: add attr_id to enable grouping
-
 pub trait Mutable<'a> {
     const NAME: &'static str;
 
     fn span(&self) -> Span;
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream;
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream;
 }
 
 // TODO: for many mutables, the possible mutations should be clear from definition
 // TODO: tests
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>>, Error> {
-    let mutation = match &*mutable.kind {
+pub fn mutations_for_mutable(mutable: &MutableAnalysis) -> Result<Vec<String>, Error> {
+    Ok(match &*mutable.kind {
         lit_int::MutableLitInt::NAME => {
             let i = mutable.code.parse::<u128>().expect("unable to parse int");
             let mut m = vec![];
@@ -69,16 +64,11 @@ pub fn mutations_for_mutable(mutable: &MutableData) -> Result<Option<Vec<String>
             .collect(),
         // fallback to mutable's description of possible mutations
         _ => mutable
-            .details
+            .mutations
             .iter()
-            .flat_map(|m| &m.possible_mutations)
+            .flatten()
             .filter(|&x| x != &mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
-    };
-    if mutation.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(mutation))
-    }
+    })
 }

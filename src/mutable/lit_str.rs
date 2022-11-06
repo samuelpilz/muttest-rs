@@ -1,5 +1,4 @@
 use std::{
-    io::Write,
     ops::{Deref, DerefMut},
     sync::RwLock,
 };
@@ -27,7 +26,7 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let lit = self.lit;
 
@@ -59,6 +58,8 @@ pub fn run(
     match m_id.get_active_mutation().as_option() {
         None => s,
         Some(s_mut) => {
+            // TODO: unescape the string & return empty string (and other known strings) if possible
+
             let r_lock = mutation.read().unwrap();
             match r_lock.deref() {
                 Some(s_lock) if s_lock == &s_mut => return s_lock,
@@ -73,7 +74,6 @@ pub fn run(
                 _ => {}
             }
             // yes, this leaks. but only once per mutation.
-            // NB: this does not leak for the empty string
             let boxed_str: Box<str> = Box::from(s_mut);
             let leaked = Box::leak(boxed_str);
             println!("mutated: {leaked:?}");

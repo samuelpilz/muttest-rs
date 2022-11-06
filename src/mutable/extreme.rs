@@ -1,4 +1,4 @@
-use std::{io::Write, marker::PhantomData, ops::ControlFlow};
+use std::{marker::PhantomData, ops::ControlFlow};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -25,7 +25,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let TransformSnippets {
             m_id,
@@ -175,11 +175,11 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             NO_MUTATIONS,
         )
@@ -193,12 +193,7 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
-                .as_ref()
-                .unwrap()
-                .possible_mutations
-                .to_vec(),
+            &res.report.analysis(1).mutations.as_ref().unwrap().to_vec(),
             NO_MUTATIONS,
         )
     }
@@ -212,11 +207,11 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            res.data.mutables[&1]
-                .details
+            res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_into::<String>(),
             NO_MUTATIONS,
         );
@@ -233,11 +228,11 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["default"]
         );

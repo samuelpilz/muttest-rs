@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
@@ -24,7 +22,7 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
@@ -209,12 +207,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.data.mutables[&1]
-                .details
-                .as_ref()
-                .unwrap()
-                .possible_mutations
-                .len(),
+            res.report.analysis(1).mutations.as_ref().unwrap().len(),
             // all mutations possible
             CALC_OP_NAMES.len()
         );
@@ -231,8 +224,8 @@ mod tests {
 
         let data = data_isolated!(f);
         assert_eq!(data.mutables.len(), 2);
-        assert_eq!(&data.mutables[&1].code, "*");
-        assert_eq!(&data.mutables[&2].code, "+");
+        assert_eq!(&data.analysis(1).code, "*");
+        assert_eq!(&data.analysis(2).code, "+");
 
         assert_eq!(call_isolated! {f()}.res, 11);
         assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
@@ -250,11 +243,11 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["+"]
         );
@@ -296,22 +289,22 @@ mod tests {
         let res = call_isolated! {f1()};
         assert_eq!(res.res, O1);
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["+"]
         );
         let res = call_isolated! {f2()};
         assert_eq!(res.res, O2);
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["-"]
         );
@@ -327,11 +320,11 @@ mod tests {
         let now = Instant::now();
         let res = call_isolated! {f(now)};
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["+", "-"]
         );
@@ -351,9 +344,9 @@ mod tests {
         }
 
         let data = data_isolated!(f);
-        assert_eq!(&data.mutables[&1].code, "*");
-        assert_eq!(&data.mutables[&2].code, "*");
-        assert_eq!(&data.mutables[&3].code, "+");
+        assert_eq!(&data.analysis(1).code, "*");
+        assert_eq!(&data.analysis(2).code, "*");
+        assert_eq!(&data.analysis(3).code, "+");
 
         let res = call_isolated! {f(-4, 7)};
         assert_eq!(res.res, 16 + 49);
@@ -375,11 +368,11 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["<<", ">>"]
         );
@@ -452,7 +445,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(5, res.res);
-        assert_ne!(res.data.mutables[&1].details, None);
-        assert_eq!(res.data.coverage.get(&1), None);
+        assert_ne!(res.report.analysis(1).mutations, None);
+        assert_eq!(res.report.analysis(1).covered, false);
     }
 }

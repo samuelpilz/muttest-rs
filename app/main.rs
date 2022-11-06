@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -7,12 +6,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
+use cargo_metadata::camino::Utf8Path;
 use clap::Parser;
 use muttest_core::{
-    context::{self, CollectedData},
+    context,
     mutable::{self, binop_cmp::MutableBinopCmp, mutations_for_mutable, Mutable},
-    MutableData,
+    report::{MutableAnalysis, MuttestReport, MuttestReportForCrate, TestBin},
 };
 use wait_timeout::ChildExt;
 
@@ -71,13 +70,16 @@ fn main() -> Result<(), Error> {
     setup_csv_file(&coverage_path, context::COVERAGE_FILE_CSV_HEAD)?;
 
     // run test suites without mutations for coverage
-    for (crate_name, data) in &mut report.muttest_crates {
+    for ((pkg_name, crate_name), data) in &mut report.muttest_crates {
         for test_bin in &mut report.test_bins {
             println!("call {}", &test_bin.name);
             let start_time = Instant::now();
             let status = Command::new(&test_bin.path)
                 .env(context::ENV_VAR_MUTTEST_DIR, &muttest_dir)
-                .env(context::ENV_VAR_MUTTEST_CRATE, crate_name)
+                .env(
+                    context::ENV_VAR_MUTTEST_TARGET,
+                    format!("{pkg_name}:{crate_name}"),
+                )
                 .env(context::ENV_VAR_DETAILS_FILE, &details_path)
                 .env(context::ENV_VAR_COVERAGE_FILE, &coverage_path)
                 .stdout(Stdio::null())
@@ -97,10 +99,20 @@ fn main() -> Result<(), Error> {
 
     // TODO: calc&print covered mutables
 
-    for (crate_name, data) in &report.muttest_crates {
+    for ((pkg_name, crate_name), data) in &report.muttest_crates {
         let total_mutables = data.mutables.len();
-        let covered_mutables = data.coverage.len();
-        println!("{crate_name}: {covered_mutables}/{total_mutables} mutables covered");
+        let covered_mutables = data
+            .mutables
+            .values()
+            .filter(|m| m.analysis.covered)
+            .count();
+        println!("{pkg_name}:{crate_name}: {covered_mutables}/{total_mutables} mutables covered");
+
+        for (m_id, rep) in &data.mutables {
+            if rep.analysis.covered {
+                println!("cover {m_id}");
+            }
+        }
     }
     println!();
 
@@ -108,45 +120,46 @@ fn main() -> Result<(), Error> {
     let mut killed_mutants = 0;
 
     // evaluate mutations
-    for (crate_name, data) in &mut report.muttest_crates {
-        let ids = data.mutables.keys().cloned().collect::<Vec<_>>();
+    for ((pkg_name, crate_name), crate_report) in &mut report.muttest_crates {
+        println!("{pkg_name}:{crate_name}");
+
+        let ids = crate_report.mutables.keys().cloned().collect::<Vec<_>>();
         for &id in &ids {
-            let mutable @ MutableData {
+            let mutable @ MutableAnalysis {
                 code,
                 kind,
-                location,
+                behavior,
                 ..
-            } = &data.mutables[&id];
-            let coverage = data.coverage.get(&id);
-            println!("{id}: `{code}` ({kind}) in {location} ");
+            } = &crate_report.mutables[&id].analysis;
+            println!(
+                "{id}: {kind} `{code}` in {} ",
+                crate_report.location_of(id).unwrap()
+            );
 
-            let mutations = mutations_for_mutable(mutable)?;
-            let mutations = match mutations {
-                Some(m) => m,
-                None => {
-                    println!("  no mutations");
-                    continue;
-                }
-            };
-
+            let mutations = mutations_for_mutable(&mutable)?;
             total_mutants += mutations.len();
 
-            let coverage = match coverage {
-                Some(c) => c,
-                None => {
-                    println!("  not covered ({} mutations)", mutations.len());
-                    continue;
-                }
+            let Some(behavior) = &behavior else {
+                println!("  not covered ({})", match mutations.len() {
+                    0 => format!("no mutations"),
+                    1 => format!("1 mutation"),
+                    n => format!("{n} mutations"),
+                });
+                continue;
             };
 
+            if mutations.is_empty() {
+                println!("  no mutations");
+                continue;
+            }
+
             for m in mutations {
-                // TODO: display lit_str mutations correctly
                 print!("  mutation `{m}` ... ");
                 std::io::stdout().flush()?;
 
                 // TODO: improve weak surviving
-                if *kind == MutableBinopCmp::NAME
-                    && mutable::binop_cmp::identical_behavior(code, &m, coverage)
+                if kind == MutableBinopCmp::NAME
+                    && mutable::binop_cmp::identical_behavior(&code, &m, behavior)
                 {
                     println!("survived weak mutation testing");
                     continue;
@@ -157,7 +170,11 @@ fn main() -> Result<(), Error> {
                 // run test suites without mutations for coverage
                 for test_bin in &report.test_bins {
                     let mut test = Command::new(&test_bin.path)
-                        .env(context::ENV_VAR_MUTTEST_CRATE, crate_name)
+                        .env(
+                            context::ENV_VAR_MUTTEST_TARGET,
+                            format!("{pkg_name}:{crate_name}"),
+                        )
+                        // TODO: repeating pkg/crate part of id makes little sense here
                         .env(context::ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
                         // TODO: think about details in mutated runs
                         .stdout(Stdio::null())
@@ -188,26 +205,9 @@ fn main() -> Result<(), Error> {
     }
     println!("{killed_mutants}/{total_mutants} mutants killed");
 
-    serde_json::to_writer(
-        File::create(muttest_dir.join("report.json"))?,
-        &report.muttest_crates,
-    )
-    .unwrap();
     Ok(())
 }
 
-#[derive(Debug, Default)]
-struct MuttestReport {
-    muttest_crates: BTreeMap<String, CollectedData>,
-    test_bins: Vec<TestBin>,
-}
-
-#[derive(Debug)]
-struct TestBin {
-    path: Utf8PathBuf,
-    name: String,
-    exec_time: Option<Duration>,
-}
 /// execute `cargo test --no-run --message-format=json` and collect relevant output
 fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<MuttestReport, Error> {
     let mut report = MuttestReport::default();
@@ -237,13 +237,10 @@ fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<Muttes
             }
             _ => continue,
         };
-        let test_exe = match test_artifact.executable.as_deref() {
-            Some(e) => e,
-            None => continue,
-        };
+        let Some(test_exe) = test_artifact.executable.as_deref() else { continue };
 
         let test_exe = TestBin {
-            path: test_exe.to_owned(),
+            path: test_exe.as_std_path().to_owned(),
             name: test_exe.file_name().expect("test exe file name").to_owned(),
             exec_time: None,
         };
@@ -259,26 +256,24 @@ fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<Muttes
     for file in std::fs::read_dir(muttest_dir)? {
         let file = file?;
         let file_name = file.file_name().into_string().unwrap();
-        let mutated_package = file_name
+        let Some(target) = file_name
             .strip_prefix("mutable-definitions-")
-            .and_then(|f| f.strip_suffix(".csv"));
-        let mutated_package = match mutated_package {
-            None => continue,
-            Some(n) => n,
-        };
+            .and_then(|f| f.strip_suffix(".csv")) 
+            else { continue };
+        let Some((pkg_name, crate_name)) = target.split_once(':') else {continue};
+
         // skip packages not considered
-        if opt.package.is_some()
-            && opt.package.as_deref() != mutated_package.split_once(":").map(|x| x.0)
-        {
+        if opt.package.is_some() && opt.package.as_deref() != Some(pkg_name) {
             continue;
         }
 
         // TODO: try to delete outdated muttest files
         let file_path = muttest_dir.join(&file_name);
-        report.muttest_crates.insert(
-            mutated_package.to_owned(),
-            CollectedData::from_definition_csv(File::open(file_path)?)?,
-        );
+        let crate_report = MuttestReportForCrate::from_definition_csv(File::open(file_path)?)?;
+
+        report
+            .muttest_crates
+            .insert((pkg_name.to_owned(), crate_name.to_owned()), crate_report);
     }
 
     Ok(report)

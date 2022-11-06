@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
@@ -24,7 +22,7 @@ impl<'a> Mutable<'a> for MutableAssignOp<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
@@ -196,12 +194,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.data.mutables[&1]
-                .details
-                .as_ref()
-                .unwrap()
-                .possible_mutations
-                .len(),
+            res.report.analysis(1).mutations.as_ref().unwrap().len(),
             // all mutations possible
             CALC_ASSIGN_OP_NAMES.len()
         );
@@ -219,11 +212,11 @@ mod tests {
         let res = call_isolated! {f("a".to_owned())};
         assert_eq!(&*res.res, "ab");
         assert_eq!(
-            &res.data.mutables[&1]
-                .details
+            &res.report
+                .analysis(1)
+                .mutations
                 .as_ref()
                 .unwrap()
-                .possible_mutations
                 .to_vec_ref(),
             &["+="]
         );

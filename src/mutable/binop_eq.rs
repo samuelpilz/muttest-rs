@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
@@ -24,7 +22,7 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
@@ -79,7 +77,16 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
-        assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
+        assert_eq!(
+            &res.report
+                .analysis(1)
+                .behavior
+                .as_ref()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            &["NE"]
+        );
         assert_eq!(true, call_isolated! {f() where 1 => "!="}.res);
     }
 
@@ -91,8 +98,17 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
-        assert_eq!(&res.data.coverage[&1].iter().collect::<Vec<_>>(), &["NE"]);
-        // assert_eq!(false, call_isolated! {f() where 1 => "=="}.res);
+        assert_eq!(
+            &res.report
+                .analysis(1)
+                .behavior
+                .as_ref()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            &["NE"]
+        );
+        assert_eq!(false, call_isolated! {f() where 1 => "=="}.res);
     }
 
     #[test]
@@ -139,8 +155,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(1, res.res);
-        assert_ne!(res.data.mutables[&1].details, None);
-        assert_eq!(res.data.coverage.get(&1), None);
+        assert_ne!(res.report.analysis(1).module, None);
+        assert_eq!(res.report.analysis(1).covered, false);
     }
 
     #[test]

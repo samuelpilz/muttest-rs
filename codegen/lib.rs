@@ -5,7 +5,7 @@ use std::{
     ops::{ControlFlow, Deref, DerefMut},
     path::PathBuf,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering::SeqCst},
         Mutex,
     },
 };
@@ -16,9 +16,11 @@ use muttest_core::{
     mutable::{
         assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
         binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
-        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, MUTABLE_DEFINITIONS_CSV_HEAD,
+        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
     },
-    transformer::{MutablesConf, MuttestTransformer, TransformerConf},
+    transformer::{
+        MutablesConf, MuttestTransformer, TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
+    },
     Error, PathSegment,
 };
 use proc_macro::TokenStream;
@@ -38,24 +40,19 @@ lazy_static! {
             Err(e) => panic!("{}", e),
         }
     };
-    static ref TARGET_NAME: String = {
-        let mut target_name = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
-        let crate_name = std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
-        if crate_name != target_name {
-            target_name.push(':');
-            target_name.push_str(&crate_name);
-        }
-        target_name
-    };
+    static ref PKG_NAME: String = std::env::var("CARGO_PKG_NAME").expect("unable to get env var");
+    static ref CRATE_NAME: String =
+        std::env::var("CARGO_CRATE_NAME").expect("unable to get env var");
     static ref MUTABLE_DEFINITIONS_FILE: Mutex<Option<fs::File>> =
         Mutex::new(open_definitions_file().expect("unable to open definitions file"));
 }
-static MUTABLE_ID_NUM: AtomicUsize = AtomicUsize::new(1);
-static ISOLATED_MUTATION: AtomicUsize = AtomicUsize::new(1);
+static ATTR_ID: AtomicUsize = AtomicUsize::new(1);
 
 /// isolated mutation for unit testing of `muttest-core` itself.
 #[proc_macro_attribute]
 pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
+    static ISOLATED_MUTATION: AtomicUsize = AtomicUsize::new(1);
+
     // TODO: hide behind feature (unnecessary codegen)
     let input = parse_macro_input!(input as ItemFn);
 
@@ -65,11 +62,9 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
     let is_lib_test = std::env::var("CARGO_CRATE_NAME").unwrap() == "muttest_core";
 
-    let target_name = format!(
-        "#isolated-{}",
-        ISOLATED_MUTATION.fetch_add(1, Ordering::SeqCst)
-    );
+    let crate_name = format!("#{}", ISOLATED_MUTATION.fetch_add(1, SeqCst));
     let mut conf = TransformerConf {
+        attr_id: 0,
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: if is_lib_test {
@@ -77,7 +72,8 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         } else {
             quote!(::muttest_core::api)
         },
-        target_name: target_name.clone(),
+        pkg_name: "#isolated".to_owned(),
+        crate_name: crate_name.to_owned(),
     };
     if !attr.is_empty() {
         let s = parse_macro_input!(attr as LitStr);
@@ -85,14 +81,15 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     // perform transformation
-    let mut definitions_csv = MUTABLE_DEFINITIONS_CSV_HEAD.as_bytes().to_vec();
-    let id = AtomicUsize::new(1);
-    let mut transformer = MuttestTransformer::new(conf, Some(&mut definitions_csv), &id);
+    let mut transformer = MuttestTransformer::new(conf);
     let result = FoldImpl(&mut transformer).fold_item_fn(input);
 
-    // write muttest "logs" to variables
-    let definitions_csv = std::str::from_utf8(&definitions_csv).unwrap();
-    let num_mutables = id.load(Ordering::SeqCst);
+    let mut definitions_csv = MUTABLE_DEFINITIONS_CSV_HEAD.to_owned();
+    for l in transformer.definitions() {
+        definitions_csv.push_str(l);
+        definitions_csv.push('\n');
+    }
+    let num_mutables = transformer.num_mutables();
 
     // write context of transformation next to transformed function
     let mut mod_ident = result.sig.ident.clone();
@@ -102,7 +99,8 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         mod #mod_ident {
             pub const MUTABLES_CSV: &str = #definitions_csv;
             pub const NUM_MUTABLES: usize = #num_mutables;
-            pub const TARGET_NAME: &str = #target_name;
+            pub const PKG_NAME: &str = "#isolated";
+            pub const CRATE_NAME: &str = #crate_name;
         }
     };
 
@@ -118,17 +116,24 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
 
     let muttest_api = quote! {crate::api};
     let conf = TransformerConf {
+        attr_id: ATTR_ID.fetch_add(1, SeqCst),
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: muttest_api.clone(),
-        target_name: TARGET_NAME.clone(),
+        pkg_name: PKG_NAME.clone(),
+        crate_name: CRATE_NAME.clone(),
     };
 
-    let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
-
-    let mut transformer = MuttestTransformer::new(conf, definitions_file.as_mut(), &MUTABLE_ID_NUM);
+    let mut transformer = MuttestTransformer::new(conf);
     let mut result = FoldImpl(&mut transformer).fold_item_fn(input);
 
+    if let Some(f) = &mut *MUTABLE_DEFINITIONS_FILE.lock().unwrap() {
+        for l in transformer.definitions() {
+            writeln!(f, "{l}").expect("unable to write to definitions file");
+        }
+    }
+
+    // add code for early-return to mutated function
     if !attr.is_empty() {
         // TODO: this is not a good interface
         let default_expr = parse_macro_input!(attr as Expr);
@@ -158,15 +163,22 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
     let conf = TransformerConf {
+        attr_id: ATTR_ID.fetch_add(1, SeqCst),
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: quote!(muttest),
-        target_name: TARGET_NAME.clone(),
+        pkg_name: PKG_NAME.clone(),
+        crate_name: CRATE_NAME.clone(),
     };
-    let mut definitions_file = MUTABLE_DEFINITIONS_FILE.lock().unwrap();
 
-    let mut transformer = MuttestTransformer::new(conf, definitions_file.as_mut(), &MUTABLE_ID_NUM);
+    let mut transformer = MuttestTransformer::new(conf);
     let result = FoldImpl(&mut transformer).fold_file(input);
+
+    if let Some(f) = &mut *MUTABLE_DEFINITIONS_FILE.lock().unwrap() {
+        for l in transformer.definitions() {
+            writeln!(f, "{l}").expect("unable to write to definitions file");
+        }
+    }
 
     result.into_token_stream().into()
 }
@@ -174,7 +186,7 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
 fn open_definitions_file() -> Result<Option<fs::File>, Error> {
     match &*MUTTEST_DIR {
         Some(dir) => {
-            let file_name = format!("mutable-definitions-{}.csv", &*TARGET_NAME);
+            let file_name = format!("mutable-definitions-{}:{}.csv", &*PKG_NAME, &*CRATE_NAME);
             let mut file = fs::File::create(PathBuf::from(dir).join(file_name))?;
             write!(&mut file, "{MUTABLE_DEFINITIONS_CSV_HEAD}")?;
             file.flush()?;
@@ -185,15 +197,15 @@ fn open_definitions_file() -> Result<Option<fs::File>, Error> {
     }
 }
 
-struct FoldImpl<'a, W: Write>(&'a mut MuttestTransformer<'a, W>);
-impl<'a, W: Write> Deref for FoldImpl<'a, W> {
-    type Target = MuttestTransformer<'a, W>;
+struct FoldImpl<'a>(&'a mut MuttestTransformer);
+impl Deref for FoldImpl<'_> {
+    type Target = MuttestTransformer;
 
     fn deref(&self) -> &Self::Target {
         self.0
     }
 }
-impl<'a, W: Write> DerefMut for FoldImpl<'a, W> {
+impl DerefMut for FoldImpl<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
     }
@@ -321,7 +333,7 @@ impl<'a> MatchMutable<'a, ItemFn> for MutableExtreme<'a> {
     }
 }
 
-impl<W: Write> FoldImpl<'_, W> {
+impl FoldImpl<'_> {
     fn try_mutate<'a, 'b: 'a, T: syn::parse::Parse, M: MatchMutable<'a, T>>(
         &mut self,
         expr: &'b T,
@@ -358,7 +370,7 @@ impl<W: Write> FoldImpl<'_, W> {
     }
 }
 
-impl<W: Write> Fold for FoldImpl<'_, W> {
+impl Fold for FoldImpl<'_> {
     // TODO: inspect & preserve attrs
     // TODO: tests ...
     fn fold_item_const(&mut self, item_const: ItemConst) -> ItemConst {

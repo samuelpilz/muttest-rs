@@ -3,7 +3,6 @@
 //! There are some internals here that are not meant for mutation testing users.
 
 use std::{
-    collections::BTreeSet,
     fmt,
     fs::File,
     io,
@@ -13,12 +12,13 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::context::MuttestContext;
 
 pub mod context;
 pub mod mutable;
+pub mod report;
 pub mod transformer;
 
 #[cfg(test)]
@@ -27,7 +27,7 @@ pub(crate) mod tests;
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::{BakedLocation, BakedMutableId, LineColumn, Span};
+    pub use crate::{BakedLocation, BakedMutableId, CrateLocalMutableId, LineColumn, Span};
 
     pub use std::{
         borrow::Cow, column, concat, file, line, marker::PhantomData, module_path,
@@ -105,10 +105,16 @@ pub enum Error {
     CsvFile(PathBuf, csv::Error),
     #[error("invalid mutation format: '{0}'")]
     MutationFormat(String),
+    #[error("invalid target format: '{0}'")]
+    TargetFormat(String),
     #[error("invalid MutableId: '{0}'")]
     MutableIdFormat(String),
-    #[error("not a known mutable: '{0}'")]
-    UnknownMutable(usize), // TODO: somehow encode crate_name?
+    #[error("not a known mutable id: '{0}'")]
+    UnknownMutableId(MutableId),
+    #[error("not a known mutable id: '{0}'")]
+    UnknownCrateLocalMutableId(CrateLocalMutableId),
+    #[error("not a known mutate attr id: '{0}'")]
+    UnknownMutateAttr(usize),
     #[error("invalid location: '{0}'")]
     LocationFormat(String),
     #[error("invalid path: '{0}'")]
@@ -123,41 +129,12 @@ impl Error {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct MutableData {
-    pub kind: String,
-    pub code: String,
-    pub location: MutableLocation,
-    pub details: Option<MutableDetails>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct MutableDetails {
-    pub mutable_type: String,
-    pub possible_mutations: BTreeSet<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MutableCoverage {
-    id: usize,
-    data: String,
-}
-
 pub struct BakedLocation {
     pub file: &'static str,
     pub module: &'static str,
     pub attr_span: Span,
     pub span: Span,
     // TODO: add more end location info for feature proc_macro_span / proc_macro_span_shrink
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[allow(unused)]
-pub struct MutableLocation {
-    pub file: String,
-    pub module: String,
-    pub path: Vec<PathSegment>,
-    pub attr_span: Option<Span>,
-    pub span: Option<Span>,
 }
 
 // TODO: use proc-macro2 structs instead??
@@ -200,43 +177,71 @@ impl FromStr for PathSegment {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CrateLocalMutableId {
+    pub attr_id: usize,
+    pub id: usize,
+}
+impl fmt::Display for CrateLocalMutableId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.attr_id, self.id)
+    }
+}
+impl FromStr for CrateLocalMutableId {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err1 = |_| Error::MutableIdFormat(s.to_owned());
+        let (attr_id, id) = s
+            .split_once(':')
+            .ok_or_else(|| Error::MutableIdFormat(s.to_owned()))?;
+        let attr_id = attr_id.parse().map_err(err1)?;
+        let id = id.parse().map_err(err1)?;
+        Ok(Self { attr_id, id })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MutableId {
+    pub pkg_name: String,
     pub crate_name: String,
-    pub id: usize,
+    pub id: CrateLocalMutableId,
 }
 impl fmt::Display for MutableId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.id, self.crate_name)
+        write!(f, "{}:{}:{}", self.pkg_name, self.crate_name, self.id)
     }
 }
 impl FromStr for MutableId {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let id = s
+        let err1 = |_| Error::MutableIdFormat(s.to_owned());
+        let (pkg_name, rest) = s
             .split_once(':')
             .ok_or_else(|| Error::MutableIdFormat(s.to_owned()))?;
+        let (crate_name, rest) = rest
+            .split_once(':')
+            .ok_or_else(|| Error::MutableIdFormat(s.to_owned()))?;
+        let id = rest.parse().map_err(err1)?;
         Ok(Self {
-            id: id
-                .0
-                .parse()
-                .map_err(|_| Error::MutableIdFormat(s.to_owned()))?,
-            crate_name: id.1.to_owned(),
+            pkg_name: pkg_name.to_owned(),
+            crate_name: crate_name.to_owned(),
+            id,
         })
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BakedMutableId {
-    // TODO: rename to `target`
+    pub pkg_name: &'static str,
     pub crate_name: &'static str,
-    pub id: usize,
+    pub id: CrateLocalMutableId,
 }
 
 impl fmt::Display for BakedMutableId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.id, self.crate_name)
+        write!(f, "{}:{}:{}", self.pkg_name, self.crate_name, self.id)
     }
 }
 
@@ -252,17 +257,11 @@ macro_rules! with_context {
     };
 }
 impl BakedMutableId {
-    pub fn new_isolated(id: usize) -> Self {
-        Self::new(id, "")
-    }
-    pub fn new(id: usize, crate_name: &'static str) -> Self {
-        Self { id, crate_name }
-    }
-
     pub fn cloned(self) -> MutableId {
         MutableId {
-            id: self.id,
+            pkg_name: self.pkg_name.to_owned(),
             crate_name: self.crate_name.to_owned(),
+            id: self.id,
         }
     }
 
@@ -278,27 +277,10 @@ impl BakedMutableId {
 
     /// get the active mutation for a mutable
     fn get_active_mutation(self) -> Mutation {
-        with_context!(self, get_mutation(self), Mutation::Unchanged)
+        with_context!(self, get_mutation(self.id), Mutation::Unchanged)
     }
 }
 
-impl fmt::Display for MutableLocation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: only print known information
-        write!(
-            f,
-            "{}:{} in {}",
-            self.file,
-            display_or_empty_if_none(&self.span),
-            // TODO: loop instead
-            self.path
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(" => "), // TODO: use `intersperse` instead
-        )
-    }
-}
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.start.line, self.start.column)?;
@@ -359,7 +341,7 @@ fn parse_lc(s: &str) -> Result<LineColumn, Error> {
     })
 }
 
-fn display_or_empty_if_none(d: &Option<impl fmt::Display>) -> &dyn fmt::Display {
+pub fn display_or_empty_if_none(d: &Option<impl fmt::Display>) -> &dyn fmt::Display {
     match d {
         Some(d) => d,
         None => &"",
@@ -370,13 +352,5 @@ fn parse_or_none_if_empty<T: FromStr>(s: &str) -> Result<Option<T>, <T as FromSt
         Ok(None)
     } else {
         Ok(Some(s.parse()?))
-    }
-}
-
-fn split_or_empty<T: FromIterator<String>>(s: &str, sep: &str) -> T {
-    if s.is_empty() {
-        std::iter::empty().collect()
-    } else {
-        s.split(sep).map(ToOwned::to_owned).collect()
     }
 }

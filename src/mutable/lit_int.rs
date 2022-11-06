@@ -1,4 +1,4 @@
-use std::{fmt, io::Write};
+use std::fmt;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -23,7 +23,7 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let lit = self.lit;
 
@@ -111,7 +111,7 @@ mod tests {
         }
         let data = data_isolated!(_f);
         assert_eq!(data.mutables.len(), 1);
-        assert_eq!(data.mutables[&1].code, "1");
+        assert_eq!(data.analysis(1).code, "1");
     }
 
     #[test]

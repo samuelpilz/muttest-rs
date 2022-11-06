@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::BTreeSet, io::Write};
+use std::{cmp::Ordering, collections::BTreeSet};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
@@ -24,7 +24,7 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
         self.span
     }
 
-    fn transform<W: Write>(self, transformer: &mut MuttestTransformer<W>) -> TokenStream {
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
         let span = self.span;
         let op = self.op.to_token_stream();
         let op_str = op.to_string();
@@ -78,9 +78,9 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String>) -> bool {
+pub fn identical_behavior(code: &str, mutation: &str, behavior: &BTreeSet<String>) -> bool {
     // TODO: less stringy-typed
-    fn behavior(op: &str, ord: &str) -> bool {
+    fn eval(op: &str, ord: &str) -> bool {
         match op {
             "<" => ord == "LT",
             "<=" => ord != "GT",
@@ -89,9 +89,9 @@ pub fn identical_behavior(code: &str, mutation: &str, coverage: &BTreeSet<String
             _ => unimplemented!(),
         }
     }
-    coverage
+    behavior
         .iter()
-        .all(|ord| behavior(code, ord) == behavior(mutation, ord))
+        .all(|ord| eval(code, ord) == eval(mutation, ord))
 }
 
 pub struct Yes;
@@ -150,7 +150,15 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
-        assert_eq!(&res.data.coverage[&1].to_vec_ref(), &["LT"]);
+        assert_eq!(
+            &res.report
+                .analysis(1)
+                .behavior
+                .as_ref()
+                .unwrap()
+                .to_vec_ref(),
+            &["LT"]
+        );
         assert_eq!(false, call_isolated! {f() where 1 => ">"}.res);
         assert_eq!(false, call_isolated! {f() where 1 => ">="}.res);
     }
@@ -168,7 +176,15 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(2, res.res);
-        assert_eq!(&res.data.coverage[&1].to_vec_ref(), &["EQ", "LT"]);
+        assert_eq!(
+            &res.report
+                .analysis(1)
+                .behavior
+                .as_ref()
+                .unwrap()
+                .to_vec_ref(),
+            &["EQ", "LT"]
+        );
         let res = call_isolated! {f() where 1 => "<="};
         assert_eq!(3, res.res);
     }
@@ -210,8 +226,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
-        assert_ne!(res.data.mutables[&1].details, None);
-        assert_eq!(res.data.coverage.get(&1), None);
+        assert_ne!(res.report.analysis(1).module, None);
+        assert_eq!(res.report.analysis(1).covered, false);
     }
     #[test]
     fn assign_as_expr() {

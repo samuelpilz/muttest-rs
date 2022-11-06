@@ -6,10 +6,9 @@ use std::{
 };
 
 use crate::{
-    context::{
-        CollectedData, DataCollector, MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD,
-    },
-    BakedMutableId, MutableId,
+    context::{MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
+    report::{MutableAnalysis, MuttestReportForCrate},
+    BakedMutableId, CrateLocalMutableId, MutableId,
 };
 
 pub use crate::{call_isolated, data_isolated, return_early_if_nesting};
@@ -33,11 +32,12 @@ pub enum NestingToken {
 
 impl NestingToken {
     pub fn create(m_id: BakedMutableId, s: &'static str) -> Self {
-        // if this is compiled in `cfg(test)`, then only possible mutations are isolated and selftest
+        // this is compiled in `cfg(test)`, then only possible mutations are isolated and selftest
         if m_id.is_isolated() {
             return Self::Isolated;
         }
-        assert_eq!(m_id.crate_name, "muttest-core:muttest_core");
+        assert_eq!(m_id.pkg_name, "muttest-core");
+        assert_eq!(m_id.crate_name, "muttest_core");
 
         MUTATION_NESTING.with(move |v| {
             let mut v = v.borrow_mut();
@@ -75,7 +75,7 @@ type TestContext = MuttestContext<Vec<u8>>;
 
 impl BakedMutableId {
     pub(crate) fn is_isolated(self) -> bool {
-        self.crate_name.starts_with("#")
+        self.pkg_name == "#isolated"
     }
     pub(crate) fn test_context(self) -> Arc<TestContext> {
         TEST_CONTEXT
@@ -86,14 +86,26 @@ impl BakedMutableId {
             .clone()
     }
 }
+impl MuttestReportForCrate {
+    pub(crate) fn analysis(&self, id: usize) -> &MutableAnalysis {
+        &self
+            .mutables
+            .iter()
+            .find(|(m_id, _)| m_id.id == id)
+            .unwrap_or_else(|| panic!("no mutable wih {id} found"))
+            .1
+            .analysis
+    }
+}
 
 #[macro_export]
 macro_rules! call_isolated {
     ($f:ident $(::<$t:ty>)? ($($args:expr),*) $(where $m_id:expr => $m:expr)?) => {
         crate::tests::run$(::<$t>)?(
-            $f::MUTABLES_CSV,
+            $f::PKG_NAME,
+            $f::CRATE_NAME,
             $f::NUM_MUTABLES,
-            $f::TARGET_NAME,
+            $f::MUTABLES_CSV,
             || $f($($args),*),
             vec![$(($m_id, $m))?]
         )
@@ -101,45 +113,52 @@ macro_rules! call_isolated {
 }
 #[macro_export]
 macro_rules! data_isolated {
-    ($f:ident) => {
-        crate::context::CollectedData::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
-    };
+    ($f:ident) => {{
+        eprintln!("{}:{}", $f::PKG_NAME, $f::CRATE_NAME);
+        eprintln!("{}", $f::MUTABLES_CSV);
+        crate::report::MuttestReportForCrate::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
+    }};
 }
 
 pub struct IsolatedFnCall<T> {
     pub res: T,
-    pub data: CollectedData,
+    pub report: MuttestReportForCrate,
 }
 
 pub fn run<'a, T>(
-    defs_csv: &str,
+    pkg_name: &str,
+    crate_name: &str,
     num_mutables: usize,
-    target_name: &str,
+    defs_csv: &str,
     action: impl FnOnce() -> T,
     mutation: Vec<(usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
-    let mut data = CollectedData::from_defs_checked(num_mutables, defs_csv);
+    eprintln!("{pkg_name}:{crate_name}");
+    eprintln!("{defs_csv}");
+
+    let mut report = MuttestReportForCrate::from_defs_checked(num_mutables, defs_csv);
+
+    // test if mutable id exists
     for (id, _) in &mutation {
-        if !data.mutables.contains_key(&id) {
-            eprintln!("mutation {mutation:?}");
-            eprintln!("data:");
-            eprintln!("{defs_csv}");
-            panic!("mutable id {id} is not a valid mutable id")
-        }
+        report.analysis(*id);
     }
 
     let context = TestContext {
-        target: target_name.to_owned(),
+        pkg_name: pkg_name.to_owned(),
+        crate_name: crate_name.to_owned(),
         mutations: mutation
             .into_iter()
-            .map(|(m_id, m)| (m_id, Arc::from(m)))
+            .map(|(id, m)| (CrateLocalMutableId { attr_id: 0, id }, Arc::from(m)))
             .collect(),
-        collector: DataCollector::new_for_test(),
+        details: Mutex::new(BTreeSet::new()),
+        coverage: Mutex::new(BTreeMap::new()),
+        details_file: Some(Mutex::new(DETAILS_FILE_CSV_HEAD.as_bytes().to_vec())),
+        coverage_file: Some(Mutex::new(COVERAGE_FILE_CSV_HEAD.as_bytes().to_vec())),
     };
     TEST_CONTEXT
         .write()
         .unwrap()
-        .insert(target_name.to_owned(), Arc::new(context))
+        .insert(crate_name.to_owned(), Arc::new(context))
         .ok_or(())
         .expect_err("concurrent execution of test ");
 
@@ -147,42 +166,45 @@ pub fn run<'a, T>(
     let res = action();
 
     // extract data
-    let context = TEST_CONTEXT.write().unwrap().remove(target_name).unwrap();
+    let context = TEST_CONTEXT.write().unwrap().remove(crate_name).unwrap();
+    eprintln!(
+        "{}",
+        std::str::from_utf8(&context.details_file.as_ref().unwrap().lock().unwrap()).unwrap()
+    );
+    eprintln!(
+        "{}",
+        std::str::from_utf8(&context.coverage_file.as_ref().unwrap().lock().unwrap()).unwrap()
+    );
+
     let context = Arc::try_unwrap(context)
         .ok()
         .expect("someone still has a reference to this context");
-    context.collector.extract_data(&mut data);
+    context.extract_data(&mut report);
 
-    IsolatedFnCall { res, data }
+    IsolatedFnCall { res, report }
 }
 
-impl CollectedData {
+impl MuttestReportForCrate {
     // TODO: also validate against id collisions?
     pub(crate) fn from_defs_checked(num: usize, defs_csv: &str) -> Self {
-        let cd = Self::from_definition_csv(defs_csv.as_bytes()).unwrap();
-        for &id in cd.mutables.keys() {
-            if num < id {
+        let report = Self::from_definition_csv(defs_csv.as_bytes()).unwrap();
+        assert_eq!(num, report.mutables.len(), "expected {num} mutables");
+        for id in report.mutables.keys() {
+            if num < id.id {
                 panic!("invalid id {id}. max: {num}");
             }
         }
-        cd
+        report
     }
 }
 
-impl DataCollector<Vec<u8>> {
-    fn new_for_test() -> Self {
-        DataCollector {
-            details: Mutex::new(BTreeSet::new()),
-            coverage: Mutex::new(BTreeMap::new()),
-            details_file: Some(Mutex::new(DETAILS_FILE_CSV_HEAD.as_bytes().to_vec())),
-            coverage_file: Some(Mutex::new(COVERAGE_FILE_CSV_HEAD.as_bytes().to_vec())),
-        }
-    }
-
-    fn extract_data(self, data: &mut CollectedData) {
-        data.read_details_csv(&*self.details_file.unwrap().into_inner().unwrap())
+impl TestContext {
+    fn extract_data(self, report: &mut MuttestReportForCrate) {
+        report
+            .read_details_csv(self.details_file.unwrap().into_inner().unwrap().as_slice())
             .expect("unable to read csv data");
-        data.read_coverage_csv(&*self.coverage_file.unwrap().into_inner().unwrap())
+        report
+            .read_coverage_csv(self.coverage_file.unwrap().into_inner().unwrap().as_slice())
             .expect("unable to read csv data");
     }
 }
@@ -225,25 +247,54 @@ impl<T> ToVec<T> for BTreeSet<T> {
         self.iter().cloned().map(|x| x.into()).collect()
     }
 }
+impl<T> ToVec<T> for Vec<T> {
+    fn to_vec(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.iter().cloned().collect()
+    }
+    fn to_vec_ref(&self) -> Vec<&T> {
+        self.iter().collect()
+    }
+    fn to_vec_deref(&self) -> Vec<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        self.iter().map(|x| x.deref()).collect()
+    }
+
+    fn to_vec_into<T1>(&self) -> Vec<T1>
+    where
+        T: Into<T1> + Clone,
+    {
+        self.iter().cloned().map(|x| x.into()).collect()
+    }
+}
 
 #[test]
 pub fn mutable_id_ord() {
+    // TODO: more tests
     assert!(
         BakedMutableId {
-            crate_name: "a",
-            id: 1,
-        } < BakedMutableId {
+            pkg_name: "a",
             crate_name: "b",
-            id: 0,
+            id: CrateLocalMutableId { attr_id: 0, id: 1 }
+        } < BakedMutableId {
+            pkg_name: "b",
+            crate_name: "a",
+            id: CrateLocalMutableId { attr_id: 0, id: 0 }
         }
     );
     assert!(
         MutableId {
-            crate_name: "a".to_owned(),
-            id: 1,
-        } < MutableId {
+            pkg_name: "a".to_owned(),
             crate_name: "b".to_owned(),
-            id: 0,
+            id: CrateLocalMutableId { attr_id: 0, id: 1 }
+        } < MutableId {
+            pkg_name: "b".to_owned(),
+            crate_name: "a".to_owned(),
+            id: CrateLocalMutableId { attr_id: 0, id: 1 }
         }
     );
 }

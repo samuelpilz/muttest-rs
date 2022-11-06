@@ -1,40 +1,48 @@
-use std::{
-    borrow::Borrow,
-    io::Write,
-    path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering::SeqCst},
-};
+use std::path::PathBuf;
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
-use crate::{display_or_empty_if_none, mutable::Mutable, MutableId, PathSegment};
+use crate::{
+    display_or_empty_if_none, mutable::Mutable, CrateLocalMutableId, MutableId, PathSegment,
+};
 
-pub struct MuttestTransformer<'a, W: Write> {
+pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "attr_id,id,kind,code,file,path,attr_span,span\n";
+// TODO: add attr_id to enable grouping
+
+pub struct MuttestTransformer {
     pub conf: TransformerConf,
-    definitions: Option<W>,
-    id: &'a AtomicUsize,
-    // TODO: parsed path
+    mut_count: usize,
+    definitions: Vec<String>,
     pub path: Vec<PathSegment>,
 }
 pub struct TransformerConf {
+    pub attr_id: usize,
     pub span: Span,
     pub mutables: MutablesConf,
     pub muttest_api: TokenStream,
-    pub target_name: String,
+    pub pkg_name: String,
+    pub crate_name: String,
 }
 pub enum MutablesConf {
     All,
     One(String),
 }
-impl<'a, W: Write> MuttestTransformer<'a, W> {
-    pub fn new(conf: TransformerConf, definitions: Option<W>, id: &'a AtomicUsize) -> Self {
+impl MuttestTransformer {
+    pub fn new(conf: TransformerConf) -> Self {
         Self {
             conf,
-            definitions,
-            id,
+            mut_count: 0,
+            definitions: vec![],
             path: vec![],
         }
+    }
+
+    pub fn definitions(&self) -> &[String] {
+        &self.definitions
+    }
+    pub fn num_mutables(&self) -> usize {
+        self.mut_count
     }
 
     pub fn should_mutate(&self, mutable: &str) -> bool {
@@ -49,20 +57,39 @@ impl<'a, W: Write> MuttestTransformer<'a, W> {
         m: &M,
         code: &str,
     ) -> TransformSnippets {
+        self.mut_count += 1;
+        let next_id = self.mut_count;
         let id = MutableId {
-            id: self.id.fetch_add(1, SeqCst),
-            crate_name: self.conf.target_name.clone(),
+            pkg_name: self.conf.pkg_name.clone(),
+            crate_name: self.conf.crate_name.clone(),
+            id: CrateLocalMutableId {
+                attr_id: self.conf.attr_id,
+                id: next_id,
+            },
         };
-        if let Some(w) = &mut self.definitions {
-            write_mutable(w, &id, m, code, &self.path, self.conf.span);
-        }
+        self.definitions.push(write_mutable(
+            id.id,
+            m,
+            code,
+            &self.path,
+            self.conf.span,
+        ));
 
         let muttest_api = self.conf.muttest_api.clone();
-        let crate_name: &str = id.crate_name.borrow();
-        let id = id.id;
+        let pkg_name = &id.pkg_name;
+        let crate_name = &id.crate_name;
+        let attr_id = id.id.attr_id;
+        let id = id.id.id;
 
         let m_id = quote_spanned! {m.span() =>
-            #muttest_api::BakedMutableId {id: #id, crate_name: #crate_name}
+            #muttest_api::BakedMutableId {
+                pkg_name: #pkg_name,
+                crate_name: #crate_name,
+                id: #muttest_api::CrateLocalMutableId {
+                    attr_id: #attr_id,
+                    id: #id,
+                }
+            }
         };
         let span = bake_span(&muttest_api, m.span());
         let attr_span = bake_span(&muttest_api, self.conf.span);
@@ -95,18 +122,17 @@ fn bake_span(muttest_api: &TokenStream, span: Span) -> TokenStream {
 }
 
 /// register a new mutable
-fn write_mutable<'a, M: Mutable<'a>, W: Write>(
-    mut w: W,
-    id: &MutableId,
+fn write_mutable<'a, M: Mutable<'a>>(
+    id: CrateLocalMutableId,
     m: &M,
     code: &str,
     path: &[PathSegment],
     attr_span: Span,
-) {
+) -> String {
     let span = m.span();
-    writeln!(
-        w,
-        r#"{},{},{},{},{},{},{}"#,
+    format!(
+        r#"{},{},{},{},{},{},{},{}"#,
+        id.attr_id,
         id.id,
         M::NAME,
         csv_quote(code),
@@ -118,14 +144,12 @@ fn write_mutable<'a, M: Mutable<'a>, W: Write>(
         display_or_empty_if_none(&crate::Span::from(span)),
         display_or_empty_if_none(&crate::Span::from(attr_span)),
     )
-    .expect("unable to write mutable file");
-    w.flush().expect("unable to flush mutable file");
 }
 
 // TODO: streaming display instead of copy
 fn csv_quote(s: &str) -> String {
     if s.contains("\"") {
-        format!(r#""{}""#, s.replace("\"", "\"\""))
+        format!(r#""{}""#, s.replace(r#"""#, r#""""#))
     } else {
         s.to_owned()
     }
