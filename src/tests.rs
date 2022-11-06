@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::{
+    api::CrateId,
     context::{MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
     report::{MutableAnalysis, MuttestReportForCrate},
     BakedMutableId, CrateLocalMutableId, MutableId,
@@ -288,12 +289,16 @@ pub fn mutable_id_ord() {
     );
     assert!(
         MutableId {
-            pkg_name: "a".to_owned(),
-            crate_name: "b".to_owned(),
+            crate_id: CrateId {
+                pkg_name: "a".to_owned(),
+                crate_name: "b".to_owned(),
+            },
             id: CrateLocalMutableId { attr_id: 0, id: 1 }
         } < MutableId {
-            pkg_name: "b".to_owned(),
-            crate_name: "a".to_owned(),
+            crate_id: CrateId {
+                pkg_name: "b".to_owned(),
+                crate_name: "a".to_owned(),
+            },
             id: CrateLocalMutableId { attr_id: 0, id: 1 }
         }
     );

@@ -4,7 +4,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
 use crate::{
-    display_or_empty_if_none, mutable::Mutable, CrateLocalMutableId, MutableId, PathSegment,
+    api::CrateId, display_or_empty_if_none, mutable::Mutable, report::PathSegment,
+    CrateLocalMutableId, MutableId,
 };
 
 pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "attr_id,id,kind,code,file,path,attr_span,span\n";
@@ -60,27 +61,23 @@ impl MuttestTransformer {
         self.mut_count += 1;
         let next_id = self.mut_count;
         let id = MutableId {
-            pkg_name: self.conf.pkg_name.clone(),
-            crate_name: self.conf.crate_name.clone(),
+            crate_id: CrateId {
+                pkg_name: self.conf.pkg_name.clone(),
+                crate_name: self.conf.crate_name.clone(),
+            },
             id: CrateLocalMutableId {
                 attr_id: self.conf.attr_id,
                 id: next_id,
             },
         };
-        self.definitions.push(write_mutable(
-            id.id,
-            m,
-            code,
-            &self.path,
-            self.conf.span,
-        ));
+        self.definitions
+            .push(write_mutable(id.id, m, code, &self.path, self.conf.span));
 
         let muttest_api = self.conf.muttest_api.clone();
-        let pkg_name = &id.pkg_name;
-        let crate_name = &id.crate_name;
+        let pkg_name = &id.crate_id.pkg_name;
+        let crate_name = &id.crate_id.crate_name;
         let attr_id = id.id.attr_id;
         let id = id.id.id;
-
         let m_id = quote_spanned! {m.span() =>
             #muttest_api::BakedMutableId {
                 pkg_name: #pkg_name,

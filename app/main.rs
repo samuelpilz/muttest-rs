@@ -9,6 +9,7 @@ use std::{
 use cargo_metadata::camino::Utf8Path;
 use clap::Parser;
 use muttest_core::{
+    api::CrateId,
     context,
     mutable::{self, binop_cmp::MutableBinopCmp, mutations_for_mutable, Mutable},
     report::{MutableAnalysis, MuttestReport, MuttestReportForCrate, TestBin},
@@ -70,16 +71,13 @@ fn main() -> Result<(), Error> {
     setup_csv_file(&coverage_path, context::COVERAGE_FILE_CSV_HEAD)?;
 
     // run test suites without mutations for coverage
-    for ((pkg_name, crate_name), data) in &mut report.muttest_crates {
+    for (crate_id, data) in &mut report.muttest_crates {
         for test_bin in &mut report.test_bins {
             println!("call {}", &test_bin.name);
             let start_time = Instant::now();
             let status = Command::new(&test_bin.path)
                 .env(context::ENV_VAR_MUTTEST_DIR, &muttest_dir)
-                .env(
-                    context::ENV_VAR_MUTTEST_TARGET,
-                    format!("{pkg_name}:{crate_name}"),
-                )
+                .env(context::ENV_VAR_MUTTEST_TARGET, crate_id.to_string())
                 .env(context::ENV_VAR_DETAILS_FILE, &details_path)
                 .env(context::ENV_VAR_COVERAGE_FILE, &coverage_path)
                 .stdout(Stdio::null())
@@ -99,20 +97,14 @@ fn main() -> Result<(), Error> {
 
     // TODO: calc&print covered mutables
 
-    for ((pkg_name, crate_name), data) in &report.muttest_crates {
+    for (crate_id, data) in &report.muttest_crates {
         let total_mutables = data.mutables.len();
         let covered_mutables = data
             .mutables
             .values()
             .filter(|m| m.analysis.covered)
             .count();
-        println!("{pkg_name}:{crate_name}: {covered_mutables}/{total_mutables} mutables covered");
-
-        for (m_id, rep) in &data.mutables {
-            if rep.analysis.covered {
-                println!("cover {m_id}");
-            }
-        }
+        println!("{crate_id}: {covered_mutables}/{total_mutables} mutables covered");
     }
     println!();
 
@@ -120,8 +112,8 @@ fn main() -> Result<(), Error> {
     let mut killed_mutants = 0;
 
     // evaluate mutations
-    for ((pkg_name, crate_name), crate_report) in &mut report.muttest_crates {
-        println!("{pkg_name}:{crate_name}");
+    for (crate_id, crate_report) in &mut report.muttest_crates {
+        println!("{crate_id}");
 
         let ids = crate_report.mutables.keys().cloned().collect::<Vec<_>>();
         for &id in &ids {
@@ -170,10 +162,7 @@ fn main() -> Result<(), Error> {
                 // run test suites without mutations for coverage
                 for test_bin in &report.test_bins {
                     let mut test = Command::new(&test_bin.path)
-                        .env(
-                            context::ENV_VAR_MUTTEST_TARGET,
-                            format!("{pkg_name}:{crate_name}"),
-                        )
+                        .env(context::ENV_VAR_MUTTEST_TARGET, crate_id.to_string())
                         // TODO: repeating pkg/crate part of id makes little sense here
                         .env(context::ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
                         // TODO: think about details in mutated runs
@@ -204,6 +193,11 @@ fn main() -> Result<(), Error> {
         }
     }
     println!("{killed_mutants}/{total_mutants} mutants killed");
+
+    fs::write(
+        muttest_dir.join("report.json"),
+        serde_json::to_string(&report).expect("unable to format report"),
+    )?;
 
     Ok(())
 }
@@ -260,10 +254,10 @@ fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<Muttes
             .strip_prefix("mutable-definitions-")
             .and_then(|f| f.strip_suffix(".csv")) 
             else { continue };
-        let Some((pkg_name, crate_name)) = target.split_once(':') else {continue};
+        let Ok(crate_id) = target.parse::<CrateId>() else {continue};
 
         // skip packages not considered
-        if opt.package.is_some() && opt.package.as_deref() != Some(pkg_name) {
+        if opt.package.is_some() && opt.package.as_ref() != Some(&crate_id.pkg_name) {
             continue;
         }
 
@@ -271,9 +265,7 @@ fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<Muttes
         let file_path = muttest_dir.join(&file_name);
         let crate_report = MuttestReportForCrate::from_definition_csv(File::open(file_path)?)?;
 
-        report
-            .muttest_crates
-            .insert((pkg_name.to_owned(), crate_name.to_owned()), crate_report);
+        report.muttest_crates.insert(crate_id, crate_report);
     }
 
     Ok(report)
