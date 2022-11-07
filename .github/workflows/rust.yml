@@ -60,7 +60,6 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           components: clippy
-      # TODO: currently there is a ICE when running clippy on transformed code
       - name: Run Clippy
         run: cargo clippy --all -- --deny clippy::all
       - name: Run Clippy on tests
