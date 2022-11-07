@@ -44,7 +44,7 @@ pub(crate) trait IMuttestContext {
 impl MuttestContext<File> {
     pub(crate) fn new_from_env() -> Result<Option<Self>, Error> {
         let Some(target) = get_env_var_option(ENV_VAR_MUTTEST_TARGET)? else { return Ok(None) };
-        let Some((pkg_name, crate_name)) = target.split_once(':') else {return Err(Error::TargetFormat(target.to_owned())) };
+        let Some((pkg_name, crate_name)) = target.split_once(':') else {return Err(Error::TargetFormat(target)) };
 
         let mutations = get_env_var_option(ENV_VAR_MUTTEST_MUTATION)?
             .map(|mutation| {

@@ -128,13 +128,13 @@ fn main() -> Result<(), Error> {
                 crate_report.location_of(id).unwrap()
             );
 
-            let mutations = mutations_for_mutable(&mutable)?;
+            let mutations = mutations_for_mutable(mutable)?;
             total_mutants += mutations.len();
 
             let Some(behavior) = &behavior else {
                 println!("  not covered ({})", match mutations.len() {
-                    0 => format!("no mutations"),
-                    1 => format!("1 mutation"),
+                    0 => "no mutations".to_owned(),
+                    1 => "1 mutation".to_owned(),
                     n => format!("{n} mutations"),
                 });
                 continue;
@@ -151,7 +151,7 @@ fn main() -> Result<(), Error> {
 
                 // TODO: improve weak surviving
                 if kind == MutableBinopCmp::NAME
-                    && mutable::binop_cmp::identical_behavior(&code, &m, behavior)
+                    && mutable::binop_cmp::identical_behavior(code, &m, behavior)
                 {
                     println!("survived weak mutation testing");
                     continue;
@@ -208,7 +208,7 @@ fn compile(opt: &Opt, cargo_exe: &Path, muttest_dir: &Utf8Path) -> Result<Muttes
 
     // TODO: pass features from opts
     let mut compile_out = Command::new(cargo_exe)
-        .args(&["test", "--no-run", "--message-format=json"])
+        .args(["test", "--no-run", "--message-format=json"])
         .args(
             opt.package
                 .as_deref()

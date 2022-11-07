@@ -95,6 +95,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut mod_ident = result.sig.ident.clone();
     mod_ident.set_span(Span::call_site());
     let result: File = parse_quote! {
+        #[allow(clippy::all)]
         #result
         mod #mod_ident {
             pub const MUTABLES_CSV: &str = #definitions_csv;
@@ -151,6 +152,10 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
             }
         );
     }
+    let result: ItemFn = parse_quote! {
+        #[allow(clippy::all)]
+        #result
+    };
 
     result.into_token_stream().into()
 }
@@ -437,7 +442,7 @@ impl Fold for FoldImpl<'_> {
 fn strip_expr_parens(e: &Expr) -> &Expr {
     match e {
         // TODO: this loses attrs
-        Expr::Paren(ep) => &*ep.expr,
+        Expr::Paren(ep) => &ep.expr,
         _ => e,
     }
 }

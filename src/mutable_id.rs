@@ -77,9 +77,9 @@ impl TryFrom<String> for CrateLocalMutableId {
         value.parse()
     }
 }
-impl Into<String> for CrateLocalMutableId {
-    fn into(self) -> String {
-        self.to_string()
+impl From<CrateLocalMutableId> for String {
+    fn from(id: CrateLocalMutableId) -> Self {
+        id.to_string()
     }
 }
 
@@ -108,9 +108,9 @@ impl TryFrom<String> for CrateId {
         value.parse()
     }
 }
-impl Into<String> for CrateId {
-    fn into(self) -> String {
-        self.to_string()
+impl From<CrateId> for String {
+    fn from(id: CrateId) -> Self {
+        id.to_string()
     }
 }
 

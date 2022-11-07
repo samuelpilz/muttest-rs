@@ -59,12 +59,12 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
-          components: rustfmt
+          components: clippy
       # TODO: currently there is a ICE when running clippy on transformed code
-      - name: Run Clippy on core
-        run: cargo clippy -p muttest-core
-      - name: Run Clippy on codegen
-        run: cargo clippy -p muttest-codegen
+      - name: Run Clippy
+        run: cargo clippy --all -- --deny clippy::all
+      - name: Run Clippy on tests
+        run: cargo clippy --all --tests -- --deny clippy::all
 
   selftest:
     runs-on: ubuntu-latest

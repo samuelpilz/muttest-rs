@@ -38,7 +38,7 @@ pub fn mutations_for_mutable(mutable: &MutableAnalysis) -> Result<Vec<String>, E
             m
         }
         lit_str::MutableLitStr::NAME => {
-            if mutable.code == "" {
+            if mutable.code.is_empty() {
                 vec![]
             } else {
                 vec![r#""""#.to_owned()]
@@ -47,19 +47,19 @@ pub fn mutations_for_mutable(mutable: &MutableAnalysis) -> Result<Vec<String>, E
         binop_cmp::MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
             .iter()
             .copied()
-            .filter(|&x| x != &mutable.code)
+            .filter(|&x| x != mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
         binop_eq::MutableBinopEq::NAME => ["==", "!="]
             .iter()
             .copied()
-            .filter(|&x| x != &mutable.code)
+            .filter(|&x| x != mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
         binop_bool::MutableBinopBool::NAME => ["&&", "||"]
             .iter()
             .copied()
-            .filter(|&x| x != &mutable.code)
+            .filter(|&x| x != mutable.code)
             .map(ToOwned::to_owned)
             .collect(),
         // fallback to mutable's description of possible mutations

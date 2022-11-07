@@ -53,20 +53,19 @@ impl NestingToken {
 }
 impl Drop for NestingToken {
     fn drop(&mut self) {
-        match self {
-            Self::Selftest(s) => MUTATION_NESTING.with(|v| {
+        if let Self::Selftest(s) = self {
+            MUTATION_NESTING.with(|v| {
                 let last = v.borrow_mut().pop().expect("nesting is empty");
                 assert_eq!(last, *s, "invalid nesting");
-            }),
-            _ => {}
+            });
         }
     }
 }
 #[macro_export]
 macro_rules! return_early_if_nesting {
     ($m_id:expr, $name:expr, $e:expr) => {
-        let __muttest_nesting_token = match crate::tests::NestingToken::create($m_id, $name) {
-            crate::tests::NestingToken::Nested => return $e,
+        let __muttest_nesting_token = match $crate::tests::NestingToken::create($m_id, $name) {
+            $crate::tests::NestingToken::Nested => return $e,
             t => t,
         };
     };
@@ -102,7 +101,7 @@ impl MuttestReportForCrate {
 #[macro_export]
 macro_rules! call_isolated {
     ($f:ident $(::<$t:ty>)? ($($args:expr),*) $(where $m_id:expr => $m:expr)?) => {
-        crate::tests::run$(::<$t>)?(
+        $crate::tests::run$(::<$t>)?(
             $f::PKG_NAME,
             $f::CRATE_NAME,
             $f::NUM_MUTABLES,
@@ -117,7 +116,7 @@ macro_rules! data_isolated {
     ($f:ident) => {{
         eprintln!("{}:{}", $f::PKG_NAME, $f::CRATE_NAME);
         eprintln!("{}", $f::MUTABLES_CSV);
-        crate::report::MuttestReportForCrate::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
+        $crate::report::MuttestReportForCrate::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
     }};
 }
 
@@ -177,9 +176,7 @@ pub fn run<'a, T>(
         std::str::from_utf8(&context.coverage_file.as_ref().unwrap().lock().unwrap()).unwrap()
     );
 
-    let context = Arc::try_unwrap(context)
-        .ok()
-        .expect("someone still has a reference to this context");
+    let context = Arc::try_unwrap(context).expect("someone still has a reference to this context");
     context.extract_data(&mut report);
 
     IsolatedFnCall { res, report }
@@ -253,7 +250,7 @@ impl<T> ToVec<T> for Vec<T> {
     where
         T: Clone,
     {
-        self.iter().cloned().collect()
+        <[T]>::to_vec(self)
     }
     fn to_vec_ref(&self) -> Vec<&T> {
         self.iter().collect()

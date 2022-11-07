@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::bool_assert_comparison))]
 //! Rust Mutation Testing core library.
 //!
 //! There are some internals here that are not meant for mutation testing users.
@@ -91,7 +92,7 @@ impl Mutation {
     pub fn as_option(&self) -> Option<&str> {
         match self {
             Mutation::Unchanged => None,
-            Mutation::Mutate(m) => Some(&*m),
+            Mutation::Mutate(m) => Some(m),
         }
     }
 }

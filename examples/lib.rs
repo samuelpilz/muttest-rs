@@ -1,4 +1,5 @@
 #![cfg_attr(not(test), allow(dead_code))]
+#![allow(clippy::all)]
 
 pub mod sort;
 pub mod triangle;

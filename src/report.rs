@@ -91,7 +91,7 @@ impl MuttestReportForCrate {
             file: attr.file.as_deref(),
             module: m.analysis.module.as_deref(),
             span: m.analysis.span,
-            path: &*m.analysis.path,
+            path: &m.analysis.path,
         })
     }
     pub fn from_definition_csv(definitions: impl Read) -> Result<Self, Error> {
@@ -188,7 +188,7 @@ impl MuttestReportForCrate {
             let attr = self
                 .attrs
                 .get_mut(&md.attr_id)
-                .ok_or_else(|| Error::UnknownMutateAttr(md.attr_id))?;
+                .ok_or(Error::UnknownMutateAttr(md.attr_id))?;
             if attr.file.is_none() {
                 attr.file = Some(md.file);
             }

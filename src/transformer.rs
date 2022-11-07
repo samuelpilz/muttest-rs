@@ -143,8 +143,8 @@ fn write_mutable<'a, M: Mutable<'a>>(
 
 // TODO: streaming display instead of copy
 fn csv_quote(s: &str) -> String {
-    if s.contains("\"") {
-        format!(r#""{}""#, s.replace(r#"""#, r#""""#))
+    if s.contains('\"') {
+        format!(r#""{}""#, s.replace('"', r#""""#))
     } else {
         s.to_owned()
     }
