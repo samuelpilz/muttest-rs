@@ -15,7 +15,7 @@ use lazy_static::lazy_static;
 use serde::Serialize;
 
 use crate::{
-    context::MuttestContext,
+    context::{IMuttestContext, MuttestContext},
     mutable_id::{BakedMutableId, CrateLocalMutableId, MutableId},
 };
 
@@ -134,39 +134,41 @@ impl Error {
     }
 }
 
-// TODO: this should be done cleaner
-macro_rules! with_context {
-    ($s:expr, $f:ident($($args:expr),*) $(, $d:expr)?) => {
+impl BakedMutableId {
+    fn context(self) -> Option<impl context::IMuttestContext> {
         match &*MUTTEST_CONTEXT {
             #[cfg(test)]
-            _ if $s.is_isolated() => $s.test_context().$f($($args,)*),
-            Some(ctx) if ctx.tracks_mutable($s) => ctx.$f($($args,)*),
-            _ => {$($d)?}
+            _ if self.is_isolated() => Some(tests::as_box_dyn_context(self.test_context())),
+            Some(ctx) if ctx.tracks_mutable(self) => Some({
+                #[cfg(test)]
+                let ctx = tests::as_box_dyn_context(ctx);
+                ctx
+            }),
+            _ => None,
         }
-    };
-}
-// TODO: should this be method-functions?
-impl BakedMutableId {
+    }
+
     /// reports details of mutables gathered by static analysis
     pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
-        with_context!(
-            self,
-            write_details(self.crate_local_id(), loc, ty, mutations)
-        )
+        if let Some(c) = self.context() {
+            c.write_details(self.crate_local_id(), loc, ty, mutations)
+        }
     }
 
     // TODO: ensure this function is used everywhere
     pub fn report_coverage(self, behavior: Option<&str>) {
-        with_context!(self, write_coverage(self.crate_local_id(), behavior));
+        if let Some(c) = self.context() {
+            c.write_coverage(self.crate_local_id(), behavior)
+        }
     }
 
     /// get the active mutation for a mutable
     fn get_active_mutation(self) -> Mutation {
-        with_context!(
-            self,
-            get_mutation(self.crate_local_id()),
+        if let Some(c) = self.context() {
+            c.get_mutation(self.crate_local_id())
+        } else {
             Mutation::Unchanged
-        )
+        }
     }
 }
 

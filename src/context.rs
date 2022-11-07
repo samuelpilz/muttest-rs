@@ -32,6 +32,15 @@ pub(crate) struct MuttestContext<F> {
     pub(crate) coverage_file: Option<Mutex<F>>,
 }
 
+/// object-safe trait for `MuttestContext` functions
+pub(crate) trait IMuttestContext {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool;
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation;
+
+    fn write_details(&self, id: CrateLocalMutableId, loc: BakedLocation, ty: &str, mutations: &str);
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>);
+}
+
 impl MuttestContext<File> {
     pub(crate) fn new_from_env() -> Result<Option<Self>, Error> {
         let Some(target) = get_env_var_option(ENV_VAR_MUTTEST_TARGET)? else { return Ok(None) };
@@ -66,20 +75,17 @@ impl MuttestContext<File> {
     }
 }
 
-impl<F> MuttestContext<F> {
-    pub(crate) fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+impl<F: Write> IMuttestContext for MuttestContext<F> {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         self.pkg_name == m_id.pkg_name && self.crate_name == m_id.crate_name
     }
-    pub(crate) fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
         match self.mutations.get(&m_id).cloned() {
             Some(m) => Mutation::Mutate(m),
             None => Mutation::Unchanged,
         }
     }
-}
-
-impl<F: Write> MuttestContext<F> {
-    pub(crate) fn write_details(
+    fn write_details(
         &self,
         id: CrateLocalMutableId,
         loc: BakedLocation,
@@ -109,7 +115,7 @@ impl<F: Write> MuttestContext<F> {
         }
     }
 
-    pub(crate) fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
         let mut coverage_map = self.coverage.lock().unwrap();
         let mut update = false;
 
@@ -141,6 +147,28 @@ impl<F: Write> MuttestContext<F> {
                 f.flush().expect("unable to flush mutable detail");
             }
         }
+    }
+}
+
+impl<R: IMuttestContext> IMuttestContext for &'static R {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        <R as IMuttestContext>::tracks_mutable(self, m_id)
+    }
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
+        <R as IMuttestContext>::get_mutation(self, m_id)
+    }
+
+    fn write_details(
+        &self,
+        id: CrateLocalMutableId,
+        loc: BakedLocation,
+        ty: &str,
+        mutations: &str,
+    ) {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    }
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+        <R as IMuttestContext>::write_coverage(self, id, behavior)
     }
 }
 

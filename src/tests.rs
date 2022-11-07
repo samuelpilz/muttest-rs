@@ -6,10 +6,10 @@ use std::{
 };
 
 use crate::{
-    context::{MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
+    context::{IMuttestContext, MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
     mutable_id::CrateId,
     report::{MutableAnalysis, MuttestReportForCrate},
-    BakedMutableId, CrateLocalMutableId, MutableId,
+    BakedLocation, BakedMutableId, CrateLocalMutableId, MutableId, Mutation,
 };
 
 pub use crate::{call_isolated, data_isolated, return_early_if_nesting};
@@ -271,6 +271,50 @@ impl<T> ToVec<T> for Vec<T> {
     {
         self.iter().cloned().map(|x| x.into()).collect()
     }
+}
+
+impl<R: IMuttestContext> IMuttestContext for Arc<R> {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        <R as IMuttestContext>::tracks_mutable(self, m_id)
+    }
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
+        <R as IMuttestContext>::get_mutation(self, m_id)
+    }
+    fn write_details(
+        &self,
+        id: CrateLocalMutableId,
+        loc: BakedLocation,
+        ty: &str,
+        mutations: &str,
+    ) {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    }
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+        <R as IMuttestContext>::write_coverage(self, id, behavior)
+    }
+}
+impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        <R as IMuttestContext>::tracks_mutable(self, m_id)
+    }
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
+        <R as IMuttestContext>::get_mutation(self, m_id)
+    }
+    fn write_details(
+        &self,
+        id: CrateLocalMutableId,
+        loc: BakedLocation,
+        ty: &str,
+        mutations: &str,
+    ) {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    }
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+        <R as IMuttestContext>::write_coverage(self, id, behavior)
+    }
+}
+pub(crate) fn as_box_dyn_context<R: IMuttestContext + 'static>(r: R) -> Box<dyn IMuttestContext> {
+    Box::new(r)
 }
 
 #[test]
