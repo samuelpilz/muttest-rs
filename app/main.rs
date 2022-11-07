@@ -9,9 +9,9 @@ use std::{
 use cargo_metadata::camino::Utf8Path;
 use clap::Parser;
 use muttest_core::{
-    api::CrateId,
     context,
     mutable::{self, binop_cmp::MutableBinopCmp, mutations_for_mutable, Mutable},
+    mutable_id::CrateId,
     report::{MutableAnalysis, MuttestReport, MuttestReportForCrate, TestBin},
 };
 use wait_timeout::ChildExt;

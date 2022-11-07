@@ -12,14 +12,16 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use mutable_id::{BakedMutableId, CrateLocalMutableId, MutableId};
-use report::{LineColumn, Span};
+use serde::Serialize;
 
-use crate::context::MuttestContext;
+use crate::{
+    context::MuttestContext,
+    mutable_id::{BakedMutableId, CrateLocalMutableId, MutableId},
+};
 
 pub mod context;
 pub mod mutable;
-mod mutable_id;
+pub mod mutable_id;
 pub mod report;
 pub mod transformer;
 
@@ -29,11 +31,8 @@ pub(crate) mod tests;
 /// a module for reexport from `muttest` crate
 pub mod api {
     pub use crate::mutable;
-    pub use crate::mutable_id::*;
-
-    // TODO: restructure these types
-    pub use crate::report::{LineColumn, Span};
-    pub use crate::BakedLocation;
+    pub use crate::mutable_id::BakedMutableId;
+    pub use crate::{BakedLocation, LineColumn, Span};
 
     pub use std::{
         borrow::Cow, column, concat, file, line, marker::PhantomData, module_path,
@@ -135,14 +134,6 @@ impl Error {
     }
 }
 
-pub struct BakedLocation {
-    pub file: &'static str,
-    pub module: &'static str,
-    pub attr_span: Span,
-    pub span: Span,
-    // TODO: add more end location info for feature proc_macro_span / proc_macro_span_shrink
-}
-
 // TODO: this should be done cleaner
 macro_rules! with_context {
     ($s:expr, $f:ident($($args:expr),*) $(, $d:expr)?) => {
@@ -154,22 +145,55 @@ macro_rules! with_context {
         }
     };
 }
-// TODO: should this be method-functions
+// TODO: should this be method-functions?
 impl BakedMutableId {
     /// reports details of mutables gathered by static analysis
     pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
-        with_context!(self, write_details(self.id, loc, ty, mutations))
+        with_context!(
+            self,
+            write_details(self.crate_local_id(), loc, ty, mutations)
+        )
     }
 
     // TODO: ensure this function is used everywhere
     pub fn report_coverage(self, behavior: Option<&str>) {
-        with_context!(self, write_coverage(self.id, behavior));
+        with_context!(self, write_coverage(self.crate_local_id(), behavior));
     }
 
     /// get the active mutation for a mutable
     fn get_active_mutation(self) -> Mutation {
-        with_context!(self, get_mutation(self.id), Mutation::Unchanged)
+        with_context!(
+            self,
+            get_mutation(self.crate_local_id()),
+            Mutation::Unchanged
+        )
     }
+}
+
+pub struct BakedLocation {
+    pub file: &'static str,
+    pub module: &'static str,
+    pub attr_span: Span,
+    pub span: Span,
+    // TODO: add more end location info for feature proc_macro_span / proc_macro_span_shrink
+}
+// TODO: use proc-macro2 structs instead??
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Span {
+    pub start: LineColumn,
+    pub end: Option<LineColumn>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct LineColumn {
+    pub line: u32,
+    pub column: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum PathSegment {
+    Mod(String),
+    Fn(String),
+    Impl(String),
 }
 
 impl Span {
@@ -204,5 +228,71 @@ fn parse_or_none_if_empty<T: FromStr>(s: &str) -> Result<Option<T>, <T as FromSt
         Ok(None)
     } else {
         Ok(Some(s.parse()?))
+    }
+}
+
+impl fmt::Display for PathSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PathSegment::Mod(i) => write!(f, "mod {i}"),
+            PathSegment::Fn(i) => write!(f, "fn {i}"),
+            PathSegment::Impl(i) => write!(f, "impl {i}"),
+        }
+    }
+}
+impl FromStr for PathSegment {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once(' ') {
+            Some(("mod", i)) => Ok(Self::Mod(i.to_owned())),
+            Some(("fn", i)) => Ok(Self::Fn(i.to_owned())),
+            Some(("impl", i)) => Ok(Self::Impl(i.to_owned())),
+            _ => Err(Error::PathFormat(s.to_owned())),
+        }
+    }
+}
+
+impl FromStr for Span {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let start;
+        let mut end = None;
+        match s.split_once('-') {
+            Some((s, e)) => {
+                start = s.parse()?;
+                end = Some(e.parse()?);
+            }
+            None => {
+                start = s.parse()?;
+            }
+        }
+
+        Ok(Self { start, end })
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.start.line, self.start.column)?;
+        if let Some(end) = self.end {
+            write!(f, "-{}:{}", end.line, end.column)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for LineColumn {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (l, c) = s
+            .split_once(':')
+            .ok_or_else(|| Error::LocationFormat(s.to_owned()))?;
+        Ok(LineColumn {
+            line: l.parse().map_err(|_| Error::LocationFormat(s.to_owned()))?,
+            column: c.parse().map_err(|_| Error::LocationFormat(s.to_owned()))?,
+        })
     }
 }

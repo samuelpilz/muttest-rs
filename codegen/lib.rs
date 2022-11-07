@@ -18,11 +18,10 @@ use muttest_core::{
         binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
         lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
     },
-    report::PathSegment,
     transformer::{
         MutablesConf, MuttestTransformer, TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
     },
-    Error,
+    Error, PathSegment,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;

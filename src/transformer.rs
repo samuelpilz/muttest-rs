@@ -4,8 +4,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
 use crate::{
-    api::CrateId, display_or_empty_if_none, mutable::Mutable, report::PathSegment,
-    CrateLocalMutableId, MutableId,
+    display_or_empty_if_none, mutable::Mutable, mutable_id::CrateId, CrateLocalMutableId,
+    MutableId, PathSegment,
 };
 
 pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "attr_id,id,kind,code,file,path,attr_span,span\n";
@@ -82,10 +82,8 @@ impl MuttestTransformer {
             #muttest_api::BakedMutableId {
                 pkg_name: #pkg_name,
                 crate_name: #crate_name,
-                id: #muttest_api::CrateLocalMutableId {
-                    attr_id: #attr_id,
-                    id: #id,
-                }
+                attr_id: #attr_id,
+                id: #id,
             }
         };
         let span = bake_span(&muttest_api, m.span());

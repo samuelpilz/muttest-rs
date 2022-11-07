@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    api::CrateId,
     context::{MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
+    mutable_id::CrateId,
     report::{MutableAnalysis, MuttestReportForCrate},
     BakedMutableId, CrateLocalMutableId, MutableId,
 };
@@ -280,11 +280,13 @@ pub fn mutable_id_ord() {
         BakedMutableId {
             pkg_name: "a",
             crate_name: "b",
-            id: CrateLocalMutableId { attr_id: 0, id: 1 }
+            attr_id: 0,
+            id: 1,
         } < BakedMutableId {
             pkg_name: "b",
             crate_name: "a",
-            id: CrateLocalMutableId { attr_id: 0, id: 0 }
+            attr_id: 0,
+            id: 0,
         }
     );
     assert!(

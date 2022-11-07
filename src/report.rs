@@ -3,13 +3,14 @@ use std::{
     fmt,
     io::Read,
     path::PathBuf,
-    str::FromStr,
     time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::{api::CrateId, parse_or_none_if_empty, CrateLocalMutableId, Error};
+use crate::{
+    mutable_id::CrateId, parse_or_none_if_empty, CrateLocalMutableId, Error, PathSegment, Span,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct MuttestReport {
@@ -81,24 +82,6 @@ impl From<MutableAnalysis> for MutableReport {
     }
 }
 
-// TODO: use proc-macro2 structs instead??
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct Span {
-    pub start: LineColumn,
-    pub end: Option<LineColumn>,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct LineColumn {
-    pub line: u32,
-    pub column: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub enum PathSegment {
-    Mod(String),
-    Fn(String),
-    Impl(String),
-}
 impl MuttestReportForCrate {
     pub fn location_of(&self, m_id: CrateLocalMutableId) -> Option<MutableLocation<'_>> {
         let attr = self.attrs.get(&m_id.attr_id)?;
@@ -264,71 +247,5 @@ impl fmt::Display for MutableLocation<'_> {
         }
         // TODO: maybe also write module & path?
         Ok(())
-    }
-}
-
-impl fmt::Display for PathSegment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathSegment::Mod(i) => write!(f, "mod {i}"),
-            PathSegment::Fn(i) => write!(f, "fn {i}"),
-            PathSegment::Impl(i) => write!(f, "impl {i}"),
-        }
-    }
-}
-impl FromStr for PathSegment {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.split_once(' ') {
-            Some(("mod", i)) => Ok(Self::Mod(i.to_owned())),
-            Some(("fn", i)) => Ok(Self::Fn(i.to_owned())),
-            Some(("impl", i)) => Ok(Self::Impl(i.to_owned())),
-            _ => Err(Error::PathFormat(s.to_owned())),
-        }
-    }
-}
-
-impl FromStr for Span {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let start;
-        let mut end = None;
-        match s.split_once('-') {
-            Some((s, e)) => {
-                start = s.parse()?;
-                end = Some(e.parse()?);
-            }
-            None => {
-                start = s.parse()?;
-            }
-        }
-
-        Ok(Self { start, end })
-    }
-}
-
-impl fmt::Display for Span {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.start.line, self.start.column)?;
-        if let Some(end) = self.end {
-            write!(f, "-{}:{}", end.line, end.column)?;
-        }
-        Ok(())
-    }
-}
-
-impl FromStr for LineColumn {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (l, c) = s
-            .split_once(':')
-            .ok_or_else(|| Error::LocationFormat(s.to_owned()))?;
-        Ok(LineColumn {
-            line: l.parse().map_err(|_| Error::LocationFormat(s.to_owned()))?,
-            column: c.parse().map_err(|_| Error::LocationFormat(s.to_owned()))?,
-        })
     }
 }

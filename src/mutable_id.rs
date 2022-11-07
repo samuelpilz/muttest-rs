@@ -8,7 +8,8 @@ use crate::Error;
 pub struct BakedMutableId {
     pub pkg_name: &'static str,
     pub crate_name: &'static str,
-    pub id: CrateLocalMutableId,
+    pub attr_id: usize,
+    pub id: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,6 +31,25 @@ pub struct CrateId {
 pub struct CrateLocalMutableId {
     pub attr_id: usize,
     pub id: usize,
+}
+
+impl BakedMutableId {
+    pub fn cloned(self) -> MutableId {
+        MutableId {
+            crate_id: CrateId {
+                pkg_name: self.pkg_name.to_owned(),
+                crate_name: self.crate_name.to_owned(),
+            },
+            id: self.crate_local_id(),
+        }
+    }
+
+    pub fn crate_local_id(&self) -> CrateLocalMutableId {
+        CrateLocalMutableId {
+            attr_id: self.attr_id,
+            id: self.id,
+        }
+    }
 }
 
 impl fmt::Display for CrateLocalMutableId {
@@ -124,16 +144,5 @@ impl FromStr for MutableId {
 impl fmt::Display for BakedMutableId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}:{}", self.pkg_name, self.crate_name, self.id)
-    }
-}
-impl BakedMutableId {
-    pub fn cloned(self) -> MutableId {
-        MutableId {
-            crate_id: CrateId {
-                pkg_name: self.pkg_name.to_owned(),
-                crate_name: self.crate_name.to_owned(),
-            },
-            id: self.id,
-        }
     }
 }
