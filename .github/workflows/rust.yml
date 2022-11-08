@@ -61,8 +61,6 @@ jobs:
         with:
           components: clippy
       - name: Run Clippy
-        run: cargo clippy --all -- --deny clippy::all
-      - name: Run Clippy on tests
         run: cargo clippy --all --tests -- --deny clippy::all
 
   selftest:

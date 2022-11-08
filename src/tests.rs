@@ -172,11 +172,11 @@ pub fn run<'a, T>(
 
     eprintln!(
         "{}",
-        std::str::from_utf8(&context.details_file.as_mut().unwrap().get_mut().unwrap()).unwrap()
+        std::str::from_utf8(context.details_file.as_mut().unwrap().get_mut().unwrap()).unwrap()
     );
     eprintln!(
         "{}",
-        std::str::from_utf8(&context.coverage_file.as_mut().unwrap().get_mut().unwrap()).unwrap()
+        std::str::from_utf8(context.coverage_file.as_mut().unwrap().get_mut().unwrap()).unwrap()
     );
 
     context.extract_data(&mut report);
