@@ -156,7 +156,6 @@ impl BakedMutableId {
         }
     }
 
-    // TODO: ensure this function is used everywhere
     pub fn report_coverage(self, behavior: Option<&str>) {
         if let Some(c) = self.context() {
             c.write_coverage(self.crate_local_id(), behavior)
@@ -173,14 +172,13 @@ impl BakedMutableId {
     }
 }
 
+// TODO: remove this when proc-macros can access more location info
 pub struct BakedLocation {
     pub file: &'static str,
     pub module: &'static str,
     pub attr_span: Span,
     pub span: Span,
-    // TODO: add more end location info for feature proc_macro_span / proc_macro_span_shrink
 }
-// TODO: use proc-macro2 structs instead??
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Span {
     pub start: LineColumn,

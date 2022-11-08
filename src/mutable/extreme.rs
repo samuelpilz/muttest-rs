@@ -33,7 +33,6 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
             loc,
         } = transformer.new_mutable(&self, "");
         // TODO: add reasonable code for that
-        // TODO: or should code be optional?
 
         let MutableExtreme {
             vis, sig, block, ..
@@ -94,7 +93,7 @@ pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
 }
 
 pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
-    todo!()
+    unreachable!()
 }
 
 pub trait NotDefault<T> {

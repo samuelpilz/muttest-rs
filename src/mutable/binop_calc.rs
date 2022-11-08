@@ -3,7 +3,7 @@ use quote::{format_ident, quote_spanned, ToTokens};
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId,
+    BakedMutableId, Mutation,
 };
 
 use super::Mutable;
@@ -81,7 +81,10 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
                             ])
                         );
                         let (_left, _right) = (#left, #right);
-                        match &*#muttest_api::mutable::binop_calc::run(#m_id) {
+                        match &*#muttest_api::mutable::binop_calc::run(#m_id)
+                            .as_option()
+                            .unwrap_or_default()
+                        {
                             "" => _left #op _right,
                             #(#op_symbols =>
                                 {
@@ -101,13 +104,9 @@ impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
     }
 }
 
-// TODO: avoid clone
-pub fn run(m_id: BakedMutableId) -> String {
+pub fn run(m_id: BakedMutableId) -> Mutation {
     m_id.report_coverage(None);
     m_id.get_active_mutation()
-        .as_option()
-        .unwrap_or_default()
-        .to_owned()
 }
 
 macro_rules! binop_calc_traits {

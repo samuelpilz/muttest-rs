@@ -170,7 +170,6 @@ impl MuttestReportForCrate {
                 .get_mut(&id)
                 .ok_or(Error::UnknownCrateLocalMutableId(id))?;
             let analysis = &mut mutable.analysis;
-            // TODO: debug assertions that no info is overwritten incorrectly
 
             analysis.ty = if md.ty.is_empty() { None } else { Some(md.ty) };
             analysis.mutations = Some(if md.mutations.is_empty() {

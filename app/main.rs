@@ -47,7 +47,6 @@ fn main() -> Result<(), Error> {
     } else {
         Opt::parse()
     };
-    println!("{opt:?}");
 
     // read cargo metadata
     let cargo_exe = std::env::var_os("CARGO");
@@ -59,8 +58,6 @@ fn main() -> Result<(), Error> {
     let cargo_metadata = cargo_metadata::MetadataCommand::new().exec()?;
     let muttest_dir = cargo_metadata.target_directory.join("muttest");
     fs::create_dir_all(&muttest_dir)?;
-
-    // TODO: bundle all cargo-relevant data into new struct
 
     // compile libs and tests and read mutable defs
     let mut report = compile(&opt, cargo_exe, &muttest_dir)?;
@@ -94,8 +91,6 @@ fn main() -> Result<(), Error> {
         data.read_coverage_csv(File::open(&coverage_path)?)
             .map_err(|e| e.in_csv_file(&coverage_path))?;
     }
-
-    // TODO: calc&print covered mutables
 
     for (crate_id, data) in &report.muttest_crates {
         let total_mutables = data.mutables.len();

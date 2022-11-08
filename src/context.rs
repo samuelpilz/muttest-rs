@@ -30,6 +30,7 @@ pub(crate) struct MuttestContext<F> {
     pub(crate) coverage: Mutex<BTreeMap<CrateLocalMutableId, String>>,
     pub(crate) details_file: Option<Mutex<F>>,
     pub(crate) coverage_file: Option<Mutex<F>>,
+    // TODO: add reporter for errors
 }
 
 /// object-safe trait for `MuttestContext` functions

@@ -10,6 +10,5 @@ fn _ensure_this_is_inferrable() {
     assert_eq!(&x[..], []);
 }
 
-// TODO: make this feature-gated
 #[allow(dead_code)]
 const RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!(muttest_core::env_var_muttest_dir!());

@@ -57,8 +57,9 @@ pub fn run(
 
     match m_id.get_active_mutation().as_option() {
         None => s,
+        Some("") => "",
         Some(s_mut) => {
-            // TODO: unescape the string & return empty string (and other known strings) if possible
+            // TODO: unescape the string
 
             let r_lock = mutation.read().unwrap();
             match r_lock.deref() {

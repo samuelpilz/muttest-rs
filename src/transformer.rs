@@ -9,7 +9,6 @@ use crate::{
 };
 
 pub const MUTABLE_DEFINITIONS_CSV_HEAD: &str = "attr_id,id,kind,code,file,path,attr_span,span\n";
-// TODO: add attr_id to enable grouping
 
 pub struct MuttestTransformer {
     pub conf: TransformerConf,

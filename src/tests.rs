@@ -167,23 +167,23 @@ pub fn run<'a, T>(
 
     // extract data
     let context = TEST_CONTEXT.write().unwrap().remove(crate_name).unwrap();
+    let mut context = Arc::try_unwrap(context).expect("someone still has a reference to this context");
+
     eprintln!(
         "{}",
-        std::str::from_utf8(&context.details_file.as_ref().unwrap().lock().unwrap()).unwrap()
+        std::str::from_utf8(&context.details_file.as_mut().unwrap().get_mut().unwrap()).unwrap()
     );
     eprintln!(
         "{}",
-        std::str::from_utf8(&context.coverage_file.as_ref().unwrap().lock().unwrap()).unwrap()
+        std::str::from_utf8(&context.coverage_file.as_mut().unwrap().get_mut().unwrap()).unwrap()
     );
 
-    let context = Arc::try_unwrap(context).expect("someone still has a reference to this context");
     context.extract_data(&mut report);
 
     IsolatedFnCall { res, report }
 }
 
 impl MuttestReportForCrate {
-    // TODO: also validate against id collisions?
     pub(crate) fn from_defs_checked(num: usize, defs_csv: &str) -> Self {
         let report = Self::from_definition_csv(defs_csv.as_bytes()).unwrap();
         assert_eq!(num, report.mutables.len(), "expected {num} mutables");

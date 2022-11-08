@@ -79,9 +79,9 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn identical_behavior(code: &str, mutation: &str, behavior: &BTreeSet<String>) -> bool {
-    // TODO: less stringy-typed
     fn eval(op: &str, ord: &str) -> bool {
         match op {
+            _ if ord == "" => false,
             "<" => ord == "LT",
             "<=" => ord != "GT",
             ">=" => ord != "LT",
@@ -250,4 +250,7 @@ mod tests {
         }
         call_isolated! {f()};
     }
+
+    // TODO: tests for partialOrd
+
 }
