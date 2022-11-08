@@ -81,7 +81,7 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
 pub fn identical_behavior(code: &str, mutation: &str, behavior: &BTreeSet<String>) -> bool {
     fn eval(op: &str, ord: &str) -> bool {
         match op {
-            _ if ord == "" => false,
+            _ if ord.is_empty() => false,
             "<" => ord == "LT",
             "<=" => ord != "GT",
             ">=" => ord != "LT",
@@ -252,5 +252,4 @@ mod tests {
     }
 
     // TODO: tests for partialOrd
-
 }

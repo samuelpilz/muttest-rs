@@ -167,7 +167,8 @@ pub fn run<'a, T>(
 
     // extract data
     let context = TEST_CONTEXT.write().unwrap().remove(crate_name).unwrap();
-    let mut context = Arc::try_unwrap(context).expect("someone still has a reference to this context");
+    let mut context =
+        Arc::try_unwrap(context).expect("someone still has a reference to this context");
 
     eprintln!(
         "{}",
