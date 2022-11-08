@@ -26,9 +26,37 @@ fn stooge_sort(arr: &mut [u8]) {
         return;
     }
     let t = len / 3;
-    stooge_sort(&mut arr[..2 * t]);
+    stooge_sort(&mut arr[..len - t]);
     stooge_sort(&mut arr[t..]);
-    stooge_sort(&mut arr[..2 * t]);
+    stooge_sort(&mut arr[..len - t]);
+}
+
+#[muttest::mutate]
+fn merge_sort(arr: &mut [u8]) {
+    let len = arr.len();
+    if len <= 1 {
+        return;
+    }
+    let m = arr.len() / 2;
+    let (a1, a2) = arr.split_at_mut(m);
+    merge_sort(a1);
+    merge_sort(a2);
+    let a1 = a1.to_vec();
+    let a2 = a2.to_vec();
+
+    let mut i = 0;
+    let mut j = 0;
+    let mut k = 0;
+    while j < a1.len() || k < a2.len() {
+        if k == a2.len() || (j < a1.len() && a1[j] < a2[k]) {
+            arr[i] = a1[j];
+            j += 1;
+        } else {
+            arr[i] = a2[k];
+            k += 1;
+        }
+        i += 1;
+    }
 }
 
 macro_rules! sort_tests {
@@ -47,9 +75,17 @@ macro_rules! sort_tests {
                 super::$sort_fn(&mut arr);
                 assert_eq!(arr, [1, 2, 3])
             }
+
+            #[test]
+            pub fn arr5() {
+                let mut arr = [5, 3, 1, 2, 4];
+                super::$sort_fn(&mut arr);
+                assert_eq!(arr, [1, 2, 3, 4, 5])
+            }
         }
     };
 }
 
 sort_tests!(bubblesort);
 sort_tests!(stooge_sort);
+sort_tests!(merge_sort);
