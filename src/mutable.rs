@@ -8,10 +8,11 @@ pub mod binop_calc;
 pub mod binop_cmp;
 pub mod binop_eq;
 pub mod extreme;
+pub mod lit_char;
 pub mod lit_int;
 pub mod lit_str;
 // TODO:
-// * lits: char, byte, byte_str, float
+// * lits: byte, byte_str, float
 // * unop: neg, not
 
 pub trait Mutable<'a> {
@@ -22,7 +23,6 @@ pub trait Mutable<'a> {
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream;
 }
 
-// TODO: for many mutables, the possible mutations should be clear from definition
 // TODO: tests
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn mutations_for_mutable(mutable: &MutableAnalysis) -> Result<Vec<String>, Error> {

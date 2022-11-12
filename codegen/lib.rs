@@ -16,7 +16,7 @@ use muttest_core::{
     mutable::{
         assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
         binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
-        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
+        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, lit_char::MutableLitChar,
     },
     transformer::{
         MutablesConf, MuttestTransformer, TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
@@ -235,6 +235,20 @@ impl<'a> MatchMutable<'a, Expr> for MutableLitInt<'a> {
         }
     }
 }
+impl<'a> MatchMutable<'a, Expr> for MutableLitChar<'a> {
+    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Char(l), ..
+            }) => Some(Self {
+                c: l.value(),
+                span: l.span(),
+                lit: l,
+            }),
+            _ => None,
+        }
+    }
+}
 impl<'a> MatchMutable<'a, Expr> for MutableLitStr<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
@@ -356,8 +370,8 @@ impl FoldImpl<'_> {
     }
 
     fn try_all_mutate_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
+        self.try_mutate::<Expr, MutableLitChar>(e)?;
         self.try_mutate::<Expr, MutableLitInt>(e)?;
-        // TODO: also byteStr
         self.try_mutate::<Expr, MutableLitStr>(e)?;
         self.try_mutate::<Expr, MutableBinopEq>(e)?;
         self.try_mutate::<Expr, MutableBinopCmp>(e)?;

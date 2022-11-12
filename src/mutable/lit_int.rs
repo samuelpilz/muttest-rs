@@ -46,8 +46,12 @@ pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I
 
     match m_id.get_active_mutation().as_option() {
         None => lit,
-        Some(p) if p.chars().all(|c| c.is_numeric()) => I::parse(p),
-        _ => todo!(), // TODO: panic and report
+        Some(p) => {
+            if !p.chars().all(|c| c.is_numeric()) {
+                todo!(); // TODO: panic and report
+            }
+            I::parse(p)
+        }
     }
 }
 

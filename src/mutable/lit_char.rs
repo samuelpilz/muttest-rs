@@ -1,0 +1,123 @@
+use proc_macro2::{Span, TokenStream};
+use quote::{quote_spanned, ToTokens};
+
+use crate::{
+    transformer::{MuttestTransformer, TransformSnippets},
+    BakedLocation, BakedMutableId,
+};
+
+use super::Mutable;
+
+pub struct MutableLitChar<'a> {
+    pub c: char,
+    pub span: Span,
+    pub lit: &'a dyn ToTokens,
+}
+
+impl<'a> Mutable<'a> for MutableLitChar<'a> {
+    const NAME: &'static str = "lit_char";
+
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream {
+        let span = self.span;
+        let lit = self.lit;
+
+        let TransformSnippets {
+            m_id,
+            muttest_api,
+            loc,
+        } = transformer.new_mutable(&self, &self.c.to_string());
+        quote_spanned! {span=>
+            #muttest_api::mutable::lit_char::run(#m_id, #lit, #loc)
+        }
+    }
+}
+
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+pub fn run(m_id: BakedMutableId, c: char, loc: BakedLocation) -> char {
+    m_id.report_coverage(None);
+
+    m_id.report_details(loc, "char", "");
+
+    match m_id.get_active_mutation().as_option() {
+        None => c,
+        Some(p) => {
+            if p.chars().count() != 1 {
+                todo!(); // TODO: panic and report
+            }
+            p.chars().next().unwrap()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::*;
+
+    #[test]
+    fn single_lit() {
+        #[muttest_codegen::mutate_isolated("lit_char")]
+        fn f() -> char {
+            'A'
+        }
+
+        let data = data_isolated!(f);
+        assert_eq!(data.mutables.len(), 1);
+
+        assert_eq!(call_isolated! {f()}.res, 'A');
+        assert_eq!(call_isolated! {f() where 1 => "B"}.res, 'B');
+        assert_eq!(call_isolated! {f() where 1 => "🦀"}.res, '🦀');
+    }
+
+    #[test]
+    fn push_char() {
+        #[muttest_codegen::mutate_isolated("lit_char")]
+        fn f(s: &mut String) {
+            s.push('X')
+        }
+
+        let data = data_isolated!(f);
+        assert_eq!(data.mutables.len(), 1);
+
+        let mut s = String::new();
+        call_isolated! {f(&mut s)};
+        assert_eq!(s, "X");
+        call_isolated! {f(&mut s) where 1 => "B"};
+        assert_eq!(s, "XB");
+        call_isolated! {f(&mut s) where 1 => "🦀"};
+        assert_eq!(s, "XB🦀");
+    }
+
+    // TODO: also test invalid mutations
+
+    #[test]
+    fn consts_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_char")]
+        fn _f() {
+            const X1: char = 'A';
+            static X2: char = 'B';
+            const fn c() -> char {
+                'X'
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
+
+    #[test]
+    fn patterns_not_mutated() {
+        #[muttest_codegen::mutate_isolated("lit_char")]
+        fn _f(c: char) {
+            match c {
+                'a' => {}
+                '0'..='9' => {}
+                _ => {}
+            }
+        }
+        let data = data_isolated!(_f);
+        assert_eq!(data.mutables.len(), 0);
+    }
+}
