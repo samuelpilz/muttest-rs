@@ -208,10 +208,8 @@ impl TestContext {
     }
 }
 
-pub const NO_MUTATIONS: &[&str] = &[];
-
-pub trait ToVec<T> {
-    fn to_vec(&self) -> Vec<T>
+pub trait ToVecExt<T> {
+    fn to_vec_cloned(&self) -> Vec<T>
     where
         T: Clone;
     fn to_vec_ref(&self) -> Vec<&T>;
@@ -222,8 +220,8 @@ pub trait ToVec<T> {
     where
         T: Into<T1> + Clone;
 }
-impl<T> ToVec<T> for BTreeSet<T> {
-    fn to_vec(&self) -> Vec<T>
+impl<T> ToVecExt<T> for BTreeSet<T> {
+    fn to_vec_cloned(&self) -> Vec<T>
     where
         T: Clone,
     {
@@ -246,8 +244,8 @@ impl<T> ToVec<T> for BTreeSet<T> {
         self.iter().cloned().map(|x| x.into()).collect()
     }
 }
-impl<T> ToVec<T> for Vec<T> {
-    fn to_vec(&self) -> Vec<T>
+impl<T> ToVecExt<T> for Vec<T> {
+    fn to_vec_cloned(&self) -> Vec<T>
     where
         T: Clone,
     {

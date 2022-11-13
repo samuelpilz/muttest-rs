@@ -56,12 +56,16 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
                         (#m_id).report_details(
                             #loc,
                             "", // TODO: try print the type
-                            #muttest_api::mutation_string_opt("default",
-                                {
-                                    #[allow(unused_imports)]
-                                    use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
-                                    (&ret_type).is_default()
-                                }
+                            &#muttest_api::mutation_string_from_bool_list(
+                                &[
+                                    ("default",
+                                    {
+                                        #[allow(unused_imports)]
+                                        use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
+                                        (&ret_type).is_default()
+                                    }),
+                                    ("panic", true),
+                                ]
                             )
                         );
 
@@ -88,6 +92,7 @@ pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
     match m_id.get_active_mutation().as_option() {
         None => ControlFlow::Continue(()),
         Some("default") => ControlFlow::Break(()),
+        Some("panic") => panic!("panic from extreme mutation"),
         _ => todo!(),
     }
 }
@@ -143,6 +148,15 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn panic_mutation() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f() {}
+
+        call_isolated! {f() where 1 => "panic"};
+    }
+
+    #[test]
 
     fn post_increment() {
         #[muttest_codegen::mutate_isolated("extreme")]
@@ -179,8 +193,8 @@ mod tests {
                 .mutations
                 .as_ref()
                 .unwrap()
-                .to_vec_ref(),
-            NO_MUTATIONS,
+                .to_vec_deref(),
+            &["panic"],
         )
     }
 
@@ -192,8 +206,13 @@ mod tests {
         }
         let res = call_isolated! {f()};
         assert_eq!(
-            &res.report.analysis(1).mutations.as_ref().unwrap().to_vec(),
-            NO_MUTATIONS,
+            &res.report
+                .analysis(1)
+                .mutations
+                .as_ref()
+                .unwrap()
+                .to_vec_deref(),
+            &["panic"],
         )
     }
 
@@ -211,8 +230,8 @@ mod tests {
                 .mutations
                 .as_ref()
                 .unwrap()
-                .to_vec_into::<String>(),
-            NO_MUTATIONS,
+                .to_vec_deref(),
+            &["panic"],
         );
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(NoDefault, *res.downcast::<NoDefault>().unwrap());
@@ -233,7 +252,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .to_vec_ref(),
-            &["default"]
+            &["default", "panic"]
         );
         let res: Box<dyn Any> = Box::new(res.res);
         assert_eq!(*res.downcast::<usize>().unwrap(), 4);

@@ -16,7 +16,7 @@ use muttest_core::{
     mutable::{
         assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
         binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
-        lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable, lit_char::MutableLitChar,
+        lit_char::MutableLitChar, lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
     },
     transformer::{
         MutablesConf, MuttestTransformer, TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
