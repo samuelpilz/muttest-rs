@@ -88,8 +88,7 @@ impl BakedMutableId {
 }
 impl MuttestReportForCrate {
     pub(crate) fn for_mutable(&self, id: usize) -> &MutableReport {
-        self
-            .mutables
+        self.mutables
             .iter()
             .find(|(m_id, _)| m_id.id == id)
             .unwrap_or_else(|| panic!("no mutable wih {id} found"))
