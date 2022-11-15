@@ -1,23 +1,24 @@
-use std::{cmp::Ordering, collections::BTreeSet};
+use std::cmp::Ordering;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
+    report::MutableAnalysis,
     transformer::{MuttestTransformer, TransformSnippets},
     BakedMutableId,
 };
 
-use super::Mutable;
+use super::FilterMutableCode;
 
-pub struct MutableBinopCmp<'a> {
+pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
     pub op: &'a dyn ToTokens,
     pub span: Span,
 }
 
-impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "binop_cmp";
 
     fn span(&self) -> Span {
@@ -53,6 +54,29 @@ impl<'a> Mutable<'a> for MutableBinopCmp<'a> {
             })
         }
     }
+
+    fn mutations(analysis: &MutableAnalysis) -> Vec<String> {
+        ["<", "<=", ">=", ">"]
+            .into_iter()
+            .filter_mutable_code(&analysis.code)
+    }
+
+    fn identical_behavior(analysis: &MutableAnalysis, mutation: &str) -> bool {
+        fn eval(op: &str, ord: &str) -> bool {
+            match op {
+                _ if ord.is_empty() => false,
+                "<" => ord == "LT",
+                "<=" => ord != "GT",
+                ">=" => ord != "LT",
+                ">" => ord == "GT",
+                _ => unimplemented!(),
+            }
+        }
+        analysis
+            .behavior
+            .iter()
+            .all(|ord| eval(&analysis.code, ord) == eval(mutation, ord))
+    }
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
@@ -75,23 +99,6 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
         (Some(ord), ">") => ord.is_gt(),
         _ => todo!(),
     }
-}
-
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn identical_behavior(code: &str, mutation: &str, behavior: &BTreeSet<String>) -> bool {
-    fn eval(op: &str, ord: &str) -> bool {
-        match op {
-            _ if ord.is_empty() => false,
-            "<" => ord == "LT",
-            "<=" => ord != "GT",
-            ">=" => ord != "LT",
-            ">" => ord == "GT",
-            _ => unimplemented!(),
-        }
-    }
-    behavior
-        .iter()
-        .all(|ord| eval(code, ord) == eval(mutation, ord))
 }
 
 pub struct Yes;
@@ -151,12 +158,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
         assert_eq!(
-            &res.report
-                .analysis(1)
-                .behavior
-                .as_ref()
-                .unwrap()
-                .to_vec_ref(),
+            &res.report.for_mutable(1).analysis.behavior.to_vec_ref(),
             &["LT"]
         );
         assert_eq!(false, call_isolated! {f() where 1 => ">"}.res);
@@ -177,12 +179,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(2, res.res);
         assert_eq!(
-            &res.report
-                .analysis(1)
-                .behavior
-                .as_ref()
-                .unwrap()
-                .to_vec_ref(),
+            &res.report.for_mutable(1).analysis.behavior.to_vec_ref(),
             &["EQ", "LT"]
         );
         let res = call_isolated! {f() where 1 => "<="};
@@ -226,8 +223,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
-        assert_ne!(res.report.analysis(1).module, None);
-        assert_eq!(res.report.analysis(1).covered, false);
+        assert_ne!(res.report.for_mutable(1).location.module, None);
+        assert_eq!(res.report.for_mutable(1).analysis.covered, false);
     }
     #[test]
     fn assign_as_expr() {

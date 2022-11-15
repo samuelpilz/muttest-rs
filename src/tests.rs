@@ -8,7 +8,7 @@ use std::{
 use crate::{
     context::{IMuttestContext, MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
     mutable_id::CrateId,
-    report::{MutableAnalysis, MuttestReportForCrate},
+    report::{MutableReport, MuttestReportForCrate},
     BakedLocation, BakedMutableId, CrateLocalMutableId, MutableId, Mutation,
 };
 
@@ -87,14 +87,13 @@ impl BakedMutableId {
     }
 }
 impl MuttestReportForCrate {
-    pub(crate) fn analysis(&self, id: usize) -> &MutableAnalysis {
-        &self
+    pub(crate) fn for_mutable(&self, id: usize) -> &MutableReport {
+        self
             .mutables
             .iter()
             .find(|(m_id, _)| m_id.id == id)
             .unwrap_or_else(|| panic!("no mutable wih {id} found"))
             .1
-            .analysis
     }
 }
 
@@ -138,9 +137,9 @@ pub fn run<'a, T>(
 
     let mut report = MuttestReportForCrate::from_defs_checked(num_mutables, defs_csv);
 
-    // test if mutable id exists
+    // test if mutable id exists in report
     for (id, _) in &mutation {
-        report.analysis(*id);
+        report.for_mutable(*id);
     }
 
     let context = TestContext {
@@ -208,6 +207,50 @@ impl TestContext {
     }
 }
 
+impl<R: IMuttestContext> IMuttestContext for Arc<R> {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        <R as IMuttestContext>::tracks_mutable(self, m_id)
+    }
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
+        <R as IMuttestContext>::get_mutation(self, m_id)
+    }
+    fn write_details(
+        &self,
+        id: CrateLocalMutableId,
+        loc: BakedLocation,
+        ty: &str,
+        mutations: &str,
+    ) {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    }
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+        <R as IMuttestContext>::write_coverage(self, id, behavior)
+    }
+}
+impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+        <R as IMuttestContext>::tracks_mutable(self, m_id)
+    }
+    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
+        <R as IMuttestContext>::get_mutation(self, m_id)
+    }
+    fn write_details(
+        &self,
+        id: CrateLocalMutableId,
+        loc: BakedLocation,
+        ty: &str,
+        mutations: &str,
+    ) {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    }
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+        <R as IMuttestContext>::write_coverage(self, id, behavior)
+    }
+}
+pub(crate) fn as_box_dyn_context<R: IMuttestContext + 'static>(r: R) -> Box<dyn IMuttestContext> {
+    Box::new(r)
+}
+
 pub trait ToVecExt<T> {
     fn to_vec_cloned(&self) -> Vec<T>
     where
@@ -268,49 +311,53 @@ impl<T> ToVecExt<T> for Vec<T> {
         self.iter().cloned().map(|x| x.into()).collect()
     }
 }
+impl<T> ToVecExt<T> for &[T] {
+    fn to_vec_cloned(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        <[T]>::to_vec(self)
+    }
+    fn to_vec_ref(&self) -> Vec<&T> {
+        self.iter().collect()
+    }
+    fn to_vec_deref(&self) -> Vec<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        self.iter().map(|x| x.deref()).collect()
+    }
 
-impl<R: IMuttestContext> IMuttestContext for Arc<R> {
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
-        <R as IMuttestContext>::tracks_mutable(self, m_id)
-    }
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        <R as IMuttestContext>::get_mutation(self, m_id)
-    }
-    fn write_details(
-        &self,
-        id: CrateLocalMutableId,
-        loc: BakedLocation,
-        ty: &str,
-        mutations: &str,
-    ) {
-        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
-    }
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
-        <R as IMuttestContext>::write_coverage(self, id, behavior)
+    fn to_vec_into<T1>(&self) -> Vec<T1>
+    where
+        T: Into<T1> + Clone,
+    {
+        self.iter().cloned().map(|x| x.into()).collect()
     }
 }
-impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
-        <R as IMuttestContext>::tracks_mutable(self, m_id)
+impl<T, const N: usize> ToVecExt<T> for [T; N] {
+    fn to_vec_cloned(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        <[T]>::to_vec(self)
     }
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        <R as IMuttestContext>::get_mutation(self, m_id)
+    fn to_vec_ref(&self) -> Vec<&T> {
+        self.iter().collect()
     }
-    fn write_details(
-        &self,
-        id: CrateLocalMutableId,
-        loc: BakedLocation,
-        ty: &str,
-        mutations: &str,
-    ) {
-        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    fn to_vec_deref(&self) -> Vec<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        self.iter().map(|x| x.deref()).collect()
     }
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
-        <R as IMuttestContext>::write_coverage(self, id, behavior)
+
+    fn to_vec_into<T1>(&self) -> Vec<T1>
+    where
+        T: Into<T1> + Clone,
+    {
+        self.iter().cloned().map(|x| x.into()).collect()
     }
-}
-pub(crate) fn as_box_dyn_context<R: IMuttestContext + 'static>(r: R) -> Box<dyn IMuttestContext> {
-    Box::new(r)
 }
 
 #[test]

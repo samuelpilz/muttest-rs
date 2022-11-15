@@ -9,10 +9,10 @@ use std::{
 use cargo_metadata::camino::Utf8Path;
 use clap::Parser;
 use muttest_core::{
-    context,
-    mutable::{self, binop_cmp::MutableBinopCmp, mutations_for_mutable, Mutable},
+    context, display_or_empty_if_none,
+    mutable::{identical_behavior_for_mutable, mutations_for_mutable},
     mutable_id::CrateId,
-    report::{MutableAnalysis, MuttestReport, MuttestReportForCrate, TestBin},
+    report::{MuttestReport, MuttestReportForCrate, TestBin},
 };
 use wait_timeout::ChildExt;
 
@@ -108,30 +108,31 @@ fn main() -> Result<(), Error> {
 
     // evaluate mutations
     for (crate_id, crate_report) in &mut report.muttest_crates {
-        println!("{crate_id}");
+        println!("# Analysis {crate_id}");
 
         let ids = crate_report.mutables.keys().cloned().collect::<Vec<_>>();
         for &id in &ids {
-            let mutable @ MutableAnalysis {
-                code,
-                kind,
-                behavior,
-                ..
-            } = &crate_report.mutables[&id].analysis;
+            let mutable = &crate_report.mutables[&id];
+            let analysis = &mutable.analysis;
             println!(
-                "{id}: {kind} `{code}` in {} ",
-                crate_report.location_of(id).unwrap()
+                "{id}: {} `{}` in {} ",
+                mutable.kind,
+                analysis.code,
+                display_or_empty_if_none(&mutable.location.span)
             );
 
-            let mutations = mutations_for_mutable(mutable)?;
+            let mutations = mutations_for_mutable(&mutable.kind, analysis)?;
             total_mutants += mutations.len();
 
-            let Some(behavior) = &behavior else {
-                println!("  not covered ({})", match mutations.len() {
-                    0 => "no mutations".to_owned(),
-                    1 => "1 mutation".to_owned(),
-                    n => format!("{n} mutations"),
-                });
+            if !analysis.covered {
+                println!(
+                    "  not covered ({})",
+                    match mutations.len() {
+                        0 => "no mutations".to_owned(),
+                        1 => "1 mutation".to_owned(),
+                        n => format!("{n} mutations"),
+                    }
+                );
                 continue;
             };
 
@@ -144,10 +145,7 @@ fn main() -> Result<(), Error> {
                 print!("  mutation `{m}` ... ");
                 std::io::stdout().flush()?;
 
-                // TODO: improve weak surviving
-                if kind == MutableBinopCmp::NAME
-                    && mutable::binop_cmp::identical_behavior(code, &m, behavior)
-                {
+                if identical_behavior_for_mutable(&mutable.kind, analysis, &m)? {
                     println!("survived weak mutation testing");
                     continue;
                 }

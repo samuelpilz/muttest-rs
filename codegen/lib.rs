@@ -14,9 +14,8 @@ use lazy_static::lazy_static;
 use muttest_core::{
     context::ENV_VAR_MUTTEST_DIR,
     mutable::{
-        assign_op::MutableAssignOp, binop_bool::MutableBinopBool, binop_calc::MutableBinopCalc,
-        binop_cmp::MutableBinopCmp, binop_eq::MutableBinopEq, extreme::MutableExtreme,
-        lit_char::MutableLitChar, lit_int::MutableLitInt, lit_str::MutableLitStr, Mutable,
+        assign_op, binop_bool, binop_calc, binop_cmp, binop_eq, extreme, lit_char, lit_int,
+        lit_str, Mutable,
     },
     transformer::{
         MutablesConf, MuttestTransformer, TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
@@ -221,7 +220,7 @@ trait MatchMutable<'m, T: syn::parse::Parse>: Sized + Mutable<'m> {
     fn try_match<'a: 'm>(ast_node: &'a T) -> Option<Self>;
 }
 
-impl<'a> MatchMutable<'a, Expr> for MutableLitInt<'a> {
+impl<'a> MatchMutable<'a, Expr> for lit_int::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Lit(ExprLit {
@@ -235,7 +234,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableLitInt<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableLitChar<'a> {
+impl<'a> MatchMutable<'a, Expr> for lit_char::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Lit(ExprLit {
@@ -249,7 +248,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableLitChar<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableLitStr<'a> {
+impl<'a> MatchMutable<'a, Expr> for lit_str::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Lit(ExprLit {
@@ -263,7 +262,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableLitStr<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableBinopEq<'a> {
+impl<'a> MatchMutable<'a, Expr> for binop_eq::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Binary(ExprBinary {
@@ -278,7 +277,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopEq<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableBinopCmp<'a> {
+impl<'a> MatchMutable<'a, Expr> for binop_cmp::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Binary(ExprBinary {
@@ -293,7 +292,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopCmp<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableBinopCalc<'a> {
+impl<'a> MatchMutable<'a, Expr> for binop_calc::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Binary(ExprBinary {
@@ -308,7 +307,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopCalc<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableAssignOp<'a> {
+impl<'a> MatchMutable<'a, Expr> for assign_op::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::AssignOp(ExprAssignOp {
@@ -323,7 +322,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableAssignOp<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, Expr> for MutableBinopBool<'a> {
+impl<'a> MatchMutable<'a, Expr> for binop_bool::Mutable<'a> {
     fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
         match expr {
             Expr::Binary(ExprBinary {
@@ -338,7 +337,7 @@ impl<'a> MatchMutable<'a, Expr> for MutableBinopBool<'a> {
         }
     }
 }
-impl<'a> MatchMutable<'a, ItemFn> for MutableExtreme<'a> {
+impl<'a> MatchMutable<'a, ItemFn> for extreme::Mutable<'a> {
     fn try_match<'b: 'a>(item_fn: &'b ItemFn) -> Option<Self> {
         let ItemFn {
             vis, sig, block, ..
@@ -370,20 +369,20 @@ impl FoldImpl<'_> {
     }
 
     fn try_all_mutate_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
-        self.try_mutate::<Expr, MutableLitChar>(e)?;
-        self.try_mutate::<Expr, MutableLitInt>(e)?;
-        self.try_mutate::<Expr, MutableLitStr>(e)?;
-        self.try_mutate::<Expr, MutableBinopEq>(e)?;
-        self.try_mutate::<Expr, MutableBinopCmp>(e)?;
-        self.try_mutate::<Expr, MutableBinopCalc>(e)?;
-        self.try_mutate::<Expr, MutableAssignOp>(e)?;
-        self.try_mutate::<Expr, MutableBinopBool>(e)?;
+        self.try_mutate::<Expr, lit_char::Mutable>(e)?;
+        self.try_mutate::<Expr, lit_int::Mutable>(e)?;
+        self.try_mutate::<Expr, lit_str::Mutable>(e)?;
+        self.try_mutate::<Expr, binop_eq::Mutable>(e)?;
+        self.try_mutate::<Expr, binop_cmp::Mutable>(e)?;
+        self.try_mutate::<Expr, binop_calc::Mutable>(e)?;
+        self.try_mutate::<Expr, assign_op::Mutable>(e)?;
+        self.try_mutate::<Expr, binop_bool::Mutable>(e)?;
 
         ControlFlow::Continue(())
     }
 
     fn try_all_mutate_item_fn(&mut self, item_fn: &ItemFn) -> ControlFlow<ItemFn> {
-        self.try_mutate::<ItemFn, MutableExtreme>(item_fn)?;
+        self.try_mutate::<ItemFn, extreme::Mutable>(item_fn)?;
 
         ControlFlow::Continue(())
     }

@@ -8,16 +8,16 @@ use crate::{
     BakedMutableId,
 };
 
-use super::Mutable;
+use super::FilterMutableCode;
 
-pub struct MutableBinopBool<'a> {
+pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
     pub op: &'a dyn ToTokens,
     pub span: Span,
 }
 
-impl<'a> Mutable<'a> for MutableBinopBool<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "binop_bool";
 
     fn span(&self) -> Span {
@@ -47,6 +47,10 @@ impl<'a> Mutable<'a> for MutableBinopBool<'a> {
                 }
             })
         }
+    }
+
+    fn mutations(analysis: &crate::report::MutableAnalysis) -> Vec<String> {
+        ["&&", "||"].filter_mutable_code(&analysis.code)
     }
 }
 
@@ -98,12 +102,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(false, res.res);
         assert_eq!(
-            &res.report
-                .analysis(1)
-                .behavior
-                .as_ref()
-                .unwrap()
-                .to_vec_ref(),
+            &res.report.for_mutable(1).analysis.behavior.to_vec_ref(),
             &["TF"]
         );
     }
@@ -118,12 +117,7 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
         assert_eq!(
-            &res.report
-                .analysis(1)
-                .behavior
-                .as_ref()
-                .unwrap()
-                .to_vec_ref(),
+            &res.report.for_mutable(1).analysis.behavior.to_vec_ref(),
             &["T"]
         );
     }
@@ -140,8 +134,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(true, res.res);
-        assert_ne!(res.report.analysis(1).module, None);
-        assert_eq!(res.report.analysis(1).covered, false);
+        assert_ne!(res.report.for_mutable(1).location.module, None);
+        assert_eq!(res.report.for_mutable(1).analysis.covered, false);
     }
 
     // TODO: tests

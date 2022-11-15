@@ -6,16 +6,14 @@ use crate::{
     BakedMutableId, Mutation,
 };
 
-use super::Mutable;
-
-pub struct MutableAssignOp<'a> {
+pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
     pub op: &'a dyn ToTokens,
     pub span: Span,
 }
 
-impl<'a> Mutable<'a> for MutableAssignOp<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "assign_op";
 
     fn span(&self) -> Span {
@@ -194,7 +192,13 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.report.analysis(1).mutations.as_ref().unwrap().len(),
+            res.report
+                .for_mutable(1)
+                .analysis
+                .mutations
+                .as_ref()
+                .unwrap()
+                .len(),
             // all mutations possible
             CALC_ASSIGN_OP_NAMES.len()
         );
@@ -213,7 +217,8 @@ mod tests {
         assert_eq!(&*res.res, "ab");
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()

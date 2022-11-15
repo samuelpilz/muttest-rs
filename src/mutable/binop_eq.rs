@@ -2,20 +2,21 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
+    report::MutableAnalysis,
     transformer::{MuttestTransformer, TransformSnippets},
     BakedMutableId,
 };
 
-use super::Mutable;
+use super::FilterMutableCode;
 
-pub struct MutableBinopEq<'a> {
+pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
     pub op: &'a dyn ToTokens,
     pub span: Span,
 }
 
-impl<'a> Mutable<'a> for MutableBinopEq<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "binop_eq";
 
     fn span(&self) -> Span {
@@ -44,6 +45,10 @@ impl<'a> Mutable<'a> for MutableBinopEq<'a> {
                 #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _res)
             })
         }
+    }
+
+    fn mutations(analysis: &MutableAnalysis) -> Vec<String> {
+        ["==", "!="].filter_mutable_code(&analysis.code)
     }
 }
 
@@ -79,10 +84,9 @@ mod tests {
         assert_eq!(false, res.res);
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .behavior
-                .as_ref()
-                .unwrap()
                 .iter()
                 .collect::<Vec<_>>(),
             &["NE"]
@@ -100,10 +104,9 @@ mod tests {
         assert_eq!(true, res.res);
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .behavior
-                .as_ref()
-                .unwrap()
                 .iter()
                 .collect::<Vec<_>>(),
             &["NE"]
@@ -155,8 +158,8 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(1, res.res);
-        assert_ne!(res.report.analysis(1).module, None);
-        assert_eq!(res.report.analysis(1).covered, false);
+        assert_ne!(res.report.for_mutable(1).location.module, None);
+        assert_eq!(res.report.for_mutable(1).analysis.covered, false);
     }
 
     #[test]

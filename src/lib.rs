@@ -121,6 +121,8 @@ pub enum Error {
     UnknownCrateLocalMutableId(CrateLocalMutableId),
     #[error("not a known mutate attr id: '{0}'")]
     UnknownMutateAttr(usize),
+    #[error("unknown mutable kind {0}")]
+    UnknownMutableKind(String),
     #[error("invalid location: '{0}'")]
     LocationFormat(String),
     #[error("invalid path: '{0}'")]
@@ -179,12 +181,12 @@ pub struct BakedLocation {
     pub attr_span: Span,
     pub span: Span,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Span {
     pub start: LineColumn,
     pub end: Option<LineColumn>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct LineColumn {
     pub line: u32,
     pub column: u32,
@@ -218,7 +220,7 @@ impl Span {
     }
 }
 
-fn display_or_empty_if_none(d: &Option<impl fmt::Display>) -> &dyn fmt::Display {
+pub fn display_or_empty_if_none(d: &Option<impl fmt::Display>) -> &dyn fmt::Display {
     match d {
         Some(d) => d,
         None => &"",

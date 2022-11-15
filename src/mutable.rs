@@ -15,60 +15,74 @@ pub mod lit_str;
 // * lits: byte, byte_str, float
 // * unop: neg, not
 
+/// a general trait for mutables with shared methods.
+///
+/// consists of:
+/// * for proc-macro: source code transformer
+/// * for runner: possible mutations & weak mutation analysis
 pub trait Mutable<'a> {
     const NAME: &'static str;
 
     fn span(&self) -> Span;
 
     fn transform(self, transformer: &mut MuttestTransformer) -> TokenStream;
-}
 
-// TODO: tests
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn mutations_for_mutable(mutable: &MutableAnalysis) -> Result<Vec<String>, Error> {
-    Ok(match &*mutable.kind {
-        lit_int::MutableLitInt::NAME => {
-            let i = mutable.code.parse::<u128>().expect("unable to parse int");
-            let mut m = vec![];
-            if i != 0 {
-                m.push((i - 1).to_string());
-            }
-            // TODO: type-sensitive detection of max
-            m.push((i + 1).to_string());
-            m
-        }
-        lit_str::MutableLitStr::NAME => {
-            if mutable.code.is_empty() {
-                vec![]
-            } else {
-                vec![r#""""#.to_owned()]
-            }
-        }
-        binop_cmp::MutableBinopCmp::NAME => ["<", "<=", ">=", ">"]
-            .iter()
-            .copied()
-            .filter(|&x| x != mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
-        binop_eq::MutableBinopEq::NAME => ["==", "!="]
-            .iter()
-            .copied()
-            .filter(|&x| x != mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
-        binop_bool::MutableBinopBool::NAME => ["&&", "||"]
-            .iter()
-            .copied()
-            .filter(|&x| x != mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
-        // fallback to mutable's description of possible mutations
-        _ => mutable
+    fn mutations(analysis: &MutableAnalysis) -> Vec<String> {
+        analysis
             .mutations
             .iter()
             .flatten()
-            .filter(|&x| x != &mutable.code)
-            .map(ToOwned::to_owned)
-            .collect(),
-    })
+            .filter_mutable_code(&analysis.code)
+    }
+
+    #[allow(unused_variables)]
+    fn identical_behavior(analysis: &MutableAnalysis, mutation: &str) -> bool {
+        false
+    }
+}
+
+pub fn mutations_for_mutable(kind: &str, analysis: &MutableAnalysis) -> Result<Vec<String>, Error> {
+    macro_rules! match_mutables {
+        ($($m:ident,)*) => {
+            match kind {
+                $($m::Mutable::NAME => $m::Mutable::mutations(analysis),)*
+                _ => return Err(Error::UnknownMutableKind(kind.to_owned())),
+            }
+        };
+    }
+    Ok(match_mutables!(
+        assign_op, binop_bool, binop_calc, binop_cmp, binop_eq, extreme, lit_char, lit_int,
+        lit_str,
+    ))
+}
+
+pub fn identical_behavior_for_mutable(
+    kind: &str,
+    analysis: &MutableAnalysis,
+    mutation: &str,
+) -> Result<bool, Error> {
+    macro_rules! match_mutables {
+        ($($m:ident,)*) => {
+            match kind {
+                $($m::Mutable::NAME => $m::Mutable::identical_behavior(analysis, mutation),)*
+                _ => return Err(Error::UnknownMutableKind(kind.to_owned())),
+            }
+        };
+    }
+    Ok(match_mutables!(
+        assign_op, binop_bool, binop_calc, binop_cmp, binop_eq, extreme, lit_char, lit_int,
+        lit_str,
+    ))
+}
+
+trait FilterMutableCode {
+    fn filter_mutable_code(self, code: &str) -> Vec<String>;
+}
+impl<'a, S: AsRef<str> + 'a, I: IntoIterator<Item = S> + 'a> FilterMutableCode for I {
+    fn filter_mutable_code(self, code: &str) -> Vec<String> {
+        self.into_iter()
+            .filter(|m| m.as_ref() != code)
+            .map(|m| m.as_ref().to_owned())
+            .collect()
+    }
 }

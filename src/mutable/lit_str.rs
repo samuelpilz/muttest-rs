@@ -11,15 +11,13 @@ use crate::{
     BakedLocation, BakedMutableId,
 };
 
-use super::Mutable;
-
-pub struct MutableLitStr<'a> {
+pub struct Mutable<'a> {
     pub value: String,
     pub span: Span,
     pub lit: &'a dyn ToTokens,
 }
 
-impl<'a> Mutable<'a> for MutableLitStr<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "lit_str";
 
     fn span(&self) -> Span {
@@ -41,6 +39,14 @@ impl<'a> Mutable<'a> for MutableLitStr<'a> {
                     #muttest_api::RwLock::new(#muttest_api::Option::None);
                 &MUTABLE
             })
+        }
+    }
+
+    fn mutations(analysis: &crate::report::MutableAnalysis) -> Vec<String> {
+        if analysis.code.is_empty() {
+            vec![]
+        } else {
+            vec![r#""""#.to_owned()]
         }
     }
 }

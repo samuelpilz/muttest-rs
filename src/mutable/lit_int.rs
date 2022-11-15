@@ -4,19 +4,18 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
 
 use crate::{
+    report::MutableAnalysis,
     transformer::{MuttestTransformer, TransformSnippets},
     BakedLocation, BakedMutableId,
 };
 
-use super::Mutable;
-
-pub struct MutableLitInt<'a> {
+pub struct Mutable<'a> {
     pub base10_digits: &'a str,
     pub span: Span,
     pub lit: &'a dyn ToTokens,
 }
 
-impl<'a> Mutable<'a> for MutableLitInt<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "lit_int";
 
     fn span(&self) -> Span {
@@ -35,6 +34,17 @@ impl<'a> Mutable<'a> for MutableLitInt<'a> {
         quote_spanned! {span=>
             #muttest_api::mutable::lit_int::run(#m_id, #lit, #loc)
         }
+    }
+
+    fn mutations(analysis: &MutableAnalysis) -> Vec<String> {
+        let Ok(i) = analysis.code.parse::<u128>() else {return vec![]};
+        let mut m = vec![];
+        if i != 0 {
+            m.push((i - 1).to_string());
+        }
+        // TODO: type-sensitive detection of max
+        m.push((i + 1).to_string());
+        m
     }
 }
 
@@ -104,8 +114,8 @@ mod tests {
                 x + 1
             }
         }
-        let data = data_isolated!(_f);
-        assert_eq!(data.mutables.len(), 0);
+        let report = data_isolated!(_f);
+        assert_eq!(report.mutables.len(), 0);
     }
     #[test]
     fn const_generics_not_mutated() {
@@ -113,9 +123,9 @@ mod tests {
         fn _f(_: [usize; 2]) -> [i128; 2] {
             [1; 2]
         }
-        let data = data_isolated!(_f);
-        assert_eq!(data.mutables.len(), 1);
-        assert_eq!(data.analysis(1).code, "1");
+        let report = data_isolated!(_f);
+        assert_eq!(report.mutables.len(), 1);
+        assert_eq!(report.for_mutable(1).analysis.code, "1");
     }
 
     #[test]

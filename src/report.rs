@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
     io::Read,
     path::PathBuf,
     time::Duration,
@@ -32,7 +31,7 @@ pub struct MuttestReportForCrate {
     pub mutables: BTreeMap<CrateLocalMutableId, MutableReport>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct MutateAttrLocation {
     pub file: Option<String>,
     pub span: Option<Span>,
@@ -40,21 +39,26 @@ pub struct MutateAttrLocation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MutableReport {
+    pub kind: String,
     pub analysis: MutableAnalysis,
+    pub location: MutableLocation,
     pub results: BTreeMap<String, MutationResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MutableAnalysis {
-    pub kind: String,
     pub code: String,
-    pub module: Option<String>,
-    pub span: Option<Span>,
-    pub path: Vec<PathSegment>,
     pub ty: Option<String>,
     pub mutations: Option<Vec<String>>,
     pub covered: bool,
-    pub behavior: Option<BTreeSet<String>>,
+    pub behavior: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MutableLocation {
+    pub module: Option<String>,
+    pub span: Option<Span>,
+    pub path: Vec<PathSegment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -65,35 +69,7 @@ pub enum MutationResult {
     Timeout,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct MutableLocation<'a> {
-    pub file: Option<&'a str>,
-    pub module: Option<&'a str>,
-    pub span: Option<Span>,
-    pub path: &'a [PathSegment],
-}
-
-impl From<MutableAnalysis> for MutableReport {
-    fn from(analysis: MutableAnalysis) -> Self {
-        Self {
-            analysis,
-            results: Default::default(),
-        }
-    }
-}
-
 impl MuttestReportForCrate {
-    pub fn location_of(&self, m_id: CrateLocalMutableId) -> Option<MutableLocation<'_>> {
-        let attr = self.attrs.get(&m_id.attr_id)?;
-        let m = self.mutables.get(&m_id)?;
-
-        Some(MutableLocation {
-            file: attr.file.as_deref(),
-            module: m.analysis.module.as_deref(),
-            span: m.analysis.span,
-            path: &m.analysis.path,
-        })
-    }
     pub fn from_definition_csv(definitions: impl Read) -> Result<Self, Error> {
         #[derive(Debug, Deserialize)]
         struct MutableDefinitionCsvLine {
@@ -117,21 +93,26 @@ impl MuttestReportForCrate {
                     attr_id: md.attr_id,
                     id: md.id,
                 },
-                MutableReport::from(MutableAnalysis {
+                MutableReport {
                     kind: md.kind,
-                    code: md.code,
-                    module: None,
-                    span: parse_or_none_if_empty(&md.span)?,
-                    path: md
-                        .path
-                        .split(':')
-                        .map(|s| s.parse())
-                        .collect::<Result<_, _>>()?,
-                    ty: None,
-                    mutations: None,
-                    covered: false,
-                    behavior: None,
-                }),
+                    analysis: MutableAnalysis {
+                        code: md.code,
+                        ty: None,
+                        mutations: None,
+                        covered: false,
+                        behavior: Default::default(),
+                    },
+                    location: MutableLocation {
+                        module: None,
+                        span: parse_or_none_if_empty(&md.span)?,
+                        path: md
+                            .path
+                            .split(':')
+                            .map(|s| s.parse())
+                            .collect::<Result<_, _>>()?,
+                    },
+                    results: Default::default(),
+                },
             );
             let attr = report.attrs.entry(md.attr_id).or_default();
             if !md.file.is_empty() {
@@ -169,19 +150,23 @@ impl MuttestReportForCrate {
                 .mutables
                 .get_mut(&id)
                 .ok_or(Error::UnknownCrateLocalMutableId(id))?;
-            let analysis = &mut mutable.analysis;
 
+            // update analysis
+            let analysis = &mut mutable.analysis;
             analysis.ty = if md.ty.is_empty() { None } else { Some(md.ty) };
             analysis.mutations = Some(if md.mutations.is_empty() {
                 vec![]
             } else {
                 md.mutations.split(':').map(ToOwned::to_owned).collect()
             });
-            if analysis.span.is_none() {
-                analysis.span = parse_or_none_if_empty(&md.span)?;
+
+            // update location
+            let location = &mut mutable.location;
+            if location.span.is_none() {
+                location.span = parse_or_none_if_empty(&md.span)?;
             }
-            if analysis.module.is_none() {
-                analysis.module = Some(md.module);
+            if location.module.is_none() {
+                location.module = Some(md.module);
             }
 
             let attr = self
@@ -223,28 +208,12 @@ impl MuttestReportForCrate {
                 .analysis;
 
             analysis.covered = true;
-            analysis.behavior = Some(if md.behavior.is_empty() {
+            analysis.behavior = if md.behavior.is_empty() {
                 BTreeSet::new()
             } else {
                 md.behavior.split(':').map(ToOwned::to_owned).collect()
-            });
+            };
         }
-        Ok(())
-    }
-}
-
-impl fmt::Display for MutableLocation<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(file) = self.file {
-            write!(f, "{file}")?;
-        }
-        if self.file.is_some() && self.span.is_some() {
-            write!(f, ":")?;
-        }
-        if let Some(span) = self.span {
-            write!(f, "{span}")?;
-        }
-        // TODO: maybe also write module & path?
         Ok(())
     }
 }

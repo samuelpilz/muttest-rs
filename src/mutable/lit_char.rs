@@ -6,15 +6,13 @@ use crate::{
     BakedLocation, BakedMutableId,
 };
 
-use super::Mutable;
-
-pub struct MutableLitChar<'a> {
+pub struct Mutable<'a> {
     pub c: char,
     pub span: Span,
     pub lit: &'a dyn ToTokens,
 }
 
-impl<'a> Mutable<'a> for MutableLitChar<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "lit_char";
 
     fn span(&self) -> Span {

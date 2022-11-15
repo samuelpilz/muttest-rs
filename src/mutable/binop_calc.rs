@@ -6,16 +6,14 @@ use crate::{
     BakedMutableId, Mutation,
 };
 
-use super::Mutable;
-
-pub struct MutableBinopCalc<'a> {
+pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
     pub op: &'a dyn ToTokens,
     pub span: Span,
 }
 
-impl<'a> Mutable<'a> for MutableBinopCalc<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "binop_calc";
 
     fn span(&self) -> Span {
@@ -200,13 +198,19 @@ mod tests {
         fn f() -> i32 {
             5 * 4
         }
-        let data = data_isolated!(f);
-        assert_eq!(data.mutables.len(), 1);
+        let report = data_isolated!(f);
+        assert_eq!(report.mutables.len(), 1);
 
         let res = call_isolated! {f()};
         assert_eq!(res.res, 20);
         assert_eq!(
-            res.report.analysis(1).mutations.as_ref().unwrap().len(),
+            res.report
+                .for_mutable(1)
+                .analysis
+                .mutations
+                .as_ref()
+                .unwrap()
+                .len(),
             // all mutations possible
             CALC_OP_NAMES.len()
         );
@@ -221,10 +225,10 @@ mod tests {
             3 + 2 * 4
         }
 
-        let data = data_isolated!(f);
-        assert_eq!(data.mutables.len(), 2);
-        assert_eq!(&data.analysis(1).code, "*");
-        assert_eq!(&data.analysis(2).code, "+");
+        let report = data_isolated!(f);
+        assert_eq!(report.mutables.len(), 2);
+        assert_eq!(&report.for_mutable(1).analysis.code, "*");
+        assert_eq!(&report.for_mutable(2).analysis.code, "+");
 
         assert_eq!(call_isolated! {f()}.res, 11);
         assert_eq!(call_isolated! {f() where 1 => "-"}.res, 1);
@@ -243,7 +247,8 @@ mod tests {
         assert_eq!(&*res.res, "ab");
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -289,7 +294,8 @@ mod tests {
         assert_eq!(res.res, O1);
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -300,7 +306,8 @@ mod tests {
         assert_eq!(res.res, O2);
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -320,7 +327,8 @@ mod tests {
         let res = call_isolated! {f(now)};
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -342,10 +350,10 @@ mod tests {
             x * x + y * y
         }
 
-        let data = data_isolated!(f);
-        assert_eq!(&data.analysis(1).code, "*");
-        assert_eq!(&data.analysis(2).code, "*");
-        assert_eq!(&data.analysis(3).code, "+");
+        let report = data_isolated!(f);
+        assert_eq!(&report.for_mutable(1).analysis.code, "*");
+        assert_eq!(&report.for_mutable(2).analysis.code, "*");
+        assert_eq!(&report.for_mutable(3).analysis.code, "+");
 
         let res = call_isolated! {f(-4, 7)};
         assert_eq!(res.res, 16 + 49);
@@ -368,7 +376,8 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -412,8 +421,8 @@ mod tests {
                 B = 2,
             }
         }
-        let data = data_isolated!(_f);
-        assert_eq!(data.mutables.len(), 0);
+        let report = data_isolated!(_f);
+        assert_eq!(report.mutables.len(), 0);
     }
     #[test]
     fn pattern_guard_mutated() {
@@ -444,7 +453,7 @@ mod tests {
 
         let res = call_isolated! {f()};
         assert_eq!(5, res.res);
-        assert_ne!(res.report.analysis(1).mutations, None);
-        assert_eq!(res.report.analysis(1).covered, false);
+        assert_ne!(res.report.for_mutable(1).analysis.mutations, None);
+        assert_eq!(res.report.for_mutable(1).analysis.covered, false);
     }
 }

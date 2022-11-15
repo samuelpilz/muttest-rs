@@ -8,17 +8,15 @@ use crate::{
     BakedMutableId,
 };
 
-use super::Mutable;
-
 // TODO: mutate (some) blocks instead of `ItemFn`s
-pub struct MutableExtreme<'a> {
+pub struct Mutable<'a> {
     pub vis: &'a dyn ToTokens,
     pub sig: &'a dyn ToTokens,
     pub block: &'a dyn ToTokens,
     pub span: Span,
 }
 
-impl<'a> Mutable<'a> for MutableExtreme<'a> {
+impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "extreme";
 
     fn span(&self) -> Span {
@@ -34,7 +32,7 @@ impl<'a> Mutable<'a> for MutableExtreme<'a> {
         } = transformer.new_mutable(&self, "");
         // TODO: add reasonable code for that
 
-        let MutableExtreme {
+        let Self {
             vis, sig, block, ..
         } = self;
         quote_spanned! {span=>
@@ -189,7 +187,8 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -207,7 +206,8 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -226,7 +226,8 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(
             res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
@@ -247,7 +248,8 @@ mod tests {
         let res = call_isolated! {f()};
         assert_eq!(
             &res.report
-                .analysis(1)
+                .for_mutable(1)
+                .analysis
                 .mutations
                 .as_ref()
                 .unwrap()
