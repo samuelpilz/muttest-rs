@@ -61,7 +61,9 @@ jobs:
         with:
           components: clippy
       - name: Run Clippy
-        run: cargo clippy --all --tests -- --deny clippy::all
+        run: cargo clippy --workspace -- --deny clippy::all
+      - name: Run Clippy for tests
+        run: cargo clippy --workspace --tests -- --deny clippy::all
 
   selftest:
     runs-on: ubuntu-latest
