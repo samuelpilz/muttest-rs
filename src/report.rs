@@ -13,7 +13,6 @@ use crate::{
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct MuttestReport {
-    // TODO: new type, something like `CrateId`?
     pub muttest_crates: BTreeMap<CrateId, MuttestReportForCrate>,
     pub test_bins: Vec<TestBin>,
 }

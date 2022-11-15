@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -11,8 +12,8 @@ use clap::Parser;
 use muttest_core::{
     context, display_or_empty_if_none,
     mutable::{identical_behavior_for_mutable, mutations_for_mutable},
-    mutable_id::CrateId,
-    report::{MuttestReport, MuttestReportForCrate, TestBin},
+    mutable_id::{CrateId, CrateLocalMutableId},
+    report::{MutateAttrLocation, MuttestReport, MuttestReportForCrate, TestBin},
 };
 use wait_timeout::ChildExt;
 
@@ -108,80 +109,96 @@ fn main() -> Result<(), Error> {
 
     // evaluate mutations
     for (crate_id, crate_report) in &mut report.muttest_crates {
-        println!("# Analysis {crate_id}");
+        println!("\n# Analysis {crate_id}\n");
 
-        let ids = crate_report.mutables.keys().cloned().collect::<Vec<_>>();
-        for &id in &ids {
-            let mutable = &crate_report.mutables[&id];
-            let analysis = &mutable.analysis;
-            println!(
-                "{id}: {} `{}` in {} ",
-                mutable.kind,
-                analysis.code,
-                display_or_empty_if_none(&mutable.location.span)
-            );
+        let attr_ids: BTreeSet<(usize, &MutateAttrLocation)> =
+            crate_report.attrs.iter().map(|(i, l)| (*i, l)).collect();
 
-            let mutations = mutations_for_mutable(&mutable.kind, analysis)?;
-            total_mutants += mutations.len();
-
-            if !analysis.covered {
-                println!(
-                    "  not covered ({})",
-                    match mutations.len() {
-                        0 => "no mutations".to_owned(),
-                        1 => "1 mutation".to_owned(),
-                        n => format!("{n} mutations"),
-                    }
-                );
-                continue;
-            };
-
-            if mutations.is_empty() {
-                println!("  no mutations");
-                continue;
+        let mut current_file: Option<&str> = None;
+        for (attr_id, attr_loc) in attr_ids {
+            if current_file != attr_loc.file.as_deref() {
+                current_file = attr_loc.file.as_deref();
+                match current_file {
+                    Some(f) => println!("\n## File {f}\n"),
+                    None => println!("\n## unknown file\n"),
+                }
             }
+            for (m_id, mutable) in crate_report.mutables.range(
+                CrateLocalMutableId { attr_id, id: 0 }..CrateLocalMutableId {
+                    attr_id: attr_id + 1,
+                    id: 0,
+                },
+            ) {
+                let analysis = &mutable.analysis;
+                println!(
+                    "{m_id}: {} `{}` in {} ",
+                    mutable.kind,
+                    analysis.code,
+                    display_or_empty_if_none(&mutable.location.span)
+                );
 
-            for m in mutations {
-                print!("  mutation `{m}` ... ");
-                std::io::stdout().flush()?;
+                let mutations = mutations_for_mutable(&mutable.kind, analysis)?;
+                total_mutants += mutations.len();
 
-                if identical_behavior_for_mutable(&mutable.kind, analysis, &m)? {
-                    println!("survived weak mutation testing");
+                if !analysis.covered {
+                    println!(
+                        "  not covered ({})",
+                        match mutations.len() {
+                            0 => "no mutations".to_owned(),
+                            1 => "1 mutation".to_owned(),
+                            n => format!("{n} mutations"),
+                        }
+                    );
+                    continue;
+                };
+
+                if mutations.is_empty() {
+                    println!("  no mutations");
                     continue;
                 }
 
-                let mut survived = true;
+                for m in mutations {
+                    print!("  mutation `{m}` ... ");
+                    std::io::stdout().flush()?;
 
-                // run test suites without mutations for coverage
-                for test_bin in &report.test_bins {
-                    let mut test = Command::new(&test_bin.path)
-                        .env(context::ENV_VAR_MUTTEST_TARGET, crate_id.to_string())
-                        // TODO: repeating pkg/crate part of id makes little sense here
-                        .env(context::ENV_VAR_MUTTEST_MUTATION, format!("{id}={m}"))
-                        // TODO: think about details in mutated runs
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()?;
-                    // TODO: make timeout parameters into config options
-                    let result = test.wait_timeout(
-                        Duration::from_millis(500).max(3 * test_bin.exec_time.unwrap()),
-                    )?;
-                    let result = match result {
-                        Some(r) => r,
-                        None => {
-                            test.kill()?;
-                            test.wait()?
-                        }
-                    };
-                    if !result.success() {
-                        survived = false;
+                    if identical_behavior_for_mutable(&mutable.kind, analysis, &m)? {
+                        println!("survived weak mutation testing");
+                        continue;
                     }
-                    // TODO: run tests in finer granularity
+
+                    let mut survived = true;
+
+                    // run test suites without mutations for coverage
+                    for test_bin in &report.test_bins {
+                        let mut test = Command::new(&test_bin.path)
+                            .env(context::ENV_VAR_MUTTEST_TARGET, crate_id.to_string())
+                            // TODO: repeating pkg/crate part of id makes little sense here
+                            .env(context::ENV_VAR_MUTTEST_MUTATION, format!("{m_id}={m}"))
+                            // TODO: think about details in mutated runs
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()?;
+                        // TODO: make timeout parameters into config options
+                        let result = test.wait_timeout(
+                            Duration::from_millis(500).max(3 * test_bin.exec_time.unwrap()),
+                        )?;
+                        let result = match result {
+                            Some(r) => r,
+                            None => {
+                                test.kill()?;
+                                test.wait()?
+                            }
+                        };
+                        if !result.success() {
+                            survived = false;
+                        }
+                        // TODO: run tests in finer granularity
+                    }
+                    if !survived {
+                        killed_mutants += 1;
+                    }
+                    println!("{}", if survived { "survived" } else { "killed" });
                 }
-                if !survived {
-                    killed_mutants += 1;
-                }
-                println!("{}", if survived { "survived" } else { "killed" });
             }
         }
     }
