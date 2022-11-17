@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use proc_macro2::{Span, TokenStream};
-use quote::quote_spanned;
+use quote::{quote, quote_spanned};
 
 use crate::{
     display_or_empty_if_none, mutable::Mutable, mutable_id::CrateId, CrateLocalMutableId,
@@ -85,8 +85,8 @@ impl MuttestTransformer {
                 id: #id,
             }
         };
-        let span = bake_span(&muttest_api, m.span());
         let attr_span = bake_span(&muttest_api, self.conf.span);
+        let span = bake_span(&muttest_api, m.span());
 
         let loc = quote_spanned! {m.span()=>
             #muttest_api::BakedLocation {
@@ -166,3 +166,25 @@ fn source_file_path(span: Span) -> Option<PathBuf> {
 }
 
 // TODO: tests
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::*;
+
+    #[test]
+    fn correct_spans() {
+        #[muttest_codegen::mutate_isolated("extreme")]
+        fn f_1234() {
+            1;
+        }
+
+        // let report = call_isolated! {f()}.report;
+        // assert_eq!(report.attrs.len(), 1);
+        // let attr = report.attrs.iter().next().unwrap().1;
+        // assert!(attr.span.is_some());
+
+        // for m in report.mutables.values() {
+        //     assert_ne!(m.location.span, attr.span)
+        // }
+    }
+}
