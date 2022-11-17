@@ -36,9 +36,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
     fn mutations(analysis: &crate::report::MutableAnalysis) -> Vec<String> {
         // TODO: configure this at runtime
-        ["A", "0"]
-            .into_iter()
-            .filter_mutable_code(&analysis.code)
+        ["A", "0"].into_iter().filter_mutable_code(&analysis.code)
     }
 }
 
