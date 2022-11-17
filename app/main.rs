@@ -172,7 +172,6 @@ fn main() -> Result<(), Error> {
                     for test_bin in &report.test_bins {
                         let mut test = Command::new(&test_bin.path)
                             .env(context::ENV_VAR_MUTTEST_TARGET, crate_id.to_string())
-                            // TODO: repeating pkg/crate part of id makes little sense here
                             .env(context::ENV_VAR_MUTTEST_MUTATION, format!("{m_id}={m}"))
                             // TODO: think about details in mutated runs
                             .stdout(Stdio::null())
