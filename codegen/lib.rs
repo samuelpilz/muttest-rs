@@ -24,7 +24,7 @@ use muttest_core::{
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{quote, quote_spanned, ToTokens};
+use quote::{quote, ToTokens};
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprAssignOp,
     ExprBinary, ExprLit, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr,
@@ -47,23 +47,6 @@ lazy_static! {
 }
 static ATTR_ID: AtomicUsize = AtomicUsize::new(1);
 
-#[proc_macro_attribute]
-pub fn x(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as syn::ItemMod);
-    let attr_loc = quote_spanned!(Span::call_site()=>
-        (std::line!(), std::column!())
-    );
-    let ident_loc = quote_spanned!(input.ident.span()=>
-        (std::line!(), std::column!())
-    );
-    quote_spanned!(Span::call_site()=>
-        mod a {
-            pub const ATTR_LOC: (u32,u32) = #attr_loc;
-            pub const IDENT_LOC: (u32,u32) = #ident_loc;
-        }
-    )
-    .into()
-}
 /// isolated mutation for unit testing of `muttest-core` itself.
 #[proc_macro_attribute]
 pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -88,7 +71,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         } else {
             quote!(::muttest_core::api)
         },
-        pkg_name: "#isolated".to_owned(),
+        pkg_name: "#isolated",
         crate_name: crate_name.to_owned(),
     };
     if !attr.is_empty() {
@@ -110,19 +93,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     // write context of transformation next to transformed function
     let mut mod_ident = result.sig.ident.clone();
     mod_ident.set_span(Span::call_site());
-    let attr_loc = quote_spanned!(Span::call_site()=>
-        crate::api::Span {
-            start: crate::api::LineColumn {line: crate::api::line!(), column: crate::api::column!() },
-            end: crate::api::Option::None,
-        }
-    );
-    let ident_loc = quote_spanned!(result.sig.ident.span()=>
-        crate::api::Span {
-            start: crate::api::LineColumn {line: crate::api::line!(), column: crate::api::column!() },
-            end: crate::api::Option::None,
-        }
-    );
-    let result: File = parse_quote! {
+    quote! {
         #[allow(clippy::all)]
         #result
         mod #mod_ident {
@@ -130,12 +101,9 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
             pub const NUM_MUTABLES: usize = #num_mutables;
             pub const PKG_NAME: &str = "#isolated";
             pub const CRATE_NAME: &str = #crate_name;
-            pub const ATTR_LOC: crate::api::LineColumn = #attr_loc;
-            pub const IDENT_LOC: crate::api::LineColumn = #ident_loc;
         }
-    };
-
-    result.into_token_stream().into()
+    }
+    .into()
 }
 
 /// Transformer macro to be used to perform mutation testing on `muttest-core` itself.
@@ -151,7 +119,7 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: muttest_api.clone(),
-        pkg_name: PKG_NAME.clone(),
+        pkg_name: &PKG_NAME,
         crate_name: CRATE_NAME.clone(),
     };
 
@@ -202,7 +170,7 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
         span: Span::call_site(),
         mutables: MutablesConf::All,
         muttest_api: quote!(muttest),
-        pkg_name: PKG_NAME.clone(),
+        pkg_name: &PKG_NAME,
         crate_name: CRATE_NAME.clone(),
     };
 
