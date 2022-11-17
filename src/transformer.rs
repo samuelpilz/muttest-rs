@@ -84,8 +84,8 @@ impl MuttestTransformer {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(":"),
-            display_or_empty_if_none(&crate::Span::from(span)),
             display_or_empty_if_none(&crate::Span::from(self.conf.span)),
+            display_or_empty_if_none(&crate::Span::from(span)),
         ));
 
         let muttest_api = self.muttest_api(span);
