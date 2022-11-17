@@ -77,7 +77,24 @@ jobs:
           key: cargo-cache
       - name: Run selftest
         run: cargo run -p cargo-muttest -- muttest -p muttest-core
-        # TODO: selftest other packages?
+
+  selftest-nightly:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg procmacro2_semver_exempt"
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Cache
+        uses: actions/cache@v3.0.8
+        with:
+          path: target ~/.cargo
+          key: cargo-cache
+      - name: Run selftest
+        run: cargo run -p cargo-muttest -- muttest -p muttest-core
 
   examples:
     runs-on: ubuntu-latest

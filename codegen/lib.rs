@@ -27,8 +27,8 @@ use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use syn::{
     fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprAssignOp,
-    ExprBinary, ExprLit, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr,
-    Pat, Type, Variant,
+    ExprBinary, ExprLit, ExprRepeat, File, Item, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit,
+    LitStr, Pat, Type, Variant,
 };
 
 lazy_static! {
@@ -111,7 +111,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
 /// This macro is not exported in `muttest` and is only intended for internal use.
 #[proc_macro_attribute]
 pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as ItemFn);
+    let input = parse_macro_input!(input as File);
 
     let muttest_api = quote! {crate::api};
     let conf = TransformerConf {
@@ -124,7 +124,7 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let mut transformer = MuttestTransformer::new(conf);
-    let mut result = FoldImpl(&mut transformer).fold_item_fn(input);
+    let mut result = FoldImpl(&mut transformer).fold_file(input);
 
     if let Some(f) = &mut *MUTABLE_DEFINITIONS_FILE.lock().unwrap() {
         for l in transformer.definitions() {
@@ -136,9 +136,14 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
     if !attr.is_empty() {
         // TODO: this is not a good interface
         let default_expr = parse_macro_input!(attr as Expr);
-        let block = result.block;
-        // TODO: auto-detect `m_id` name.
-        result.block = parse_quote!(
+
+        let item_fn = match &mut *result.items {
+            [Item::Fn(i)] => i,
+            _ => panic!("early-returns only applicable fns"),
+        };
+
+        let block = item_fn.block.clone();
+        item_fn.block = parse_quote!(
             {
                 crate::tests::return_early_if_nesting!(
                     m_id,
@@ -150,12 +155,11 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
             }
         );
     }
-    let result: ItemFn = parse_quote! {
-        #[allow(clippy::all)]
+    quote! {
+        #[allow(clippy::all)] // TODO: this does not work when using as inner macro
         #result
-    };
-
-    result.into_token_stream().into()
+    }
+    .into()
 }
 
 /// Macro to enable mutation testing.

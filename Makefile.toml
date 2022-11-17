@@ -10,3 +10,11 @@ description = "Run Mutation Testing on muttest-rs itself"
 command = "cargo"
 args = ["run", "-p", "cargo-muttest", "--", "muttest", "-p", "muttest-core"]
 workspace = false
+
+[tasks.selftest-nightly]
+description = "Run Mutation Testing on muttest-rs itself, nightly version"
+toolchain = "nightly"
+env.RUSTFLAGS = "--cfg procmacro2_semver_exempt"
+command = "cargo"
+args = ["run", "-p", "cargo-muttest", "--", "muttest", "-p", "muttest-core"]
+workspace = false

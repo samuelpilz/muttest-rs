@@ -93,7 +93,7 @@ impl MuttestTransformer {
         let crate_name = &id.crate_id.crate_name;
         let attr_id = id.id.attr_id;
         let id = id.id.id;
-        let m_id = quote_spanned! {span =>
+        let m_id = quote_spanned! {span=>
             #muttest_api::BakedMutableId {
                 pkg_name: #pkg_name,
                 crate_name: #crate_name,
