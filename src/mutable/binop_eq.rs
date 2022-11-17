@@ -54,9 +54,9 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest(res))]
 pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
-    let mutation = m_id.get_active_mutation();
-
     debug_assert!(matches!(op_str, "==" | "!="));
+
+    let mutation = m_id.get_active_mutation();
 
     let eq = (op_str == "==") == res;
 

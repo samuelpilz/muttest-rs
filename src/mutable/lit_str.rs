@@ -11,6 +11,8 @@ use crate::{
     BakedLocation, BakedMutableId,
 };
 
+use super::FilterMutableCode;
+
 pub struct Mutable<'a> {
     pub value: String,
     pub span: Span,
@@ -43,14 +45,13 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 
     fn mutations(analysis: &crate::report::MutableAnalysis) -> Vec<String> {
-        if analysis.code.is_empty() {
-            vec![]
-        } else {
-            vec![r#""""#.to_owned()]
-        }
+        [r#""""#, r#""ABC""#]
+            .into_iter()
+            .filter_mutable_code(&analysis.code)
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest(s))]
 pub fn run(
     m_id: BakedMutableId,
     s: &'static str,
@@ -83,7 +84,6 @@ pub fn run(
             // yes, this leaks. but only once per mutation.
             let boxed_str: Box<str> = Box::from(s_mut);
             let leaked = Box::leak(boxed_str);
-            println!("mutated: {leaked:?}");
             *w_lock = Some(leaked);
             leaked
         }
@@ -93,7 +93,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
 
-    use crate::tests::*;
+    use crate::{mutable::Mutable, tests::*};
 
     #[test]
     fn empty_str() {
@@ -133,5 +133,22 @@ mod tests {
         }
         let data = data_isolated!(_f);
         assert_eq!(data.mutables.len(), 0);
+    }
+
+    #[test]
+    fn no_empty_string_mutation_for_empty_string() {
+        #[muttest_codegen::mutate_isolated("lit_str")]
+        fn _f() -> &'static str {
+            ""
+        }
+        let report = data_isolated!(_f);
+        assert_eq!(report.mutables.len(), 1);
+
+        let mutations =
+            super::Mutable::mutations(&report.mutables.values().next().unwrap().analysis);
+
+        for m in mutations {
+            assert_ne!(m, r#""""#);
+        }
     }
 }

@@ -6,6 +6,8 @@ use crate::{
     BakedLocation, BakedMutableId,
 };
 
+use super::FilterMutableCode;
+
 pub struct Mutable<'a> {
     pub c: char,
     pub span: Span,
@@ -31,6 +33,12 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
         quote_spanned! {span=>
             #muttest_api::mutable::lit_char::run(#m_id, #lit, #loc)
         }
+    }
+    fn mutations(analysis: &crate::report::MutableAnalysis) -> Vec<String> {
+        // TODO: configure this at runtime
+        ["A", "0"]
+            .into_iter()
+            .filter_mutable_code(&analysis.code)
     }
 }
 

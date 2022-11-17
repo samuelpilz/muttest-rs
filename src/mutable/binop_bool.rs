@@ -54,14 +54,18 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
+    debug_assert!(matches!(op_str, "&&" | "||"));
+
+    let cont = left == (op_str == "&&");
+
     // TODO: also report behavior of `true && panic`
-    if (left && op_str == "||") || (!left && op_str == "&&") {
-        m_id.report_coverage(Some(bool_to_str(left, None)));
+    m_id.report_coverage(if cont {
+        None
     } else {
-        // TODO: test that
-        m_id.report_coverage(None);
-    }
+        Some(bool_to_str(left, None))
+    });
 
     match (
         left,

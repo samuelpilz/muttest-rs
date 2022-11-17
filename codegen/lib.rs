@@ -139,7 +139,7 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
 
         let item_fn = match &mut *result.items {
             [Item::Fn(i)] => i,
-            _ => panic!("early-returns only applicable fns"),
+            _ => panic!("early-returns only applicable to function definitions"),
         };
 
         let block = item_fn.block.clone();
@@ -147,7 +147,6 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
             {
                 crate::tests::return_early_if_nesting!(
                     m_id,
-                    // TODO: use this macro's id for instead
                     #muttest_api::concat!(#muttest_api::file!(), ":", #muttest_api::line!(), ":", #muttest_api::column!()),
                     #default_expr
                 );
