@@ -124,7 +124,7 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let mut transformer = MuttestTransformer::new(conf);
-    let mut result = FoldImpl(&mut transformer).fold_file(input);
+    let result = FoldImpl(&mut transformer).fold_file(input);
 
     if let Some(f) = &mut *MUTABLE_DEFINITIONS_FILE.lock().unwrap() {
         for l in transformer.definitions() {
@@ -132,28 +132,25 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
 
-    // add code for early-return to mutated function
-    if !attr.is_empty() {
-        // TODO: this is not a good interface
-        let default_expr = parse_macro_input!(attr as Expr);
+    assert!(attr.is_empty());
+    // // add code for early-return to mutated function
+    // if !attr.is_empty() {
+    //     // TODO: this is not a good interface
+    //     let default_expr = parse_macro_input!(attr as Expr);
 
-        let item_fn = match &mut *result.items {
-            [Item::Fn(i)] => i,
-            _ => panic!("early-returns only applicable to function definitions"),
-        };
+    //     let item_fn = match &mut *result.items {
+    //         [Item::Fn(i)] => i,
+    //         _ => panic!("early-returns only applicable to function definitions"),
+    //     };
 
-        let block = item_fn.block.clone();
-        item_fn.block = parse_quote!(
-            {
-                crate::tests::return_early_if_nesting!(
-                    m_id,
-                    #muttest_api::concat!(#muttest_api::file!(), ":", #muttest_api::line!(), ":", #muttest_api::column!()),
-                    #default_expr
-                );
-                #block
-            }
-        );
-    }
+    //     let block = item_fn.block.clone();
+    //     item_fn.block = parse_quote!(
+    //         {
+    //             crate::tests::return_early_if_nesting!(m_id, #default_expr);
+    //             #block
+    //         }
+    //     );
+    // }
     quote! {
         #[allow(clippy::all)] // TODO: this does not work when using as inner macro
         #result

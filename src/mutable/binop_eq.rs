@@ -37,12 +37,17 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                (#m_id).report_details(#loc,"","");
+                let mut muttest_nesting_token = crate::tests::NestingToken::create(#m_id);
+                if muttest_nesting_token.is_nested() {
+                    (#left) #op (#right)
+                } else {
+                    (#m_id).report_details(#loc,"","");
 
-                // for improved type-inference and `!`-type handling call the eq-operation here.
-                let _res = #left #op #right;
+                    // for improved type-inference and `!`-type handling call the eq-operation here.
+                    let _res = #left #op #right;
 
-                #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _res)
+                    #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _res)
+                }
             })
         }
     }
@@ -52,7 +57,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest(res))]
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
     debug_assert!(matches!(op_str, "==" | "!="));
 

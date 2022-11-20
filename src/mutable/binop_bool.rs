@@ -38,11 +38,16 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                (#m_id).report_details(#loc, "bool", "");
-                match #muttest_api::mutable::binop_bool::run_left(#m_id, #op_str, #left) {
-                    #muttest_api::ControlFlow::Break(b) => b,
-                    #muttest_api::ControlFlow::Continue(b) => {
-                        #muttest_api::mutable::binop_bool::run_right(#m_id, b, #right)
+                let mut muttest_nesting_token = crate::tests::NestingToken::create(#m_id);
+                if muttest_nesting_token.is_nested() {
+                    (#left) #op (#right)
+                } else {
+                    (#m_id).report_details(#loc, "bool", "");
+                    match #muttest_api::mutable::binop_bool::run_left(#m_id, #op_str, #left) {
+                        #muttest_api::ControlFlow::Break(b) => b,
+                        #muttest_api::ControlFlow::Continue(b) => {
+                            #muttest_api::mutable::binop_bool::run_right(#m_id, b, #right)
+                        }
                     }
                 }
             })
@@ -58,10 +63,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     debug_assert!(matches!(op_str, "&&" | "||"));
 
-    let cont = left == (op_str == "&&");
-
     // TODO: also report behavior of `true && panic`
-    m_id.report_coverage(if cont {
+    m_id.report_coverage(if left == (op_str == "&&") {
         None
     } else {
         Some(bool_to_str(left, None))

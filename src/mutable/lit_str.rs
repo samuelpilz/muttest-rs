@@ -51,7 +51,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest(s))]
+// TODO: enable again
+// #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(
     m_id: BakedMutableId,
     s: &'static str,

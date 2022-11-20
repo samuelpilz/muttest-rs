@@ -76,9 +76,9 @@ impl MuttestContext<File> {
     }
 }
 
-// TODO: enabling this breaks the tests
-// #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 impl<F: Write> IMuttestContext for MuttestContext<F> {
+    // TODO: enabling this breaks the tests
+    #[cfg_attr(test, muttest_codegen::mutate_selftest)]
     fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         self.pkg_name == m_id.pkg_name && self.crate_name == m_id.crate_name
     }

@@ -39,10 +39,16 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
             #vis #sig {
                 let ret_type = #muttest_api::PhantomData;
 
+                // println!("RUN-extreme");
+                let mut muttest_nesting_token = crate::tests::NestingToken::create(#m_id);
+                // if matches!(xyz, crate::tests::NestingToken::Nested) {
+                //     println!("RUN-extreme NESTED");
+                // }
+
                 // dead branches help type inference
                 match 0 {
                     // type-check the original code first
-                    1 => #block,
+                    _ if muttest_nesting_token.is_nested() => #block,
                     // unify the ret_type with expression-type of block
                     2 => #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
                     // unify the ret_type with fn return value
@@ -83,8 +89,9 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest(ControlFlow::Continue(())))]
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
+
     m_id.report_coverage(None);
 
     match m_id.get_active_mutation().as_option() {

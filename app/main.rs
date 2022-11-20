@@ -3,12 +3,13 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
 
 use cargo_metadata::camino::Utf8Path;
 use clap::Parser;
+use log::debug;
 use muttest_core::{
     context, display_or_empty_if_none,
     mutable::{identical_behavior_for_mutable, mutations_for_mutable},
@@ -42,12 +43,16 @@ impl From<OptCargoPlugin> for Opt {
 
 // TODO: enable logging for cargo-calls
 fn main() -> Result<(), Error> {
+    env_logger::init();
+
     let is_cargo_plugin = std::env::var_os("CARGO").is_some();
     let opt = if is_cargo_plugin {
         OptCargoPlugin::parse().into()
     } else {
         Opt::parse()
     };
+
+    debug!("cli options {opt:?}");
 
     // read cargo metadata
     let cargo_exe = std::env::var_os("CARGO");
@@ -71,16 +76,17 @@ fn main() -> Result<(), Error> {
     // run test suites without mutations for coverage
     for (crate_id, data) in &mut report.muttest_crates {
         for test_bin in &mut report.test_bins {
-            println!("call {}", &test_bin.name);
             let start_time = Instant::now();
-            let status = Command::new(&test_bin.path)
-                .env(context::ENV_VAR_MUTTEST_DIR, &muttest_dir)
-                .env(context::ENV_VAR_MUTTEST_TARGET, crate_id.to_string())
-                .env(context::ENV_VAR_DETAILS_FILE, &details_path)
-                .env(context::ENV_VAR_COVERAGE_FILE, &coverage_path)
-                .stdout(Stdio::null())
-                .spawn()?
-                .wait()?;
+            let status = run_test_bin(
+                &test_bin.path,
+                &[
+                    (context::ENV_VAR_MUTTEST_DIR, muttest_dir.as_str()),
+                    (context::ENV_VAR_MUTTEST_TARGET, &crate_id.to_string()),
+                    (context::ENV_VAR_DETAILS_FILE, details_path.as_str()),
+                    (context::ENV_VAR_COVERAGE_FILE, coverage_path.as_str()),
+                ],
+            )?
+            .wait()?;
             test_bin.exec_time = Some(start_time.elapsed());
             // TODO: better error report
             if !status.success() {
@@ -209,6 +215,23 @@ fn main() -> Result<(), Error> {
     )?;
 
     Ok(())
+}
+
+fn run_test_bin(bin_path: &Path, env: &[(&str, &str)]) -> Result<Child, Error> {
+    debug!(
+        "{}{}",
+        env.iter()
+            .map(|(name, var)| format!("{name}={var} "))
+            .collect::<String>(),
+        bin_path.display()
+    );
+
+    let child = Command::new(bin_path)
+        .envs(env.iter().copied())
+        .stdout(Stdio::null())
+        // .stderr(Stdio::null())
+        .spawn()?;
+    Ok(child)
 }
 
 /// execute `cargo test --no-run --message-format=json` and collect relevant output

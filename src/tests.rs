@@ -2,8 +2,10 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     ops::Deref,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, Once, RwLock},
 };
+
+use log::{info, trace};
 
 use crate::{
     context::{IMuttestContext, MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
@@ -22,51 +24,93 @@ lazy_static::lazy_static! {
 
 thread_local! {
     /// describes the nesting in the testcase for selftest
-    pub static MUTATION_NESTING: RefCell<Vec<&'static str>> = RefCell::new(vec![]);
+    static SELFTEST_NESTING: RefCell<SelftestNesting> = RefCell::new(SelftestNesting::default());
 }
 
+#[derive(Default)]
+struct SelftestNesting {
+    current: Option<CrateLocalMutableId>,
+    nested: Option<CrateLocalMutableId>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum NestingToken {
     Isolated,
-    Selftest(&'static str),
-    Nested,
+    Dropped,
+    Selftest(CrateLocalMutableId),
+    Nested(CrateLocalMutableId),
 }
 
 impl NestingToken {
-    pub fn create(m_id: BakedMutableId, s: &'static str) -> Self {
+    pub fn create(m_id: BakedMutableId) -> Self {
         // this is compiled in `cfg(test)`, then only possible mutations are isolated and selftest
         if m_id.is_isolated() {
             return Self::Isolated;
         }
         assert_eq!(m_id.pkg_name, "muttest-core");
         assert_eq!(m_id.crate_name, "muttest_core");
+        let m_id = m_id.crate_local_id();
 
-        MUTATION_NESTING.with(move |v| {
-            let mut v = v.borrow_mut();
-            if v.contains(&s) {
-                Self::Nested
+        SELFTEST_NESTING.with(move |sn| {
+            let mut sn = sn.borrow_mut();
+            if sn.current.is_none() {
+                trace!("OPEN {}", m_id);
+                assert_eq!(sn.nested, None);
+                sn.current = Some(m_id);
+                Self::Selftest(m_id)
             } else {
-                v.push(s);
-                Self::Selftest(s)
+                trace!("    nested {} in {}", m_id, sn.current.unwrap(),);
+                assert_eq!(
+                    sn.nested,
+                    None,
+                    "invalid skip handling {m_id} in {}->{}",
+                    sn.current.unwrap(),
+                    sn.nested.unwrap(),
+                );
+                sn.nested = Some(m_id);
+                Self::Nested(m_id)
             }
         })
+    }
+    pub fn is_nested(&mut self) -> bool {
+        if matches!(self, crate::tests::NestingToken::Nested(_)) {
+            *self = Self::Dropped;
+            true
+        } else {
+            false
+        }
     }
 }
 impl Drop for NestingToken {
     fn drop(&mut self) {
-        if let Self::Selftest(s) = self {
-            MUTATION_NESTING.with(|v| {
-                let last = v.borrow_mut().pop().expect("nesting is empty");
-                assert_eq!(last, *s, "invalid nesting");
-            });
-        }
+        SELFTEST_NESTING.with(|sn| {
+            let mut sn = sn.borrow_mut();
+            match self {
+                Self::Selftest(id) => {
+                    trace!("CLOSE {}", id);
+                    assert_eq!(sn.nested, None);
+                    assert_eq!(sn.current, Some(*id), "invalid nesting");
+                    sn.current = None;
+                }
+                Self::Nested(id) => {
+                    trace!("    un-nest {}", id);
+                    assert_eq!(sn.nested, Some(*id), "invalid nesting");
+                    sn.nested = None;
+                }
+                _ => {}
+            }
+        });
     }
 }
 #[macro_export]
 macro_rules! return_early_if_nesting {
-    ($m_id:expr, $name:expr, $e:expr) => {
-        let __muttest_nesting_token = match $crate::tests::NestingToken::create($m_id, $name) {
-            $crate::tests::NestingToken::Nested => return $e,
-            t => t,
+    ($m_id:expr, $e:expr) => {
+        let __muttest_nesting_token = {
+            let mut t = $crate::tests::NestingToken::create($m_id);
+            if t.is_nested() {
+                return $e;
+            }
+            t
         };
     };
 }
@@ -98,7 +142,8 @@ impl MuttestReportForCrate {
 
 #[macro_export]
 macro_rules! call_isolated {
-    ($f:ident $(::<$t:ty>)? ($($args:expr),*) $(where $m_id:expr => $m:expr)?) => {
+    ($f:ident $(::<$t:ty>)? ($($args:expr),*) $(where $m_id:expr => $m:expr)?) => {{
+        $crate::tests::test_setup_once();
         $crate::tests::run$(::<$t>)?(
             $f::PKG_NAME,
             $f::CRATE_NAME,
@@ -107,15 +152,26 @@ macro_rules! call_isolated {
             || $f($($args),*),
             vec![$(($m_id, $m))?]
         )
-    };
+    }};
 }
 #[macro_export]
 macro_rules! data_isolated {
     ($f:ident) => {{
-        eprintln!("{}:{}", $f::PKG_NAME, $f::CRATE_NAME);
-        eprintln!("{}", $f::MUTABLES_CSV);
+        $crate::tests::test_setup_once();
+        ::log::info!("{}:{}", $f::PKG_NAME, $f::CRATE_NAME);
+        ::log::info!("{}", $f::MUTABLES_CSV);
         $crate::report::MuttestReportForCrate::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
     }};
+}
+
+pub(crate) fn test_setup_once() {
+    static TEST_SETUP: Once = Once::new();
+    TEST_SETUP.call_once(|| {
+        unsafe {
+            backtrace_on_stack_overflow::enable();
+        };
+        env_logger::init();
+    });
 }
 
 pub struct IsolatedFnCall<T> {
@@ -131,8 +187,8 @@ pub fn run<'a, T>(
     action: impl FnOnce() -> T,
     mutation: Vec<(usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
-    eprintln!("{pkg_name}:{crate_name}");
-    eprintln!("{defs_csv}");
+    info!("{pkg_name}:{crate_name}");
+    info!("{defs_csv}");
 
     let mut report = MuttestReportForCrate::from_defs_checked(num_mutables, defs_csv);
 
