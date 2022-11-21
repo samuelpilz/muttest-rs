@@ -29,13 +29,19 @@ thread_local! {
     static SELFTEST_NESTING: RefCell<SelftestNesting> = RefCell::new(SelftestNesting::default());
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct SelftestNesting {
     current: Option<CrateLocalMutableId>,
     nested: Option<CrateLocalMutableId>,
 }
 
-pub(crate) fn selftest_mutation_nested(m_id: CrateLocalMutableId) -> bool {
+#[derive(Debug)]
+pub(crate) struct NestingToken {
+    pub(crate) skip: bool,
+    source: CrateLocalMutableId,
+}
+
+pub(crate) fn selftest_mutation_nested(m_id: CrateLocalMutableId) -> NestingToken {
     assert_ne!(m_id.attr_id, 0, "attr_id: 0 is for isolated mutations");
 
     SELFTEST_NESTING.with(move |sn| {
@@ -44,7 +50,10 @@ pub(crate) fn selftest_mutation_nested(m_id: CrateLocalMutableId) -> bool {
             trace!("OPEN {}", m_id);
             assert_eq!(sn.nested, None);
             sn.current = Some(m_id);
-            false
+            NestingToken {
+                skip: false,
+                source: m_id,
+            }
         } else {
             trace!("    nested {} in {}", m_id, sn.current.unwrap(),);
             assert_eq!(
@@ -55,28 +64,25 @@ pub(crate) fn selftest_mutation_nested(m_id: CrateLocalMutableId) -> bool {
                 sn.nested.unwrap(),
             );
             sn.nested = Some(m_id);
-            true
+            NestingToken {
+                skip: true,
+                source: m_id,
+            }
         }
     })
 }
-impl Drop for Mutation {
+impl Drop for NestingToken {
     fn drop(&mut self) {
-        // only perform nesting-handling for selftest-mutations
-        let Some(source) = self.source else {return};
-        if source.attr_id == 0 {
-            return;
-        }
-
         SELFTEST_NESTING.with(|sn| {
             let mut sn = sn.borrow_mut();
             if self.skip {
-                trace!("    un-nest {}", source);
-                assert_eq!(sn.nested, Some(source), "invalid nesting");
+                trace!("    un-nest {}", self.source);
+                assert_eq!(sn.nested, Some(self.source), "invalid nesting");
                 sn.nested = None;
             } else {
-                trace!("CLOSE {}", source);
+                trace!("CLOSE {}", self.source);
                 assert_eq!(sn.nested, None);
-                assert_eq!(sn.current, Some(source), "invalid nesting");
+                assert_eq!(sn.current, Some(self.source), "invalid nesting");
                 sn.current = None;
             }
         });

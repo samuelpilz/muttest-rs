@@ -9,7 +9,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
+    sync::Arc, cell::RefCell,
 };
 
 use lazy_static::lazy_static;
@@ -85,7 +85,8 @@ lazy_static! {
 pub struct Mutation {
     mutation: Option<Arc<str>>,
     skip: bool,
-    source: Option<CrateLocalMutableId>,
+    #[cfg(test)]
+    nesting_token: RefCell<Option<crate::tests::NestingToken>>,
 }
 
 impl Mutation {
@@ -93,13 +94,19 @@ impl Mutation {
         Self {
             mutation: None,
             skip: true,
-            source: None,
+            #[cfg(test)]
+            nesting_token: RefCell::new(None),
         }
     }
     pub fn as_option(&self) -> Option<&str> {
         self.mutation.as_deref()
     }
     pub fn is_skip(&self) -> bool {
+        // TODO: remove this and allow for nested skipping
+        #[cfg(test)]
+        let _ = self.nesting_token.borrow_mut().take();
+        // drop the nesting token if tested for skip.
+
         self.skip
     }
 }

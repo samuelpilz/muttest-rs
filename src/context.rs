@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::{btree_map, BTreeMap, BTreeSet},
     env::VarError,
     fs::File,
@@ -85,19 +86,25 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
     fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
         #[cfg(test)]
         if m_id.attr_id != 0 {
-            if crate::tests::selftest_mutation_nested(m_id) {
-                return Mutation {
-                    mutation: None,
-                    skip: true,
-                    source: Some(m_id),
-                }
-            }
+            // TODO: clean this code
+            let nesting_token = crate::tests::selftest_mutation_nested(m_id);
+            let mutation = if nesting_token.skip {
+                None
+            } else {
+                self.mutations.get(&m_id).cloned()
+            };
+            return Mutation {
+                mutation,
+                skip: nesting_token.skip,
+                nesting_token: RefCell::new(Some(nesting_token)),
+            };
         }
 
         Mutation {
             mutation: self.mutations.get(&m_id).cloned(),
             skip: false,
-            source: Some(m_id),
+            #[cfg(test)]
+            nesting_token: RefCell::new(None),
         }
     }
     fn write_details(
