@@ -14,9 +14,11 @@ use crate::{
     BakedLocation, BakedMutableId, CrateLocalMutableId, MutableId, Mutation,
 };
 
-pub use crate::{call_isolated, data_isolated, return_early_if_nesting};
+pub use crate::{call_isolated, data_isolated};
 
 // TODO: BTreeMap::new is not yet const :/
+
+type TestContext = MuttestContext<Vec<u8>>;
 lazy_static::lazy_static! {
     static ref TEST_CONTEXT: RwLock<BTreeMap<String, Arc<TestContext>>> =
         RwLock::new(BTreeMap::new());
@@ -33,89 +35,65 @@ struct SelftestNesting {
     nested: Option<CrateLocalMutableId>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum NestingToken {
-    Isolated,
-    Dropped,
-    Selftest(CrateLocalMutableId),
-    Nested(CrateLocalMutableId),
-}
+pub(crate) fn selftest_mutation_nested(m_id: CrateLocalMutableId) -> bool {
+    assert_ne!(m_id.attr_id, 0, "attr_id: 0 is for isolated mutations");
 
-impl NestingToken {
-    pub fn create(m_id: BakedMutableId) -> Self {
-        // this is compiled in `cfg(test)`, then only possible mutations are isolated and selftest
-        if m_id.is_isolated() {
-            return Self::Isolated;
-        }
-        assert_eq!(m_id.pkg_name, "muttest-core");
-        assert_eq!(m_id.crate_name, "muttest_core");
-        let m_id = m_id.crate_local_id();
-
-        SELFTEST_NESTING.with(move |sn| {
-            let mut sn = sn.borrow_mut();
-            if sn.current.is_none() {
-                trace!("OPEN {}", m_id);
-                assert_eq!(sn.nested, None);
-                sn.current = Some(m_id);
-                Self::Selftest(m_id)
-            } else {
-                trace!("    nested {} in {}", m_id, sn.current.unwrap(),);
-                assert_eq!(
-                    sn.nested,
-                    None,
-                    "invalid skip handling {m_id} in {}->{}",
-                    sn.current.unwrap(),
-                    sn.nested.unwrap(),
-                );
-                sn.nested = Some(m_id);
-                Self::Nested(m_id)
-            }
-        })
-    }
-    pub fn is_nested(&mut self) -> bool {
-        if matches!(self, crate::tests::NestingToken::Nested(_)) {
-            *self = Self::Dropped;
-            true
-        } else {
+    SELFTEST_NESTING.with(move |sn| {
+        let mut sn = sn.borrow_mut();
+        if sn.current.is_none() {
+            trace!("OPEN {}", m_id);
+            assert_eq!(sn.nested, None);
+            sn.current = Some(m_id);
             false
+        } else {
+            trace!("    nested {} in {}", m_id, sn.current.unwrap(),);
+            assert_eq!(
+                sn.nested,
+                None,
+                "invalid skip handling {m_id} in {}->{}",
+                sn.current.unwrap(),
+                sn.nested.unwrap(),
+            );
+            sn.nested = Some(m_id);
+            true
         }
-    }
+    })
 }
-impl Drop for NestingToken {
+impl Drop for Mutation {
     fn drop(&mut self) {
+        // only perform nesting-handling for selftest-mutations
+        let Some(source) = self.source else {return};
+        if source.attr_id == 0 {
+            return;
+        }
+
         SELFTEST_NESTING.with(|sn| {
             let mut sn = sn.borrow_mut();
-            match self {
-                Self::Selftest(id) => {
-                    trace!("CLOSE {}", id);
-                    assert_eq!(sn.nested, None);
-                    assert_eq!(sn.current, Some(*id), "invalid nesting");
-                    sn.current = None;
-                }
-                Self::Nested(id) => {
-                    trace!("    un-nest {}", id);
-                    assert_eq!(sn.nested, Some(*id), "invalid nesting");
-                    sn.nested = None;
-                }
-                _ => {}
+            if self.skip {
+                trace!("    un-nest {}", source);
+                assert_eq!(sn.nested, Some(source), "invalid nesting");
+                sn.nested = None;
+            } else {
+                trace!("CLOSE {}", source);
+                assert_eq!(sn.nested, None);
+                assert_eq!(sn.current, Some(source), "invalid nesting");
+                sn.current = None;
             }
         });
     }
 }
-#[macro_export]
-macro_rules! return_early_if_nesting {
-    ($m_id:expr, $e:expr) => {
-        let __muttest_nesting_token = {
-            let mut t = $crate::tests::NestingToken::create($m_id);
-            if t.is_nested() {
-                return $e;
-            }
-            t
-        };
-    };
-}
-
-type TestContext = MuttestContext<Vec<u8>>;
+// #[macro_export]
+// macro_rules! return_early_if_nesting {
+//     ($m_id:expr, $e:expr) => {
+//         let __muttest_nesting_token = {
+//             let mut t = $crate::tests::NestingToken::create($m_id);
+//             if t.is_nested() {
+//                 return $e;
+//             }
+//             t
+//         };
+//     };
+// }
 
 impl BakedMutableId {
     pub(crate) fn is_isolated(self) -> bool {
@@ -246,6 +224,7 @@ impl MuttestReportForCrate {
             if num < id.id {
                 panic!("invalid id {id}. max: {num}");
             }
+            assert_eq!(id.attr_id, 0);
         }
         report
     }

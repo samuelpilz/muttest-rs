@@ -83,9 +83,21 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
         self.pkg_name == m_id.pkg_name && self.crate_name == m_id.crate_name
     }
     fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        match self.mutations.get(&m_id).cloned() {
-            Some(m) => Mutation::Mutate(m),
-            None => Mutation::Unchanged,
+        #[cfg(test)]
+        if m_id.attr_id != 0 {
+            if crate::tests::selftest_mutation_nested(m_id) {
+                return Mutation {
+                    mutation: None,
+                    skip: true,
+                    source: Some(m_id),
+                }
+            }
+        }
+
+        Mutation {
+            mutation: self.mutations.get(&m_id).cloned(),
+            skip: false,
+            source: Some(m_id),
         }
     }
     fn write_details(

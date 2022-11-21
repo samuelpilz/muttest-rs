@@ -72,10 +72,9 @@ macro_rules! env_var_muttest_dir {
     };
 }
 
-// recompile core for selftest
+// recompile this crate for selftest
 #[cfg(test)]
-#[allow(dead_code)]
-const RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!(env_var_muttest_dir!());
+const _RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!(env_var_muttest_dir!());
 
 lazy_static! {
     static ref MUTTEST_CONTEXT: Option<MuttestContext<File>> =
@@ -83,17 +82,25 @@ lazy_static! {
 }
 
 #[derive(Debug)]
-pub enum Mutation {
-    Unchanged,
-    Mutate(Arc<str>),
+pub struct Mutation {
+    mutation: Option<Arc<str>>,
+    skip: bool,
+    source: Option<CrateLocalMutableId>,
 }
 
 impl Mutation {
-    pub fn as_option(&self) -> Option<&str> {
-        match self {
-            Mutation::Unchanged => None,
-            Mutation::Mutate(m) => Some(m),
+    pub fn new_skip() -> Self {
+        Self {
+            mutation: None,
+            skip: true,
+            source: None,
         }
+    }
+    pub fn as_option(&self) -> Option<&str> {
+        self.mutation.as_deref()
+    }
+    pub fn is_skip(&self) -> bool {
+        self.skip
     }
 }
 
@@ -165,11 +172,11 @@ impl BakedMutableId {
     }
 
     /// get the active mutation for a mutable
-    fn get_active_mutation(self) -> Mutation {
+    pub fn get_active_mutation(self) -> Mutation {
         if let Some(c) = self.context() {
             c.get_mutation(self.crate_local_id())
         } else {
-            Mutation::Unchanged
+            Mutation::new_skip()
         }
     }
 }

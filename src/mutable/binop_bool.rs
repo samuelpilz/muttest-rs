@@ -38,8 +38,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                let mut muttest_nesting_token = crate::tests::NestingToken::create(#m_id);
-                if muttest_nesting_token.is_nested() {
+                let __muttest_mutation = (#m_id).get_active_mutation();
+                if __muttest_mutation.is_skip() {
                     (#left) #op (#right)
                 } else {
                     (#m_id).report_details(#loc, "bool", "");
@@ -59,6 +59,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
+// TODO: take `Mutation` instead of m_id
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     debug_assert!(matches!(op_str, "&&" | "||"));

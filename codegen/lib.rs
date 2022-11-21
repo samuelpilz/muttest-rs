@@ -26,9 +26,9 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use syn::{
-    fold::Fold, parse_macro_input, parse_quote, spanned::Spanned, BinOp, Expr, ExprAssignOp,
-    ExprBinary, ExprLit, ExprRepeat, File, Item, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit,
-    LitStr, Pat, Type, Variant,
+    fold::Fold, parse_macro_input, spanned::Spanned, BinOp, Expr, ExprAssignOp, ExprBinary,
+    ExprLit, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type,
+    Variant,
 };
 
 lazy_static! {
@@ -122,6 +122,7 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
         pkg_name: &PKG_NAME,
         crate_name: CRATE_NAME.clone(),
     };
+    assert!(attr.is_empty());
 
     let mut transformer = MuttestTransformer::new(conf);
     let result = FoldImpl(&mut transformer).fold_file(input);
@@ -132,30 +133,13 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
 
-    assert!(attr.is_empty());
-    // // add code for early-return to mutated function
-    // if !attr.is_empty() {
-    //     // TODO: this is not a good interface
-    //     let default_expr = parse_macro_input!(attr as Expr);
+    result.into_token_stream().into()
 
-    //     let item_fn = match &mut *result.items {
-    //         [Item::Fn(i)] => i,
-    //         _ => panic!("early-returns only applicable to function definitions"),
-    //     };
-
-    //     let block = item_fn.block.clone();
-    //     item_fn.block = parse_quote!(
-    //         {
-    //             crate::tests::return_early_if_nesting!(m_id, #default_expr);
-    //             #block
-    //         }
-    //     );
+    // quote! {
+    //     #[allow(clippy::all)] // TODO: this does not work when using as inner macro
+    //     #result
     // }
-    quote! {
-        #[allow(clippy::all)] // TODO: this does not work when using as inner macro
-        #result
-    }
-    .into()
+    // .into()
 }
 
 /// Macro to enable mutation testing.
