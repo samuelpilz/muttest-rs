@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     collections::{btree_map, BTreeMap, BTreeSet},
     env::VarError,
     fs::File,
@@ -8,9 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{
-    env_var_muttest_dir, BakedLocation, BakedMutableId, CrateLocalMutableId, Error, Mutation,
-};
+use crate::{env_var_muttest_dir, BakedLocation, BakedMutableId, CrateLocalMutableId, Error};
 
 pub const DETAILS_FILE_CSV_HEAD: &str = "attr_id,id,ty,mutations,file,module,attr_span,span\n";
 pub const COVERAGE_FILE_CSV_HEAD: &str = "attr_id,id,behavior\n";
@@ -36,8 +33,8 @@ pub(crate) struct MuttestContext<F> {
 
 /// object-safe trait for `MuttestContext` functions
 pub(crate) trait IMuttestContext {
+    fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>>;
     fn tracks_mutable(&self, m_id: BakedMutableId) -> bool;
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation;
 
     fn write_details(&self, id: CrateLocalMutableId, loc: BakedLocation, ty: &str, mutations: &str);
     fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>);
@@ -78,34 +75,13 @@ impl MuttestContext<File> {
 }
 
 impl<F: Write> IMuttestContext for MuttestContext<F> {
+    fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
+        &self.mutations
+    }
     // TODO: enabling this breaks the tests
     #[cfg_attr(test, muttest_codegen::mutate_selftest)]
     fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         self.pkg_name == m_id.pkg_name && self.crate_name == m_id.crate_name
-    }
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        #[cfg(test)]
-        if m_id.attr_id != 0 {
-            // TODO: clean this code
-            let nesting_token = crate::tests::selftest_mutation_nested(m_id);
-            let mutation = if nesting_token.skip {
-                None
-            } else {
-                self.mutations.get(&m_id).cloned()
-            };
-            return Mutation {
-                mutation,
-                skip: nesting_token.skip,
-                nesting_token: RefCell::new(Some(nesting_token)),
-            };
-        }
-
-        Mutation {
-            mutation: self.mutations.get(&m_id).cloned(),
-            skip: false,
-            #[cfg(test)]
-            nesting_token: RefCell::new(None),
-        }
     }
     fn write_details(
         &self,
@@ -173,13 +149,12 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
 }
 
 impl<R: IMuttestContext> IMuttestContext for &'static R {
+    fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
+        <R as IMuttestContext>::mutations(self)
+    }
     fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        <R as IMuttestContext>::get_mutation(self, m_id)
-    }
-
     fn write_details(
         &self,
         id: CrateLocalMutableId,

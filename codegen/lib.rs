@@ -113,12 +113,11 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
 pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as File);
 
-    let muttest_api = quote! {crate::api};
     let conf = TransformerConf {
         attr_id: ATTR_ID.fetch_add(1, SeqCst),
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: muttest_api.clone(),
+        muttest_api: quote!(crate::api),
         pkg_name: &PKG_NAME,
         crate_name: CRATE_NAME.clone(),
     };
@@ -133,13 +132,12 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
 
-    result.into_token_stream().into()
-
-    // quote! {
-    //     #[allow(clippy::all)] // TODO: this does not work when using as inner macro
-    //     #result
-    // }
-    // .into()
+    quote! {
+        // TODO: this does not work when using as inner macro
+        #[allow(clippy::all)]
+        #result
+    }
+    .into()
 }
 
 /// Macro to enable mutation testing.

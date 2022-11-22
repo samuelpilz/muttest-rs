@@ -9,7 +9,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc, cell::RefCell,
+    sync::Arc,
 };
 
 use lazy_static::lazy_static;
@@ -86,28 +86,35 @@ pub struct Mutation {
     mutation: Option<Arc<str>>,
     skip: bool,
     #[cfg(test)]
-    nesting_token: RefCell<Option<crate::tests::NestingToken>>,
+    _nesting_token: Option<crate::tests::NestingToken>,
 }
 
 impl Mutation {
+    pub fn new_from_option(mutation: Option<Arc<str>>) -> Self {
+        Self {
+            mutation,
+            skip: false,
+            #[cfg(test)]
+            _nesting_token: None,
+        }
+    }
     pub fn new_skip() -> Self {
         Self {
-            mutation: None,
             skip: true,
-            #[cfg(test)]
-            nesting_token: RefCell::new(None),
+            ..Self::new_from_option(None)
         }
     }
     pub fn as_option(&self) -> Option<&str> {
         self.mutation.as_deref()
     }
     pub fn is_skip(&self) -> bool {
-        // TODO: remove this and allow for nested skipping
-        #[cfg(test)]
-        let _ = self.nesting_token.borrow_mut().take();
-        // drop the nesting token if tested for skip.
-
         self.skip
+    }
+}
+
+impl Default for Mutation {
+    fn default() -> Self {
+        Self::new_skip()
     }
 }
 
@@ -153,16 +160,12 @@ impl Error {
 
 impl BakedMutableId {
     fn context(self) -> Option<impl context::IMuttestContext> {
-        match &*MUTTEST_CONTEXT {
-            #[cfg(test)]
-            _ if self.is_isolated() => Some(tests::as_box_dyn_context(self.test_context())),
-            Some(ctx) if ctx.tracks_mutable(self) => Some({
-                #[cfg(test)]
-                let ctx = tests::as_box_dyn_context(ctx);
-                ctx
-            }),
-            _ => None,
-        }
+        #[cfg(test)]
+        return self.test_context();
+        #[cfg(not(test))]
+        MUTTEST_CONTEXT
+            .as_ref()
+            .filter(|ctx| ctx.tracks_mutable(self))
     }
 
     /// reports details of mutables gathered by static analysis
@@ -180,11 +183,16 @@ impl BakedMutableId {
 
     /// get the active mutation for a mutable
     pub fn get_active_mutation(self) -> Mutation {
-        if let Some(c) = self.context() {
-            c.get_mutation(self.crate_local_id())
-        } else {
-            Mutation::new_skip()
+        #[cfg(test)]
+        if self.attr_id != 0 {
+            return self.get_selftest_mutation();
         }
+
+        self.context()
+            .map(|ctx| {
+                Mutation::new_from_option(ctx.mutations().get(&self.crate_local_id()).cloned())
+            })
+            .unwrap_or_default()
     }
 }
 

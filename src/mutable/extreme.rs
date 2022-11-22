@@ -38,7 +38,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
         quote_spanned! {span=>
             #vis #sig {
                 let __muttest_mutation = (#m_id).get_active_mutation();
-                
+
                 let ret_type = #muttest_api::PhantomData;
                 // dead branches help type inference
                 match 0 {
@@ -85,7 +85,6 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(m_id: BakedMutableId, mutation: Mutation) -> ControlFlow<()> {
-
     m_id.report_coverage(None);
 
     match mutation.as_option() {

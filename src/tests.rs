@@ -20,7 +20,7 @@ pub use crate::{call_isolated, data_isolated};
 
 type TestContext = MuttestContext<Vec<u8>>;
 lazy_static::lazy_static! {
-    static ref TEST_CONTEXT: RwLock<BTreeMap<String, Arc<TestContext>>> =
+    static ref TEST_ISOLATED_CONTEXT: RwLock<BTreeMap<String, Arc<TestContext>>> =
         RwLock::new(BTreeMap::new());
 }
 
@@ -32,7 +32,7 @@ thread_local! {
 #[derive(Debug, Default)]
 struct SelftestNesting {
     current: Option<CrateLocalMutableId>,
-    nested: Option<CrateLocalMutableId>,
+    nested: Vec<CrateLocalMutableId>,
 }
 
 #[derive(Debug)]
@@ -41,79 +41,88 @@ pub(crate) struct NestingToken {
     source: CrateLocalMutableId,
 }
 
-pub(crate) fn selftest_mutation_nested(m_id: CrateLocalMutableId) -> NestingToken {
-    assert_ne!(m_id.attr_id, 0, "attr_id: 0 is for isolated mutations");
+impl BakedMutableId {
+    pub(crate) fn is_isolated(self) -> bool {
+        self.pkg_name == "#isolated"
+    }
 
-    SELFTEST_NESTING.with(move |sn| {
-        let mut sn = sn.borrow_mut();
-        if sn.current.is_none() {
-            trace!("OPEN {}", m_id);
-            assert_eq!(sn.nested, None);
-            sn.current = Some(m_id);
-            NestingToken {
-                skip: false,
-                source: m_id,
-            }
+    pub(crate) fn test_context(self) -> Option<Box<dyn IMuttestContext>> {
+        if self.is_isolated() {
+            Some(as_box_dyn_context(
+                TEST_ISOLATED_CONTEXT
+                    .read()
+                    .unwrap()
+                    .get(self.crate_name)
+                    .expect("mutation for this testcase not set")
+                    .clone(),
+            ))
         } else {
-            trace!("    nested {} in {}", m_id, sn.current.unwrap(),);
-            assert_eq!(
-                sn.nested,
-                None,
-                "invalid skip handling {m_id} in {}->{}",
-                sn.current.unwrap(),
-                sn.nested.unwrap(),
-            );
-            sn.nested = Some(m_id);
-            NestingToken {
-                skip: true,
-                source: m_id,
-            }
+            super::MUTTEST_CONTEXT
+                .as_ref()
+                .filter(|ctx| ctx.tracks_mutable(self))
+                .map(as_box_dyn_context)
         }
-    })
+    }
+    pub(crate) fn get_selftest_mutation(self) -> Mutation {
+        let m_id = self.crate_local_id();
+        // on selftest, nesting needs to be correct
+        assert_ne!(m_id.attr_id, 0, "attr_id: 0 is for isolated mutations");
+
+        let nesting_token = SELFTEST_NESTING.with(move |sn| {
+            let mut sn = sn.borrow_mut();
+            if sn.current.is_none() {
+                trace!("OPEN {}", self);
+                assert_eq!(sn.nested, vec![]);
+                sn.current = Some(m_id);
+                NestingToken {
+                    skip: false,
+                    source: m_id,
+                }
+            } else {
+                trace!("    nested {} in {}", self, sn.current.unwrap(),);
+                sn.nested.push(m_id);
+                NestingToken {
+                    skip: true,
+                    source: m_id,
+                }
+            }
+        });
+
+        if nesting_token.skip {
+            return Mutation {
+                mutation: None,
+                skip: true,
+                _nesting_token: Some(nesting_token),
+            };
+        }
+
+        let Some(context) = self.test_context() else { return Mutation::new_skip() };
+        let mutation = context.mutations().get(&self.crate_local_id()).cloned();
+        Mutation {
+            mutation,
+            skip: nesting_token.skip,
+            _nesting_token: Some(nesting_token),
+        }
+    }
 }
+
 impl Drop for NestingToken {
     fn drop(&mut self) {
         SELFTEST_NESTING.with(|sn| {
             let mut sn = sn.borrow_mut();
             if self.skip {
                 trace!("    un-nest {}", self.source);
-                assert_eq!(sn.nested, Some(self.source), "invalid nesting");
-                sn.nested = None;
+                assert_eq!(sn.nested.pop(), Some(self.source), "invalid nesting");
             } else {
                 trace!("CLOSE {}", self.source);
-                assert_eq!(sn.nested, None);
+                assert_eq!(sn.nested, vec![]);
                 assert_eq!(sn.current, Some(self.source), "invalid nesting");
                 sn.current = None;
             }
         });
     }
 }
-// #[macro_export]
-// macro_rules! return_early_if_nesting {
-//     ($m_id:expr, $e:expr) => {
-//         let __muttest_nesting_token = {
-//             let mut t = $crate::tests::NestingToken::create($m_id);
-//             if t.is_nested() {
-//                 return $e;
-//             }
-//             t
-//         };
-//     };
-// }
 
-impl BakedMutableId {
-    pub(crate) fn is_isolated(self) -> bool {
-        self.pkg_name == "#isolated"
-    }
-    pub(crate) fn test_context(self) -> Arc<TestContext> {
-        TEST_CONTEXT
-            .read()
-            .unwrap()
-            .get(self.crate_name)
-            .expect("mutation for this testcase not set")
-            .clone()
-    }
-}
 impl MuttestReportForCrate {
     pub(crate) fn for_mutable(&self, id: usize) -> &MutableReport {
         self.mutables
@@ -193,7 +202,7 @@ pub fn run<'a, T>(
         details_file: Some(Mutex::new(DETAILS_FILE_CSV_HEAD.as_bytes().to_vec())),
         coverage_file: Some(Mutex::new(COVERAGE_FILE_CSV_HEAD.as_bytes().to_vec())),
     };
-    TEST_CONTEXT
+    TEST_ISOLATED_CONTEXT
         .write()
         .unwrap()
         .insert(crate_name.to_owned(), Arc::new(context))
@@ -204,7 +213,11 @@ pub fn run<'a, T>(
     let res = action();
 
     // extract data
-    let context = TEST_CONTEXT.write().unwrap().remove(crate_name).unwrap();
+    let context = TEST_ISOLATED_CONTEXT
+        .write()
+        .unwrap()
+        .remove(crate_name)
+        .unwrap();
     let mut context =
         Arc::try_unwrap(context).expect("someone still has a reference to this context");
 
@@ -248,11 +261,11 @@ impl TestContext {
 }
 
 impl<R: IMuttestContext> IMuttestContext for Arc<R> {
+    fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
+        <R as IMuttestContext>::mutations(self)
+    }
     fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
-    }
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        <R as IMuttestContext>::get_mutation(self, m_id)
     }
     fn write_details(
         &self,
@@ -268,11 +281,11 @@ impl<R: IMuttestContext> IMuttestContext for Arc<R> {
     }
 }
 impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
+    fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
+        <R as IMuttestContext>::mutations(self)
+    }
     fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
-    }
-    fn get_mutation(&self, m_id: CrateLocalMutableId) -> Mutation {
-        <R as IMuttestContext>::get_mutation(self, m_id)
     }
     fn write_details(
         &self,
