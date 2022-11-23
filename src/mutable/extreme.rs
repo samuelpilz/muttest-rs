@@ -54,7 +54,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                         // report static analysis
                         __muttest_mutation.report_details(
                             #loc,
-                            "", // TODO: try print the type
+                            "",
                             &#muttest_api::mutation_string_from_bool_list(
                                 &[
                                     ("default",

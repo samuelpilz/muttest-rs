@@ -143,8 +143,6 @@ pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
 /// Macro to enable mutation testing.
 #[proc_macro_attribute]
 pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    // TODO: maybe only transform if env-vars set
-    // TODO: maybe honor `CARGO_PRIMARY_PACKAGE` env var
     let input = parse_macro_input!(input as File);
 
     let conf = TransformerConf {
@@ -327,7 +325,7 @@ impl<'a> MatchMutable<'a, ItemFn> for extreme::Mutable<'a> {
             vis,
             sig,
             block,
-            span: item_fn.span(), // TODO: smaller span instead?
+            span: sig.ident.span(),
         })
     }
 }
@@ -371,7 +369,6 @@ impl FoldImpl<'_> {
 
 impl Fold for FoldImpl<'_> {
     // TODO: inspect & preserve attrs
-    // TODO: tests ...
     fn fold_item_const(&mut self, item_const: ItemConst) -> ItemConst {
         item_const
     }

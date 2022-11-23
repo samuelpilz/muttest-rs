@@ -143,6 +143,4 @@ mod tests {
     }
 
     // TODO: tests
-
-    // TODO: test that details are reported if left&&right fail
 }

@@ -72,6 +72,7 @@ impl MuttestTransformer {
         };
 
         let span = m.span();
+        // TODO: use csv crate instead.
         self.definitions.push(format!(
             r#"{},{},{},{},{},{},{},{}"#,
             id.id.attr_id,
@@ -156,7 +157,6 @@ impl MuttestTransformer {
     }
 }
 
-// TODO: streaming display instead of copy
 fn csv_quote(s: &str) -> String {
     if s.contains('\"') {
         format!(r#""{}""#, s.replace('"', r#""""#))

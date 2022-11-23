@@ -64,7 +64,7 @@ pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I
         None => lit,
         Some(p) => {
             if !p.chars().all(|c| c.is_numeric()) {
-                todo!(); // TODO: panic and report
+                todo!();
             }
             I::parse(p)
         }

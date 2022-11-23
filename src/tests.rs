@@ -5,21 +5,20 @@ use std::{
     sync::{Arc, Mutex, Once, RwLock},
 };
 
-use log::{info, trace};
+use log::{debug, trace};
 
 use crate::{
     context::{IMuttestContext, MuttestContext, COVERAGE_FILE_CSV_HEAD, DETAILS_FILE_CSV_HEAD},
     mutable_id::CrateId,
     report::{MutableReport, MuttestReportForCrate},
-    BakedLocation, BakedMutableId, CrateLocalMutableId, MutableId, Mutation,
+    BakedLocation, BakedMutableId, CrateLocalMutableId, Error, MutableId, Mutation,
 };
 
 pub use crate::{call_isolated, data_isolated};
 
-// TODO: BTreeMap::new is not yet const :/
-
 type TestContext = MuttestContext<Vec<u8>>;
 lazy_static::lazy_static! {
+    // TODO: BTreeMap::new is not yet const :/
     static ref TEST_ISOLATED_CONTEXT: RwLock<BTreeMap<String, Arc<TestContext>>> =
         RwLock::new(BTreeMap::new());
 }
@@ -153,8 +152,8 @@ macro_rules! call_isolated {
 macro_rules! data_isolated {
     ($f:ident) => {{
         $crate::tests::test_setup_once();
-        ::log::info!("{}:{}", $f::PKG_NAME, $f::CRATE_NAME);
-        ::log::info!("{}", $f::MUTABLES_CSV);
+        ::log::debug!("{}:{}", $f::PKG_NAME, $f::CRATE_NAME);
+        ::log::debug!("{}", $f::MUTABLES_CSV);
         $crate::report::MuttestReportForCrate::from_defs_checked($f::NUM_MUTABLES, $f::MUTABLES_CSV)
     }};
 }
@@ -182,8 +181,8 @@ pub fn run<'a, T>(
     action: impl FnOnce() -> T,
     mutation: Vec<(usize, &'a str)>,
 ) -> IsolatedFnCall<T> {
-    info!("{pkg_name}:{crate_name}");
-    info!("{defs_csv}");
+    debug!("{pkg_name}:{crate_name}");
+    debug!("{defs_csv}");
 
     let mut report = MuttestReportForCrate::from_defs_checked(num_mutables, defs_csv);
 
@@ -275,10 +274,10 @@ impl<R: IMuttestContext> IMuttestContext for Arc<R> {
         loc: BakedLocation,
         ty: &str,
         mutations: &str,
-    ) {
-        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    ) -> Result<(), Error> {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations)
     }
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) -> Result<(), Error> {
         <R as IMuttestContext>::write_coverage(self, id, behavior)
     }
 }
@@ -295,10 +294,10 @@ impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
         loc: BakedLocation,
         ty: &str,
         mutations: &str,
-    ) {
-        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    ) -> Result<(), Error> {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations)
     }
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) -> Result<(), Error> {
         <R as IMuttestContext>::write_coverage(self, id, behavior)
     }
 }

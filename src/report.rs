@@ -194,7 +194,6 @@ impl MuttestReportForCrate {
         let mut reader = csv::ReaderBuilder::new().from_reader(coverage);
         for md in reader.deserialize::<MutableCoverageCsvLine>() {
             let md = md?;
-            // TODO: what to do with pkg_name & crate_name?
 
             let id = CrateLocalMutableId {
                 attr_id: md.attr_id,

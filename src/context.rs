@@ -36,8 +36,14 @@ pub(crate) trait IMuttestContext {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>>;
     fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool;
 
-    fn write_details(&self, id: CrateLocalMutableId, loc: BakedLocation, ty: &str, mutations: &str);
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>);
+    fn write_details(
+        &self,
+        id: CrateLocalMutableId,
+        loc: BakedLocation,
+        ty: &str,
+        mutations: &str,
+    ) -> Result<(), Error>;
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) -> Result<(), Error>;
 }
 
 impl MuttestContext<File> {
@@ -88,11 +94,10 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
         loc: BakedLocation,
         ty: &str,
         mutations: &str,
-    ) {
-        // TODO: return Result instead of unwrap
+    ) -> Result<(), Error> {
         let is_new = self.details.lock().unwrap().insert(id);
         if !is_new {
-            return;
+            return Ok(());
         }
 
         if let Some(f) = &self.details_file {
@@ -108,13 +113,13 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
                 f,
                 "{},{},{ty},{mutations},{file},{module},{attr_span},{span}",
                 id.attr_id, id.id,
-            )
-            .unwrap();
-            f.flush().unwrap();
+            )?;
+            f.flush()?;
         }
+        Ok(())
     }
 
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) -> Result<(), Error> {
         let mut coverage_map = self.coverage.lock().unwrap();
         let mut update = false;
 
@@ -141,10 +146,11 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
         if update {
             if let Some(f) = &self.coverage_file {
                 let mut f = f.lock().unwrap();
-                writeln!(f, "{},{},{data}", id.attr_id, id.id).unwrap();
-                f.flush().unwrap();
+                writeln!(f, "{},{},{data}", id.attr_id, id.id)?;
+                f.flush()?;
             }
         }
+        Ok(())
     }
 }
 
@@ -161,10 +167,10 @@ impl<R: IMuttestContext> IMuttestContext for &'static R {
         loc: BakedLocation,
         ty: &str,
         mutations: &str,
-    ) {
-        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations);
+    ) -> Result<(), Error> {
+        <R as IMuttestContext>::write_details(self, id, loc, ty, mutations)
     }
-    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) {
+    fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>) -> Result<(), Error> {
         <R as IMuttestContext>::write_coverage(self, id, behavior)
     }
 }

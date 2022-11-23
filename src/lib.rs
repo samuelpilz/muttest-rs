@@ -118,6 +118,7 @@ impl Mutation {
         if let Some(c) = self.id.context() {
             debug_assert!(!self.skip);
             c.write_details(self.id.crate_local_id(), loc, ty, mutations)
+                .expect("unable to write details")
         }
     }
 
@@ -125,8 +126,10 @@ impl Mutation {
         if let Some(c) = self.id.context() {
             debug_assert!(!self.skip);
             c.write_coverage(self.id.crate_local_id(), behavior)
+                .expect("unable to write coverage")
         }
     }
+    // TODO: error handling instead of excepts
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -226,15 +229,16 @@ impl Span {
             return None;
         }
         let end = Some(span.end()).filter(|&end| end.line != 0 && start != end);
-        // TODO: report errors
         Some(Self {
             start: LineColumn {
-                line: start.line.try_into().unwrap(),
-                column: start.column.try_into().unwrap(),
+                line: start.line.try_into().ok()?,
+                column: start.column.try_into().ok()?,
             },
-            end: end.map(|end| LineColumn {
-                line: end.line.try_into().unwrap(),
-                column: end.column.try_into().unwrap(),
+            end: end.and_then(|end| {
+                Some(LineColumn {
+                    line: end.line.try_into().ok()?,
+                    column: end.column.try_into().ok()?,
+                })
             }),
         })
     }

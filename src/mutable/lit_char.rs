@@ -55,7 +55,7 @@ pub fn run(m_id: BakedMutableId, c: char, loc: BakedLocation) -> char {
         None => c,
         Some(p) => {
             if p.chars().count() != 1 {
-                todo!(); // TODO: panic and report
+                todo!();
             }
             p.chars().next().unwrap()
         }
