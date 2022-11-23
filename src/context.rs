@@ -34,7 +34,7 @@ pub(crate) struct MuttestContext<F> {
 /// object-safe trait for `MuttestContext` functions
 pub(crate) trait IMuttestContext {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>>;
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool;
+    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool;
 
     fn write_details(&self, id: CrateLocalMutableId, loc: BakedLocation, ty: &str, mutations: &str);
     fn write_coverage(&self, id: CrateLocalMutableId, behavior: Option<&str>);
@@ -74,13 +74,12 @@ impl MuttestContext<File> {
     }
 }
 
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 impl<F: Write> IMuttestContext for MuttestContext<F> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         &self.mutations
     }
-    // TODO: enabling this breaks the tests
-    #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
         self.pkg_name == m_id.pkg_name && self.crate_name == m_id.crate_name
     }
     fn write_details(
@@ -90,6 +89,7 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
         ty: &str,
         mutations: &str,
     ) {
+        // TODO: return Result instead of unwrap
         let is_new = self.details.lock().unwrap().insert(id);
         if !is_new {
             return;
@@ -97,6 +97,7 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
 
         if let Some(f) = &self.details_file {
             let mut f = f.lock().unwrap();
+
             let BakedLocation {
                 file,
                 module,
@@ -108,8 +109,8 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
                 "{},{},{ty},{mutations},{file},{module},{attr_span},{span}",
                 id.attr_id, id.id,
             )
-            .expect("unable to write mutable detail");
-            f.flush().expect("unable to flush mutable detail");
+            .unwrap();
+            f.flush().unwrap();
         }
     }
 
@@ -140,9 +141,8 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
         if update {
             if let Some(f) = &self.coverage_file {
                 let mut f = f.lock().unwrap();
-                writeln!(f, "{},{},{data}", id.attr_id, id.id)
-                    .expect("unable to write mutable detail");
-                f.flush().expect("unable to flush mutable detail");
+                writeln!(f, "{},{},{data}", id.attr_id, id.id).unwrap();
+                f.flush().unwrap();
             }
         }
     }
@@ -152,7 +152,7 @@ impl<R: IMuttestContext> IMuttestContext for &'static R {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         <R as IMuttestContext>::mutations(self)
     }
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
     fn write_details(

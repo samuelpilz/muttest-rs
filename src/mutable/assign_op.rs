@@ -1,10 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 
-use crate::{
-    transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId, Mutation,
-};
+use crate::transformer::{MuttestTransformer, TransformSnippets};
 
 pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
@@ -48,19 +45,20 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                 let (mut left_type, mut right_type) =
                     (#muttest_api::PhantomData, #muttest_api::PhantomData);
 
+                let __muttest_mutation = (#m_id).get_active_mutation();
+
                 // TODO: this has exponential blowup of code-size. Dead branches should use original code instead
                 // dead branches to help type inference
                 #[allow(unused_assignments)]
                 match 0 {
-                    1 => {
-                        // underscores are used
+                    _ if __muttest_mutation.is_skip() => {
                         let (mut _left, _right) = (&mut (#left), #right);
                         left_type = #muttest_api::phantom_for_type(&_left);
                         right_type = #muttest_api::phantom_for_type(&_right);
                         *_left #op _right;
                     }
                     _ => {
-                        (#m_id).report_details(
+                        __muttest_mutation.report_details(
                             #loc,
                             "",
                             &#muttest_api::mutation_string_from_bool_list(&[
@@ -77,7 +75,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             ])
                         );
                         let (mut _left, _right) = (&mut #left, #right);
-                        match #muttest_api::mutable::assign_op::run(#m_id).as_option() {
+                        __muttest_mutation.report_coverage(#muttest_api::Option::None);
+                        match __muttest_mutation.as_option() {
                             #muttest_api::Option::None => *_left #op _right,
                             #(#muttest_api::Option::Some(#op_symbols) =>
                                 {
@@ -95,11 +94,6 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
             })
         }
     }
-}
-
-pub fn run(m_id: BakedMutableId) -> Mutation {
-    m_id.report_coverage(None);
-    m_id.get_active_mutation()
 }
 
 macro_rules! assign_op_traits {

@@ -83,6 +83,7 @@ lazy_static! {
 
 #[derive(Debug)]
 pub struct Mutation {
+    id: BakedMutableId,
     mutation: Option<Arc<str>>,
     skip: bool,
     #[cfg(test)]
@@ -90,18 +91,19 @@ pub struct Mutation {
 }
 
 impl Mutation {
-    pub fn new_from_option(mutation: Option<Arc<str>>) -> Self {
+    pub fn new_from_option(id: BakedMutableId, mutation: Option<Arc<str>>) -> Self {
         Self {
+            id,
             mutation,
             skip: false,
             #[cfg(test)]
             _nesting_token: None,
         }
     }
-    pub fn new_skip() -> Self {
+    pub fn new_skip(id: BakedMutableId) -> Self {
         Self {
             skip: true,
-            ..Self::new_from_option(None)
+            ..Self::new_from_option(id, None)
         }
     }
     pub fn as_option(&self) -> Option<&str> {
@@ -110,11 +112,20 @@ impl Mutation {
     pub fn is_skip(&self) -> bool {
         self.skip
     }
-}
 
-impl Default for Mutation {
-    fn default() -> Self {
-        Self::new_skip()
+    /// reports details of mutables gathered by static analysis
+    pub fn report_details(&self, loc: BakedLocation, ty: &str, mutations: &str) {
+        if let Some(c) = self.id.context() {
+            debug_assert!(!self.skip);
+            c.write_details(self.id.crate_local_id(), loc, ty, mutations)
+        }
+    }
+
+    pub fn report_coverage(&self, behavior: Option<&str>) {
+        if let Some(c) = self.id.context() {
+            debug_assert!(!self.skip);
+            c.write_coverage(self.id.crate_local_id(), behavior)
+        }
     }
 }
 
@@ -159,26 +170,13 @@ impl Error {
 }
 
 impl BakedMutableId {
-    fn context(self) -> Option<impl context::IMuttestContext> {
+    fn context(&self) -> Option<impl context::IMuttestContext> {
         #[cfg(test)]
         return self.test_context();
         #[cfg(not(test))]
         MUTTEST_CONTEXT
             .as_ref()
             .filter(|ctx| ctx.tracks_mutable(self))
-    }
-
-    /// reports details of mutables gathered by static analysis
-    pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
-        if let Some(c) = self.context() {
-            c.write_details(self.crate_local_id(), loc, ty, mutations)
-        }
-    }
-
-    pub fn report_coverage(self, behavior: Option<&str>) {
-        if let Some(c) = self.context() {
-            c.write_coverage(self.crate_local_id(), behavior)
-        }
     }
 
     /// get the active mutation for a mutable
@@ -188,11 +186,11 @@ impl BakedMutableId {
             return self.get_selftest_mutation();
         }
 
-        self.context()
-            .map(|ctx| {
-                Mutation::new_from_option(ctx.mutations().get(&self.crate_local_id()).cloned())
-            })
-            .unwrap_or_default()
+        let id = self.crate_local_id();
+        match self.context() {
+            Some(ctx) => Mutation::new_from_option(self, ctx.mutations().get(&id).cloned()),
+            None => Mutation::new_skip(self),
+        }
     }
 }
 

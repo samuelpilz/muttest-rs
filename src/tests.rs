@@ -42,11 +42,11 @@ pub(crate) struct NestingToken {
 }
 
 impl BakedMutableId {
-    pub(crate) fn is_isolated(self) -> bool {
+    pub(crate) fn is_isolated(&self) -> bool {
         self.pkg_name == "#isolated"
     }
 
-    pub(crate) fn test_context(self) -> Option<Box<dyn IMuttestContext>> {
+    pub(crate) fn test_context(&self) -> Option<Box<dyn IMuttestContext>> {
         if self.is_isolated() {
             Some(as_box_dyn_context(
                 TEST_ISOLATED_CONTEXT
@@ -68,10 +68,10 @@ impl BakedMutableId {
         // on selftest, nesting needs to be correct
         assert_ne!(m_id.attr_id, 0, "attr_id: 0 is for isolated mutations");
 
-        let nesting_token = SELFTEST_NESTING.with(move |sn| {
+        let nesting_token = SELFTEST_NESTING.with(|sn| {
             let mut sn = sn.borrow_mut();
             if sn.current.is_none() {
-                trace!("OPEN {}", self);
+                trace!("OPEN {}", &self);
                 assert_eq!(sn.nested, vec![]);
                 sn.current = Some(m_id);
                 NestingToken {
@@ -79,7 +79,7 @@ impl BakedMutableId {
                     source: m_id,
                 }
             } else {
-                trace!("    nested {} in {}", self, sn.current.unwrap(),);
+                trace!("    nested {} in {}", m_id, sn.current.unwrap(),);
                 sn.nested.push(m_id);
                 NestingToken {
                     skip: true,
@@ -90,15 +90,17 @@ impl BakedMutableId {
 
         if nesting_token.skip {
             return Mutation {
+                id: self,
                 mutation: None,
                 skip: true,
                 _nesting_token: Some(nesting_token),
             };
         }
 
-        let Some(context) = self.test_context() else { return Mutation::new_skip() };
+        let Some(context) = self.test_context() else { return Mutation::new_skip(self) };
         let mutation = context.mutations().get(&self.crate_local_id()).cloned();
         Mutation {
+            id: self,
             mutation,
             skip: nesting_token.skip,
             _nesting_token: Some(nesting_token),
@@ -264,7 +266,7 @@ impl<R: IMuttestContext> IMuttestContext for Arc<R> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         <R as IMuttestContext>::mutations(self)
     }
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
     fn write_details(
@@ -284,7 +286,7 @@ impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         <R as IMuttestContext>::mutations(self)
     }
-    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
     fn write_details(

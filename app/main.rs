@@ -41,7 +41,6 @@ impl From<OptCargoPlugin> for Opt {
     }
 }
 
-// TODO: enable logging for cargo-calls
 fn main() -> Result<(), Error> {
     env_logger::init();
 

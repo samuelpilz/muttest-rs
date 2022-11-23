@@ -5,7 +5,7 @@ use quote::{quote_spanned, ToTokens};
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId, Mutation,
+    Mutation,
 };
 
 // TODO: mutate (some) blocks instead of `ItemFn`s
@@ -52,7 +52,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                     // run mutable
                     _ => {
                         // report static analysis
-                        (#m_id).report_details(
+                        __muttest_mutation.report_details(
                             #loc,
                             "", // TODO: try print the type
                             &#muttest_api::mutation_string_from_bool_list(
@@ -68,7 +68,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             )
                         );
 
-                        match #muttest_api::mutable::extreme::run(#m_id, __muttest_mutation) {
+                        match #muttest_api::mutable::extreme::run(__muttest_mutation) {
                             #muttest_api::ControlFlow::Continue(_) => #block,
                             #muttest_api::ControlFlow::Break(_) => {
                                 #[allow(unused_imports)]
@@ -84,8 +84,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run(m_id: BakedMutableId, mutation: Mutation) -> ControlFlow<()> {
-    m_id.report_coverage(None);
+pub fn run(mutation: Mutation) -> ControlFlow<()> {
+    mutation.report_coverage(None);
 
     match mutation.as_option() {
         None => ControlFlow::Continue(()),

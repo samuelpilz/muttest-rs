@@ -4,7 +4,7 @@ use quote::{quote_spanned, ToTokens};
 use crate::{
     report::MutableAnalysis,
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId,
+    Mutation,
 };
 
 use super::FilterMutableCode;
@@ -41,12 +41,12 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                 if __muttest_mutation.is_skip() {
                     (#left) #op (#right)
                 } else {
-                    (#m_id).report_details(#loc,"","");
+                    __muttest_mutation.report_details(#loc,"","");
 
                     // for improved type-inference and `!`-type handling call the eq-operation here.
                     let _res = #left #op #right;
 
-                    #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _res)
+                    #muttest_api::mutable::binop_eq::run(__muttest_mutation, #op_str, _res)
                 }
             })
         }
@@ -58,15 +58,13 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
+pub fn run(mutation: Mutation, op_str: &str, res: bool) -> bool {
     debug_assert!(matches!(op_str, "==" | "!="));
-
-    let mutation = m_id.get_active_mutation();
 
     let eq = (op_str == "==") == res;
 
     // this reports behavior but is irrelevant for weak mutation testing
-    m_id.report_coverage(Some(if eq { "EQ" } else { "NE" }));
+    mutation.report_coverage(Some(if eq { "EQ" } else { "NE" }));
 
     match mutation.as_option().unwrap_or(op_str) {
         "==" => eq,

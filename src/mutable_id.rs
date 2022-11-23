@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BakedMutableId {
     pub pkg_name: &'static str,
     pub crate_name: &'static str,
@@ -143,6 +143,10 @@ impl FromStr for MutableId {
 
 impl fmt::Display for BakedMutableId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}:{}", self.pkg_name, self.crate_name, self.id)
+        write!(
+            f,
+            "{}:{}:{}:{}",
+            self.pkg_name, self.crate_name, self.attr_id, self.id
+        )
     }
 }

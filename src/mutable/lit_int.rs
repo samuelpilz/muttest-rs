@@ -48,13 +48,19 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+// #[cfg_attr(test, muttest_codegen::mutate_selftest)]
+// TODO: enable
 pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I {
-    m_id.report_coverage(None);
+    let mutation = m_id.get_active_mutation();
+    if mutation.is_skip() {
+        return lit;
+    }
 
-    m_id.report_details(loc, I::type_str(), "");
+    mutation.report_coverage(None);
 
-    match m_id.get_active_mutation().as_option() {
+    mutation.report_details(loc, I::type_str(), "");
+
+    match mutation.as_option() {
         None => lit,
         Some(p) => {
             if !p.chars().all(|c| c.is_numeric()) {

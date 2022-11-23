@@ -6,7 +6,7 @@ use quote::{quote_spanned, ToTokens};
 use crate::{
     report::MutableAnalysis,
     transformer::{MuttestTransformer, TransformSnippets},
-    BakedMutableId,
+    Mutation,
 };
 
 use super::FilterMutableCode;
@@ -39,17 +39,23 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
         quote_spanned! {span=>
             #muttest_api::id({
-                (#m_id).report_details(#loc, "", "");
-                let (_left, _right) = (&(#left), &(#right));
-                // for type-inference, keep the original expression in the first branch
-                if false {*_left #op *_right} else {
+                let __muttest_mutation = (#m_id).get_active_mutation();
+                if __muttest_mutation.is_skip() {
+                    (#left) #op (#right)
+                } else {
+
+                    __muttest_mutation.report_details(#loc, "", "");
+
+                    let (_left, _right) = (&(#left), &(#right));
+
                     // this is required for handling comparisons where one side has type `!`
                     #[allow(unused_imports)]
                     use #muttest_api::mutable::binop_cmp::{IsNo, IsYes};
                     let ord = (&(&_left, &_right))
                         .get_impl()
                         .run(_left, _right);
-                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, ord)
+
+                    #muttest_api::mutable::binop_cmp::run(__muttest_mutation, #op_str, ord)
                 }
             })
         }
@@ -80,18 +86,15 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(test, muttest_codegen::mutate_selftest)]
-pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
-    m_id.report_coverage(Some(match ord {
+pub fn run(mutation: Mutation, op_str: &str, ord: Option<Ordering>) -> bool {
+    mutation.report_coverage(Some(match ord {
         None => "",
         Some(Ordering::Less) => "LT",
         Some(Ordering::Equal) => "EQ",
         Some(Ordering::Greater) => "GT",
     }));
 
-    match (
-        ord,
-        m_id.get_active_mutation().as_option().unwrap_or(op_str),
-    ) {
+    match (ord, mutation.as_option().unwrap_or(op_str)) {
         (None, _) => false,
         (Some(ord), "<") => ord.is_lt(),
         (Some(ord), "<=") => ord.is_le(),

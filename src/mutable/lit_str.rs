@@ -51,32 +51,36 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-// TODO: enable again
-// #[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(test, muttest_codegen::mutate_selftest)]
 pub fn run(
     m_id: BakedMutableId,
     s: &'static str,
     loc: BakedLocation,
-    mutation: &RwLock<Option<&'static str>>,
+    mutation_store: &RwLock<Option<&'static str>>,
 ) -> &'static str {
-    m_id.report_coverage(None);
+    let mutation = m_id.get_active_mutation();
+    if mutation.skip {
+        return s;
+    }
 
-    m_id.report_details(loc, "&'static str", "");
+    mutation.report_coverage(None);
 
-    match m_id.get_active_mutation().as_option() {
+    mutation.report_details(loc, "&'static str", "");
+
+    match mutation.as_option() {
         None => s,
         Some("") => "",
         Some(s_mut) => {
             // TODO: unescape the string
 
-            let r_lock = mutation.read().unwrap();
+            let r_lock = mutation_store.read().unwrap();
             match r_lock.deref() {
                 Some(s_lock) if s_lock == &s_mut => return s_lock,
                 _ => {}
             }
             // update the content of the lock
             std::mem::drop(r_lock);
-            let mut w_lock = mutation.write().unwrap();
+            let mut w_lock = mutation_store.write().unwrap();
             match w_lock.deref_mut() {
                 // check if someone else has done the update
                 Some(s_lock) if s_lock == &s_mut => return s_lock,
