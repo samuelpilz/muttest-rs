@@ -2,15 +2,13 @@ use std::{cmp::Ordering, mem::swap};
 
 #[muttest::mutate]
 fn triangle(mut x: usize, mut y: usize, mut z: usize) -> &'static str {
-    if y > x {
-        swap(&mut x, &mut y);
+    if x > z {
+        swap(&mut x, &mut z);
     }
-    if z < y {
-        swap(&mut z, &mut y);
+    if y > z {
+        swap(&mut y, &mut z);
     }
-    if y > x {
-        swap(&mut x, &mut y);
-    }
+    // z is greatest
 
     if x + y <= z {
         return "illegal";
