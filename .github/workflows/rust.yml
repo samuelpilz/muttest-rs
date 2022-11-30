@@ -76,7 +76,7 @@ jobs:
           path: target ~/.cargo
           key: cargo-cache
       - name: Run selftest
-        run: cargo run -p cargo-muttest -- muttest -p muttest-core
+        run: cargo run -p cargo-muttest -- muttest -p muttest-selftest
 
   selftest-nightly:
     runs-on: ubuntu-latest
@@ -94,7 +94,7 @@ jobs:
           path: target ~/.cargo
           key: cargo-cache
       - name: Run selftest
-        run: cargo run -p cargo-muttest -- muttest -p muttest-core
+        run: cargo run -p cargo-muttest -- muttest -p muttest-selftest
 
   examples:
     runs-on: ubuntu-latest
