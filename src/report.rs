@@ -68,7 +68,7 @@ pub enum MutationResult {
     Timeout,
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(feature = "selftest", muttest::mutate)]
 impl MuttestReportForCrate {
     pub fn from_definition_csv(definitions: impl Read) -> Result<Self, Error> {
         #[derive(Debug, Deserialize)]

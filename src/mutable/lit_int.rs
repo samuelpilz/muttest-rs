@@ -48,7 +48,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-// #[cfg_attr(test, muttest_codegen::mutate_selftest)]
+// #[cfg_attr(feature = "selftest", muttest::mutate)]
 // TODO: enable
 pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I {
     let mutation = m_id.get_active_mutation();

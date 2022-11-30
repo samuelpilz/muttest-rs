@@ -60,7 +60,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                                     ("default",
                                     {
                                         #[allow(unused_imports)]
-                                        use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
+                                        use #muttest_api::mutable::extreme::maybe_default::{NotDefault, YesDefault};
                                         (&ret_type).is_default()
                                     }),
                                     ("panic", true),
@@ -72,7 +72,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             #muttest_api::ControlFlow::Continue(_) => #block,
                             #muttest_api::ControlFlow::Break(_) => {
                                 #[allow(unused_imports)]
-                                use #muttest_api::mutable::extreme::{NotDefault, YesDefault};
+                                use #muttest_api::mutable::extreme::maybe_default::{NotDefault, YesDefault};
                                 (&ret_type).get_default()
                             },
                         }
@@ -83,7 +83,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(feature = "selftest", muttest::mutate)]
 pub fn run(mutation: Mutation) -> ControlFlow<()> {
     mutation.report_coverage(None);
 
@@ -99,31 +99,35 @@ pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
     unreachable!()
 }
 
-pub trait NotDefault<T> {
-    fn is_default(&self) -> bool;
-    fn get_default(&self) -> T;
-}
-pub trait YesDefault<T> {
-    fn is_default(&self) -> bool;
-    fn get_default(&self) -> T;
-}
-impl<T> NotDefault<T> for &PhantomData<T> {
-    fn is_default(&self) -> bool {
-        false
-    }
-    fn get_default(&self) -> T {
-        panic!();
-    }
-}
-impl<T: Default> YesDefault<T> for PhantomData<T> {
-    fn is_default(&self) -> bool {
-        true
-    }
-    fn get_default(&self) -> T {
-        T::default()
-    }
-}
+// TODO: better name?
+pub mod maybe_default {
+    use std::marker::PhantomData;
 
+    pub trait NotDefault<T> {
+        fn is_default(&self) -> bool;
+        fn get_default(&self) -> T;
+    }
+    pub trait YesDefault<T> {
+        fn is_default(&self) -> bool;
+        fn get_default(&self) -> T;
+    }
+    impl<T> NotDefault<T> for &PhantomData<T> {
+        fn is_default(&self) -> bool {
+            false
+        }
+        fn get_default(&self) -> T {
+            panic!();
+        }
+    }
+    impl<T: Default> YesDefault<T> for PhantomData<T> {
+        fn is_default(&self) -> bool {
+            true
+        }
+        fn get_default(&self) -> T {
+            T::default()
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::any::Any;

@@ -73,7 +73,7 @@ macro_rules! env_var_muttest_dir {
 }
 
 // recompile this crate for selftest
-#[cfg(test)]
+#[cfg(feature = "selftest")]
 const _RECOMPILE_ON_ENVVAR_CHANGE: Option<&str> = option_env!(env_var_muttest_dir!());
 
 lazy_static! {
@@ -86,8 +86,6 @@ pub struct Mutation {
     id: BakedMutableId,
     mutation: Option<Arc<str>>,
     skip: bool,
-    #[cfg(test)]
-    _nesting_token: Option<crate::tests::NestingToken>,
 }
 
 impl Mutation {
@@ -96,8 +94,6 @@ impl Mutation {
             id,
             mutation,
             skip: false,
-            #[cfg(test)]
-            _nesting_token: None,
         }
     }
     pub fn new_skip(id: BakedMutableId) -> Self {
@@ -184,11 +180,6 @@ impl BakedMutableId {
 
     /// get the active mutation for a mutable
     pub fn get_active_mutation(self) -> Mutation {
-        #[cfg(test)]
-        if self.attr_id != 0 {
-            return self.get_selftest_mutation();
-        }
-
         let id = self.crate_local_id();
         match self.context() {
             Some(ctx) => Mutation::new_from_option(self, ctx.mutations().get(&id).cloned()),

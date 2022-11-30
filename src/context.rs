@@ -80,7 +80,7 @@ impl MuttestContext<File> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(feature = "selftest", muttest::mutate)]
 impl<F: Write> IMuttestContext for MuttestContext<F> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         &self.mutations

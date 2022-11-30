@@ -1,23 +1,24 @@
 [package]
-name = "muttest-core"
-version = "0.1.0-alpha"
+name = "muttest-selftest"
+version = "0.1.0"
 edition = "2021"
-description = "effective mutation testing for Rust"
-autoexamples = false
+
+[lib]
+path = "../src/lib.rs"
 
 [dependencies]
+muttest = { path = "../api" }
+muttest-codegen = { path = "../codegen" }
 lazy_static = "1.4.0"
 thiserror = "1.0"
 serde = { version = "1", features = ["derive"] }
 quote = "1"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 csv = "1.1"
-
-[dev-dependencies]
-muttest-codegen = { path = "codegen" }
 backtrace-on-stack-overflow = "0.2.0"
 log = "0.4.0"
 env_logger = "0.9.0"
 
-[workspace]
-members = [".", "codegen", "app", "examples", "api", "selftest"]
+[features]
+default = ["selftest"]
+selftest = []

@@ -59,7 +59,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(feature = "selftest", muttest::mutate)]
 pub fn run_left(mutation: &Mutation, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     debug_assert!(matches!(op_str, "&&" | "||"));
     debug_assert!(!mutation.skip);

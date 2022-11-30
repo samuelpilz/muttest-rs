@@ -40,7 +40,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-#[cfg_attr(test, muttest_codegen::mutate_selftest)]
+#[cfg_attr(feature = "selftest", muttest::mutate)]
 pub fn run(m_id: BakedMutableId, c: char, loc: BakedLocation) -> char {
     let mutation = m_id.get_active_mutation();
     if mutation.is_skip() {

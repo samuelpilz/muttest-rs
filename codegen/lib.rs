@@ -55,21 +55,21 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     // TODO: hide behind feature (unnecessary codegen)
     let input = parse_macro_input!(input as ItemFn);
 
-    if std::env::var("CARGO_PKG_NAME").unwrap() != "muttest-core" {
+    let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    if pkg_name != "muttest-core" && pkg_name != "muttest-selftest" {
         // TODO: compiler error instead of panic
         panic!("`mutate_isolated` should only be used for internal testing");
     }
-    let is_lib_test = std::env::var("CARGO_CRATE_NAME").unwrap() == "muttest_core";
 
     let crate_name = format!("#{}", ISOLATED_MUTATION.fetch_add(1, SeqCst));
     let mut conf = TransformerConf {
         attr_id: 0,
         span: Span::call_site(),
         mutables: MutablesConf::All,
-        muttest_api: if is_lib_test {
-            quote!(crate::api)
+        muttest_api: if std::env::var_os("CARGO_TARGET_TMPDIR").is_some() {
+            quote!(::muttest_core::api) // integration test
         } else {
-            quote!(::muttest_core::api)
+            quote!(crate::api) // unit test
         },
         pkg_name: "#isolated",
         crate_name: crate_name.to_owned(),
@@ -102,40 +102,6 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
             pub const PKG_NAME: &str = "#isolated";
             pub const CRATE_NAME: &str = #crate_name;
         }
-    }
-    .into()
-}
-
-/// Transformer macro to be used to perform mutation testing on `muttest-core` itself.
-///
-/// This macro is not exported in `muttest` and is only intended for internal use.
-#[proc_macro_attribute]
-pub fn mutate_selftest(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as File);
-
-    let conf = TransformerConf {
-        attr_id: ATTR_ID.fetch_add(1, SeqCst),
-        span: Span::call_site(),
-        mutables: MutablesConf::All,
-        muttest_api: quote!(crate::api),
-        pkg_name: &PKG_NAME,
-        crate_name: CRATE_NAME.clone(),
-    };
-    assert!(attr.is_empty());
-
-    let mut transformer = MuttestTransformer::new(conf);
-    let result = FoldImpl(&mut transformer).fold_file(input);
-
-    if let Some(f) = &mut *MUTABLE_DEFINITIONS_FILE.lock().unwrap() {
-        for l in transformer.definitions() {
-            writeln!(f, "{l}").expect("unable to write to definitions file");
-        }
-    }
-
-    quote! {
-        // TODO: this does not work when using as inner macro
-        #[allow(clippy::all)]
-        #result
     }
     .into()
 }

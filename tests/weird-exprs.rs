@@ -1,7 +1,7 @@
 #![allow(unreachable_code, dead_code, unused_parens, clippy::all)]
 //! from: https://github.com/rust-lang/rust/blob/master/src/test/ui/weird-exprs.rs
 
-#[muttest_codegen::mutate_isolated]
+// #[muttest_codegen::mutate_isolated]
 fn weird() {
     use std::cell::Cell;
 
