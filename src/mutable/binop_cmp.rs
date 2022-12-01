@@ -109,7 +109,7 @@ pub mod maybe_partial_ord {
 
     pub struct Yes;
     pub struct No;
-    
+
     pub trait IsYes {
         fn get_impl(&self) -> Yes;
     }
@@ -147,7 +147,6 @@ pub mod maybe_partial_ord {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

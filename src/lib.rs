@@ -1,4 +1,5 @@
 #![cfg_attr(test, allow(clippy::bool_assert_comparison))]
+#![cfg_attr(feature = "selftest", allow(clippy::all))]
 //! Rust Mutation Testing core library.
 //!
 //! There are some internals here that are not meant for mutation testing users.
