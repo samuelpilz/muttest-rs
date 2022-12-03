@@ -14,10 +14,12 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
       - name: Cache
-        uses: actions/cache@v3.0.8
+        uses: actions/cache@v3.0.11
         with:
-          path: target ~/.cargo
           key: cargo-cache
+          path: |
+            target/
+            ~/.cargo
       - name: Run selftest
         run: cargo run -p cargo-muttest -- muttest -p muttest-selftest
 
@@ -32,9 +34,11 @@ jobs:
           toolchain: nightly
           override: true
       - name: Cache
-        uses: actions/cache@v3.0.8
+        uses: actions/cache@v3.0.11
         with:
-          path: target ~/.cargo
           key: cargo-cache
+          path: |
+            target/
+            ~/.cargo
       - name: Run selftest
         run: cargo run -p cargo-muttest -- muttest -p muttest-selftest

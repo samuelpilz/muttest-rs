@@ -14,10 +14,12 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
       - name: Cache
-        uses: actions/cache@v3.0.8
+        uses: actions/cache@v3.0.11
         with:
-          path: target ~/.cargo
           key: cargo-cache
+          path: |
+            target/
+            ~/.cargo
       - name: Build
         run: cargo build --workspace --verbose
       - name: Run tests
@@ -32,10 +34,12 @@ jobs:
           toolchain: nightly
           override: true
       - name: Cache
-        uses: actions/cache@v3.0.8
+        uses: actions/cache@v3.0.11
         with:
-          path: target ~/.cargo
           key: cargo-cache-nightly
+          path: |
+            target/
+            ~/.cargo
       - name: Build
         run: cargo build --workspace --verbose
       - name: Run tests
