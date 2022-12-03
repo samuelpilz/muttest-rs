@@ -1,4 +1,4 @@
-name: Selftest
+name: Examples
 
 on:
   push:
