@@ -60,7 +60,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                                     ("default",
                                     {
                                         #[allow(unused_imports)]
-                                        use #muttest_api::mutable::extreme::maybe_default::{NotDefault, YesDefault};
+                                        use #muttest_api::mutable::extreme::is_default::{NotDefault, YesDefault};
                                         (&ret_type).is_default()
                                     }),
                                     ("panic", true),
@@ -72,7 +72,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             #muttest_api::ControlFlow::Continue(_) => #block,
                             #muttest_api::ControlFlow::Break(_) => {
                                 #[allow(unused_imports)]
-                                use #muttest_api::mutable::extreme::maybe_default::{NotDefault, YesDefault};
+                                use #muttest_api::mutable::extreme::is_default::{NotDefault, YesDefault};
                                 (&ret_type).get_default()
                             },
                         }
@@ -99,8 +99,7 @@ pub fn phantom_unwrap<T>(_: PhantomData<T>) -> T {
     unreachable!()
 }
 
-// TODO: better name?
-pub mod maybe_default {
+pub mod is_default {
     use std::marker::PhantomData;
 
     pub trait NotDefault<T> {

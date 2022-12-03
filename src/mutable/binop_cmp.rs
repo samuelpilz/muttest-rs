@@ -50,7 +50,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
                     // this is required for handling comparisons where one side has type `!`
                     #[allow(unused_imports)]
-                    use #muttest_api::mutable::binop_cmp::maybe_partial_ord::{IsNo, IsYes};
+                    use #muttest_api::mutable::binop_cmp::is_partial_ord::{IsNo, IsYes};
                     let ord = (&(&_left, &_right))
                         .get_impl()
                         .run(_left, _right);
@@ -104,7 +104,7 @@ pub fn run(mutation: Mutation, op_str: &str, ord: Option<Ordering>) -> bool {
     }
 }
 
-pub mod maybe_partial_ord {
+pub mod is_partial_ord {
     use std::cmp::Ordering;
 
     pub struct Yes;
