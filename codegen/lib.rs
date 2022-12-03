@@ -335,6 +335,7 @@ impl FoldImpl<'_> {
 
 impl Fold for FoldImpl<'_> {
     // TODO: inspect & preserve attrs
+
     fn fold_item_const(&mut self, item_const: ItemConst) -> ItemConst {
         item_const
     }
