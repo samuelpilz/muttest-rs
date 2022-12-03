@@ -1,4 +1,5 @@
 use proc_macro2::{Span, TokenStream};
+use syn::parse::Parse;
 
 use crate::{report::MutableAnalysis, transformer::MuttestTransformer, Error};
 
@@ -39,6 +40,11 @@ pub trait Mutable<'a> {
     fn identical_behavior(analysis: &MutableAnalysis, mutation: &str) -> bool {
         false
     }
+}
+
+/// trait to extract a mutable from AST nodes
+pub trait MatchMutable<'a, T: Parse>: Sized + Mutable<'a> {
+    fn try_match<'b: 'a>(ast_node: &'b T) -> Option<Self>;
 }
 
 pub fn mutations_for_mutable(kind: &str, analysis: &MutableAnalysis) -> Result<Vec<String>, Error> {

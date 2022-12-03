@@ -15,7 +15,7 @@ use muttest_core::{
     context::ENV_VAR_MUTTEST_DIR,
     mutable::{
         assign_op, binop_bool, binop_calc, binop_cmp, binop_eq, extreme, lit_char, lit_int,
-        lit_str, Mutable,
+        lit_str, MatchMutable,
     },
     transformer::{
         MutablesConf, MuttestTransformer, TransformerConf, MUTABLE_DEFINITIONS_CSV_HEAD,
@@ -26,9 +26,8 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use syn::{
-    fold::Fold, parse_macro_input, spanned::Spanned, BinOp, Expr, ExprAssignOp, ExprBinary,
-    ExprLit, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic, Lit, LitStr, Pat, Type,
-    Variant,
+    fold::Fold, parse_macro_input, Expr, ExprRepeat, File, ItemConst, ItemFn, ItemImpl, ItemStatic,
+    Pat, Type, Variant,
 };
 
 lazy_static! {
@@ -48,6 +47,7 @@ lazy_static! {
 static ATTR_ID: AtomicUsize = AtomicUsize::new(1);
 
 /// isolated mutation for unit testing of `muttest-core` itself.
+#[cfg(feature = "selftest")]
 #[proc_macro_attribute]
 pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     static ISOLATED_MUTATION: AtomicUsize = AtomicUsize::new(1);
@@ -75,7 +75,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
         crate_name: crate_name.to_owned(),
     };
     if !attr.is_empty() {
-        let s = parse_macro_input!(attr as LitStr);
+        let s = parse_macro_input!(attr as syn::LitStr);
         conf.mutables = MutablesConf::One(s.value());
     }
 
@@ -157,142 +157,6 @@ impl Deref for FoldImpl<'_> {
 impl DerefMut for FoldImpl<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
-    }
-}
-
-/// trait to extract a mutable from AST nodes
-trait MatchMutable<'m, T: syn::parse::Parse>: Sized + Mutable<'m> {
-    fn try_match<'a: 'm>(ast_node: &'a T) -> Option<Self>;
-}
-
-impl<'a> MatchMutable<'a, Expr> for lit_int::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Lit(ExprLit {
-                lit: Lit::Int(l), ..
-            }) => Some(Self {
-                base10_digits: l.base10_digits(),
-                span: l.span(),
-                lit: l,
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for lit_char::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Lit(ExprLit {
-                lit: Lit::Char(l), ..
-            }) => Some(Self {
-                c: l.value(),
-                span: l.span(),
-                lit: l,
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for lit_str::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Lit(ExprLit {
-                lit: Lit::Str(l), ..
-            }) => Some(Self {
-                value: l.value(),
-                span: l.span(),
-                lit: l,
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for binop_eq::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Binary(ExprBinary {
-                left, op, right, ..
-            }) if is_eq_op(*op) => Some(Self {
-                left,
-                right,
-                op,
-                span: op.span(),
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for binop_cmp::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Binary(ExprBinary {
-                left, op, right, ..
-            }) if is_cmp_op(*op) => Some(Self {
-                left: strip_expr_parens(left),
-                right: strip_expr_parens(right),
-                op,
-                span: op.span(),
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for binop_calc::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Binary(ExprBinary {
-                left, op, right, ..
-            }) if is_calc_op(*op) => Some(Self {
-                left: strip_expr_parens(left),
-                right: strip_expr_parens(right),
-                op,
-                span: op.span(),
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for assign_op::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::AssignOp(ExprAssignOp {
-                left, op, right, ..
-            }) => Some(Self {
-                left: strip_expr_parens(left),
-                right: strip_expr_parens(right),
-                op,
-                span: op.span(),
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, Expr> for binop_bool::Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
-        match expr {
-            Expr::Binary(ExprBinary {
-                left, op, right, ..
-            }) if is_bool_op(*op) => Some(Self {
-                left: strip_expr_parens(left),
-                right: strip_expr_parens(right),
-                op,
-                span: op.span(),
-            }),
-            _ => None,
-        }
-    }
-}
-impl<'a> MatchMutable<'a, ItemFn> for extreme::Mutable<'a> {
-    fn try_match<'b: 'a>(item_fn: &'b ItemFn) -> Option<Self> {
-        let ItemFn {
-            vis, sig, block, ..
-        } = item_fn;
-        Some(Self {
-            vis,
-            sig,
-            block,
-            span: sig.ident.span(),
-        })
     }
 }
 
@@ -395,43 +259,4 @@ impl Fold for FoldImpl<'_> {
             ControlFlow::Continue(_) => e,
         }
     }
-}
-
-fn strip_expr_parens(e: &Expr) -> &Expr {
-    match e {
-        // TODO: this loses attrs
-        Expr::Paren(ep) => &ep.expr,
-        _ => e,
-    }
-}
-
-fn is_bool_op(op: BinOp) -> bool {
-    matches!(op, BinOp::And(_) | BinOp::Or(_))
-}
-
-fn is_eq_op(op: BinOp) -> bool {
-    matches!(op, BinOp::Eq(_) | BinOp::Ne(_))
-}
-
-fn is_cmp_op(op: BinOp) -> bool {
-    matches!(
-        op,
-        BinOp::Lt(_) | BinOp::Le(_) | BinOp::Ge(_) | BinOp::Gt(_)
-    )
-}
-
-fn is_calc_op(op: BinOp) -> bool {
-    matches!(
-        op,
-        BinOp::Add(_)
-            | BinOp::Sub(_)
-            | BinOp::Mul(_)
-            | BinOp::Div(_)
-            | BinOp::Rem(_)
-            | BinOp::BitOr(_)
-            | BinOp::BitAnd(_)
-            | BinOp::BitXor(_)
-            | BinOp::Shl(_)
-            | BinOp::Shr(_)
-    )
 }

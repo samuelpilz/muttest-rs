@@ -2,6 +2,7 @@ use std::fmt;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
+use syn::{Expr, ExprLit, Lit};
 
 use crate::{
     report::MutableAnalysis,
@@ -9,10 +10,27 @@ use crate::{
     BakedLocation, BakedMutableId,
 };
 
+use super::MatchMutable;
+
 pub struct Mutable<'a> {
     pub base10_digits: &'a str,
     pub span: Span,
     pub lit: &'a dyn ToTokens,
+}
+
+impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
+    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(l), ..
+            }) => Some(Self {
+                base10_digits: l.base10_digits(),
+                span: l.span(),
+                lit: l,
+            }),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> super::Mutable<'a> for Mutable<'a> {

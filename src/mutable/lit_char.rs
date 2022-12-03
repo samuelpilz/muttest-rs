@@ -1,17 +1,33 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
+use syn::{Expr, ExprLit, Lit};
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
     BakedLocation, BakedMutableId,
 };
 
-use super::FilterMutableCode;
+use super::{FilterMutableCode, MatchMutable};
 
 pub struct Mutable<'a> {
     pub c: char,
     pub span: Span,
     pub lit: &'a dyn ToTokens,
+}
+
+impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
+    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Char(l), ..
+            }) => Some(Self {
+                c: l.value(),
+                span: l.span(),
+                lit: l,
+            }),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> super::Mutable<'a> for Mutable<'a> {

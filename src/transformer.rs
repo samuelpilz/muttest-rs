@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
+use syn::Expr;
 
 use crate::{
     display_or_empty_if_none, mutable::Mutable, mutable_id::CrateId, CrateLocalMutableId,
@@ -154,6 +155,15 @@ impl MuttestTransformer {
         }
 
         relocate_token_stream(self.conf.muttest_api.clone(), span)
+    }
+}
+
+pub fn strip_expr_parens(e: &Expr) -> &Expr {
+    match e {
+        // TODO: this loses attrs
+        // TODO: make this recursive?
+        Expr::Paren(ep) => &ep.expr,
+        _ => e,
     }
 }
 

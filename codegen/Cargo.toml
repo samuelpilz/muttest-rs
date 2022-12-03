@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 proc-macro2 = { version = "1.0.24", features = ["span-locations"] }
-syn = { version = "1.0.86", features = ["full", "fold"] }
+syn = { version = "1.0", features = ["full", "fold"] }
 quote = "1.0.9"
 lazy_static = "1.4.0"
 muttest-core = { path = ".." }
@@ -13,3 +13,7 @@ muttest-core = { path = ".." }
 [lib]
 proc_macro = true
 path = "lib.rs"
+
+[features]
+default = []
+selftest = []

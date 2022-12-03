@@ -2,18 +2,35 @@ use std::{marker::PhantomData, ops::ControlFlow};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
+use syn::ItemFn;
 
 use crate::{
     transformer::{MuttestTransformer, TransformSnippets},
     Mutation,
 };
 
-// TODO: mutate (some) blocks instead of `ItemFn`s
+use super::MatchMutable;
+
+// TODO: mutate (some) blocks instead of complete `fn`s?
 pub struct Mutable<'a> {
     pub vis: &'a dyn ToTokens,
     pub sig: &'a dyn ToTokens,
     pub block: &'a dyn ToTokens,
     pub span: Span,
+}
+
+impl<'a> MatchMutable<'a, ItemFn> for Mutable<'a> {
+    fn try_match<'b: 'a>(item_fn: &'b ItemFn) -> Option<Self> {
+        let ItemFn {
+            vis, sig, block, ..
+        } = item_fn;
+        Some(Self {
+            vis,
+            sig,
+            block,
+            span: sig.ident.span(),
+        })
+    }
 }
 
 impl<'a> super::Mutable<'a> for Mutable<'a> {

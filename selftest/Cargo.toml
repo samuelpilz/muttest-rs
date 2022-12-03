@@ -12,8 +12,9 @@ muttest-codegen = { path = "../codegen" }
 lazy_static = "1.4.0"
 thiserror = "1.0"
 serde = { version = "1", features = ["derive"] }
-quote = "1"
 proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+syn = { version = "1.0", features = ["full", "fold"] }
 csv = "1.1"
 backtrace-on-stack-overflow = "0.2.0"
 log = "0.4.0"
@@ -21,4 +22,4 @@ env_logger = "0.10.0"
 
 [features]
 default = ["selftest"]
-selftest = []
+selftest = ["muttest-codegen/selftest"]

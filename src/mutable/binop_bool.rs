@@ -2,19 +2,36 @@ use std::ops::ControlFlow;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
+use syn::{spanned::Spanned, BinOp, Expr, ExprBinary};
 
 use crate::{
-    transformer::{MuttestTransformer, TransformSnippets},
+    transformer::{strip_expr_parens, MuttestTransformer, TransformSnippets},
     Mutation,
 };
 
-use super::FilterMutableCode;
+use super::{FilterMutableCode, MatchMutable};
 
 pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
     pub op: &'a dyn ToTokens,
     pub span: Span,
+}
+
+impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
+    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+        match expr {
+            Expr::Binary(ExprBinary {
+                left, op, right, ..
+            }) if matches!(op, BinOp::And(_) | BinOp::Or(_)) => Some(Self {
+                left: strip_expr_parens(left),
+                right: strip_expr_parens(right),
+                op,
+                span: op.span(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> super::Mutable<'a> for Mutable<'a> {
