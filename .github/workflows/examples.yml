@@ -1,0 +1,22 @@
+name: Selftest
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+      - name: Cache
+        uses: actions/cache@v3.0.8
+        with:
+          path: target ~/.cargo
+          key: cargo-cache
+      - name: Run examples
+        run: cargo run -p cargo-muttest -- muttest -p muttest-examples

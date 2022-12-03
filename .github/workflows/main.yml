@@ -1,10 +1,8 @@
-name: Rust
+name: Build, Test & Lint
 
 on:
   push:
-    branches: ["main"]
   pull_request:
-    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,7 +21,7 @@ jobs:
       - name: Build
         run: cargo build --workspace --verbose
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
 
   build-nightly:
     runs-on: ubuntu-latest
@@ -39,9 +37,9 @@ jobs:
           path: target ~/.cargo
           key: cargo-cache-nightly
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --workspace --verbose
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
 
   check-format:
     runs-on: ubuntu-latest
@@ -64,47 +62,3 @@ jobs:
         run: cargo clippy --workspace -- --deny clippy::all
       - name: Run Clippy for tests
         run: cargo clippy --workspace --tests -- --deny clippy::all
-
-  selftest:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-      - name: Cache
-        uses: actions/cache@v3.0.8
-        with:
-          path: target ~/.cargo
-          key: cargo-cache
-      - name: Run selftest
-        run: cargo run -p cargo-muttest -- muttest -p muttest-selftest
-
-  selftest-nightly:
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "--cfg procmacro2_semver_exempt"
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-      - name: Cache
-        uses: actions/cache@v3.0.8
-        with:
-          path: target ~/.cargo
-          key: cargo-cache
-      - name: Run selftest
-        run: cargo run -p cargo-muttest -- muttest -p muttest-selftest
-
-  examples:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-      - name: Cache
-        uses: actions/cache@v3.0.8
-        with:
-          path: target ~/.cargo
-          key: cargo-cache
-      - name: Run examples
-        run: cargo run -p cargo-muttest -- muttest -p muttest-examples
