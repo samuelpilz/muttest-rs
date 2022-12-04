@@ -173,8 +173,8 @@ macro_rules! try_mutate {
                 if $s.should_mutate::<$m>() {
                     let m = {
                         #[allow(unused_imports)]
-                        use is_match_mutable::{NotMatch, YesMatch};
-                        (&(PhantomData::<$m>, crate::api::phantom_for_type($e))).get_match($e)
+                        use mutable_try_from::{NotMatch, YesMatch};
+                        (&(PhantomData::<$m>, crate::api::phantom_for_type($e))).try_from($e)
                     };
                     if let Some(m) = m {
                         match syn::parse2(m.transform($s)) {
@@ -297,28 +297,25 @@ fn csv_quote(s: &str) -> String {
     }
 }
 
-// TODO: "match" makes less sense with this construct
-mod is_match_mutable {
+mod mutable_try_from {
     use std::marker::PhantomData;
 
     use syn::parse::Parse;
 
-    use crate::mutable::MatchMutable;
-
     pub trait NotMatch<'a, A, T> {
-        fn get_match(&self, ast_node: &'a A) -> Option<T>;
+        fn try_from(&self, ast_node: &'a A) -> Option<T>;
     }
     pub trait YesMatch<'a, A, T> {
-        fn get_match(&self, ast_node: &'a A) -> Option<T>;
+        fn try_from(&self, ast_node: &'a A) -> Option<T>;
     }
     impl<'a, A, T> NotMatch<'a, A, T> for &(PhantomData<T>, PhantomData<A>) {
-        fn get_match(&self, _: &'a A) -> Option<T> {
+        fn try_from(&self, _: &'a A) -> Option<T> {
             None
         }
     }
-    impl<'a, A: Parse, T: MatchMutable<'a, A>> YesMatch<'a, A, T> for (PhantomData<T>, PhantomData<A>) {
-        fn get_match(&self, ast_node: &'a A) -> Option<T> {
-            T::try_match(ast_node)
+    impl<'a, A: Parse + 'a, T: TryFrom<&'a A>> YesMatch<'a, A, T> for (PhantomData<T>, PhantomData<A>) {
+        fn try_from(&self, ast_node: &'a A) -> Option<T> {
+            T::try_from(ast_node).ok()
         }
     }
 }

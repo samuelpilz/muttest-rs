@@ -9,8 +9,6 @@ use crate::{
     Mutation,
 };
 
-use super::MatchMutable;
-
 // TODO: mutate (some) blocks instead of complete `fn`s?
 pub struct Mutable<'a> {
     pub vis: &'a dyn ToTokens,
@@ -18,13 +16,13 @@ pub struct Mutable<'a> {
     pub block: &'a dyn ToTokens,
     pub span: Span,
 }
-
-impl<'a> MatchMutable<'a, ItemFn> for Mutable<'a> {
-    fn try_match(item_fn: &'a ItemFn) -> Option<Self> {
+impl<'a> TryFrom<&'a ItemFn> for Mutable<'a> {
+    type Error = ();
+    fn try_from(item_fn: &'a ItemFn) -> Result<Self, ()> {
         let ItemFn {
             vis, sig, block, ..
         } = item_fn;
-        Some(Self {
+        Ok(Self {
             vis,
             sig,
             block,

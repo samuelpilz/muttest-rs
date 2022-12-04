@@ -8,7 +8,7 @@ use crate::{
     Mutation,
 };
 
-use super::{FilterMutableCode, MatchMutable};
+use super::FilterMutableCode;
 
 pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
@@ -17,18 +17,19 @@ pub struct Mutable<'a> {
     pub span: Span,
 }
 
-impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
-    fn try_match(expr: &'a Expr) -> Option<Self> {
+impl<'a> TryFrom<&'a Expr> for Mutable<'a> {
+    type Error = ();
+    fn try_from(expr: &'a Expr) -> Result<Self, ()> {
         match expr {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
-            }) if matches!(op, BinOp::Eq(_) | BinOp::Ne(_)) => Some(Self {
+            }) if matches!(op, BinOp::Eq(_) | BinOp::Ne(_)) => Ok(Self {
                 left,
                 right,
                 op,
                 span: op.span(),
             }),
-            _ => None,
+            _ => Err(()),
         }
     }
 }

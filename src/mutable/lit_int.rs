@@ -10,25 +10,24 @@ use crate::{
     BakedLocation, BakedMutableId,
 };
 
-use super::MatchMutable;
-
 pub struct Mutable<'a> {
     pub base10_digits: &'a str,
     pub span: Span,
     pub lit: &'a dyn ToTokens,
 }
 
-impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
-    fn try_match(expr: &'a Expr) -> Option<Self> {
+impl<'a> TryFrom<&'a Expr> for Mutable<'a> {
+    type Error = ();
+    fn try_from(expr: &'a Expr) -> Result<Self, ()> {
         match expr {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(l), ..
-            }) => Some(Self {
+            }) => Ok(Self {
                 base10_digits: l.base10_digits(),
                 span: l.span(),
                 lit: l,
             }),
-            _ => None,
+            _ => Err(()),
         }
     }
 }

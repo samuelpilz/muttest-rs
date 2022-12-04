@@ -4,8 +4,6 @@ use syn::{spanned::Spanned, BinOp, Expr, ExprBinary};
 
 use crate::transformer::{strip_expr_parens, MuttestTransformer, TransformSnippets};
 
-use super::MatchMutable;
-
 pub struct Mutable<'a> {
     pub left: &'a dyn ToTokens,
     pub right: &'a dyn ToTokens,
@@ -13,8 +11,9 @@ pub struct Mutable<'a> {
     pub span: Span,
 }
 
-impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
-    fn try_match(expr: &'a Expr) -> Option<Self> {
+impl<'a> TryFrom<&'a Expr> for Mutable<'a> {
+    type Error = ();
+    fn try_from(expr: &'a Expr) -> Result<Self, ()> {
         match expr {
             Expr::Binary(ExprBinary {
                 left, op, right, ..
@@ -32,14 +31,14 @@ impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
                     | BinOp::Shr(_)
             ) =>
             {
-                Some(Self {
+                Ok(Self {
                     left: strip_expr_parens(left),
                     right: strip_expr_parens(right),
                     op,
                     span: op.span(),
                 })
             }
-            _ => None,
+            _ => Err(()),
         }
     }
 }
