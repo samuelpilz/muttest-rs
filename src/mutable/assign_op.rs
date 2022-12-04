@@ -84,10 +84,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                                     #op_symbols,
                                     {
                                         #[allow(unused_imports)]
-                                        use #muttest_api::mutable::assign_op::#op_names::{IsNo, IsYes};
-                                        (&(left_type, right_type))
-                                            .get_impl()
-                                            .is_impl()
+                                        use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
+                                        (&(left_type, right_type)).is_op()
                                     }
                                 ),)*
                             ])
@@ -99,10 +97,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             #(#muttest_api::Option::Some(#op_symbols) =>
                                 {
                                     #[allow(unused_imports)]
-                                    use #muttest_api::mutable::assign_op::#op_names::{IsNo, IsYes};
-                                    (&(left_type, right_type))
-                                        .get_impl()
-                                        .run(_left, _right)
+                                    use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
+                                    (&(left_type, right_type)).do_op(_left, _right)
                                 }
                             )*
                             _ => todo!()
@@ -126,43 +122,28 @@ macro_rules! assign_op_traits {
             pub mod $op {
                 use std::marker::PhantomData;
 
-                pub struct Yes;
-                pub struct No;
-
-                pub trait IsYes {
-                    fn get_impl(&self) -> Yes;
+                pub trait YesOp<L, R> {
+                    fn is_op(&self) -> bool;
+                    fn do_op(&self, left: &mut L, right: R);
                 }
-                pub trait IsNo {
-                    fn get_impl(&self) -> No;
+                pub trait NotOp<L, R> {
+                    fn is_op(&self) -> bool;
+                    fn do_op(&self, left: &mut L, right: R);
                 }
-                impl<L: ::std::ops::$t<R>, R> IsYes for (PhantomData<&mut L>, PhantomData<R>)
+                impl<L: ::std::ops::$t<R>, R> YesOp<L, R> for (PhantomData<&mut L>, PhantomData<R>)
                 {
-                    fn get_impl(&self) -> Yes {
-                        Yes
-                    }
-                }
-                impl<L, R> IsNo for &(PhantomData<&mut L>, PhantomData<R>) {
-                    fn get_impl(&self) -> No {
-                        No
-                    }
-                }
-                impl Yes {
-                    pub fn is_impl(&self) -> bool {
+                    fn is_op(&self) -> bool {
                         true
                     }
-                    pub fn run<L: ::std::ops::$t<R>, R>(
-                        self,
-                        left: &mut L,
-                        right: R,
-                    ) {
+                    fn do_op(&self, left: &mut L, right: R) {
                         <L as ::std::ops::$t<R>>::$op(left, right)
                     }
                 }
-                impl No {
-                    pub fn is_impl(&self) -> bool {
+                impl<L, R> NotOp<L, R> for &(PhantomData<&mut L>, PhantomData<R>) {
+                    fn is_op(&self) -> bool {
                         false
                     }
-                    pub fn run<L, R>(self, _: &mut L, _: R) {
+                    fn do_op(&self, _: &mut L, _: R) {
                         unreachable!()
                     }
                 }

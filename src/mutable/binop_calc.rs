@@ -101,10 +101,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                                     #op_symbols,
                                     {
                                         #[allow(unused_imports)]
-                                        use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
-                                        (&(left_type, right_type, output_type))
-                                            .get_impl()
-                                            .is_impl()
+                                        use #muttest_api::mutable::binop_calc::#op_names::{YesOp, NotOp};
+                                        (&(left_type, right_type, output_type)).is_op()
                                     }
                                 ),)*
                             ])
@@ -116,10 +114,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             #(#op_symbols =>
                                 {
                                     #[allow(unused_imports)]
-                                    use #muttest_api::mutable::binop_calc::#op_names::{IsNo, IsYes};
-                                    (&(left_type, right_type, output_type))
-                                        .get_impl()
-                                        .run(_left, _right)
+                                    use #muttest_api::mutable::binop_calc::#op_names::{YesOp, NotOp};
+                                    (&(left_type, right_type, output_type)).do_op(_left, _right)
                                 }
                             )*
                             _ => todo!()
@@ -143,48 +139,33 @@ macro_rules! binop_calc_traits {
             pub mod $op {
                 use std::marker::PhantomData;
 
-                pub struct Yes;
-                pub struct No;
-
-                pub trait IsYes {
-                    fn get_impl(&self) -> Yes;
+                pub trait YesOp<L, R, O> {
+                    fn is_op(&self) -> bool;
+                    fn do_op(&self, left: L, right: R) -> O;
                 }
-                pub trait IsNo {
-                    fn get_impl(&self) -> No;
+                pub trait NotOp<L, R, O> {
+                    fn is_op(&self) -> bool;
+                    fn do_op(&self, left: L, right: R) -> O;
                 }
-                impl<L: ::std::ops::$t<R>, R> IsYes
+                impl<L: ::std::ops::$t<R>, R> YesOp<L, R, <L as ::std::ops::$t<R>>::Output>
                     for (
                         PhantomData<L>,
                         PhantomData<R>,
                         PhantomData<<L as ::std::ops::$t<R>>::Output>,
                     )
                 {
-                    fn get_impl(&self) -> Yes {
-                        Yes
-                    }
-                }
-                impl<L, R, O> IsNo for &(PhantomData<L>, PhantomData<R>, PhantomData<O>) {
-                    fn get_impl(&self) -> No {
-                        No
-                    }
-                }
-                impl Yes {
-                    pub fn is_impl(&self) -> bool {
+                    fn is_op(&self) -> bool {
                         true
                     }
-                    pub fn run<L: ::std::ops::$t<R>, R>(
-                        self,
-                        left: L,
-                        right: R,
-                    ) -> <L as ::std::ops::$t<R>>::Output {
+                    fn do_op(&self, left: L, right: R) -> <L as ::std::ops::$t<R>>::Output {
                         <L as ::std::ops::$t<R>>::$op(left, right)
                     }
                 }
-                impl No {
-                    pub fn is_impl(&self) -> bool {
+                impl<L, R, O> NotOp<L, R, O> for &(PhantomData<L>, PhantomData<R>, PhantomData<O>) {
+                    fn is_op(&self) -> bool {
                         false
                     }
-                    pub fn run<L, R, O>(self, _: L, _: R) -> O {
+                    fn do_op(&self, _: L, _: R) -> O {
                         unreachable!()
                     }
                 }
