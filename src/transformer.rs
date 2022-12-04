@@ -162,60 +162,6 @@ impl MuttestTransformer {
     }
 }
 
-fn mutable_name<'a, M: Mutable<'a>>() -> &'static str {
-    M::NAME
-}
-
-macro_rules! try_mutate {
-    ($s:ident, $e:expr, $($m:path,)*) => {
-        {
-            $(
-                if $s.should_mutate::<$m>() {
-                    let m = {
-                        #[allow(unused_imports)]
-                        use mutable_try_from::{NotMatch, YesMatch};
-                        (&(PhantomData::<$m>, crate::api::phantom_for_type($e))).try_from($e)
-                    };
-                    if let Some(m) = m {
-                        match syn::parse2(m.transform($s)) {
-                            Ok(m) => return ControlFlow::Break(m),
-                            Err(e) => panic!("mutable `{}` transform syntax error: {}", mutable_name::<$m>(), e)
-                        }
-                    }
-                }
-            )*
-            ControlFlow::Continue(())
-        }
-    };
-}
-
-macro_rules! try_mutate_all {
-    ($s:ident, $ast_node:expr) => {
-        try_mutate!(
-            $s,
-            $ast_node,
-            mutable::lit_char::Mutable,
-            mutable::lit_int::Mutable,
-            mutable::lit_str::Mutable,
-            mutable::binop_eq::Mutable,
-            mutable::binop_cmp::Mutable,
-            mutable::binop_calc::Mutable,
-            mutable::assign_op::Mutable,
-            mutable::binop_bool::Mutable,
-            mutable::extreme::Mutable,
-        )
-    };
-}
-
-impl MuttestTransformer {
-    // TODO: inline these when try-blocks are stable
-    fn try_mutate_all_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
-        try_mutate_all!(self, e)
-    }
-    fn try_mutate_all_item_fn(&mut self, i: &ItemFn) -> ControlFlow<ItemFn> {
-        try_mutate_all!(self, i)
-    }
-}
 impl Fold for MuttestTransformer {
     // TODO: inspect & preserve attrs
 
@@ -277,6 +223,61 @@ impl Fold for MuttestTransformer {
             ControlFlow::Break(e) => e,
             ControlFlow::Continue(_) => e,
         }
+    }
+}
+
+fn mutable_name<'a, M: Mutable<'a>>() -> &'static str {
+    M::NAME
+}
+
+macro_rules! try_mutate {
+    ($s:ident, $e:expr, $($m:path,)*) => {
+        {
+            $(
+                if $s.should_mutate::<$m>() {
+                    let m = {
+                        #[allow(unused_imports)]
+                        use mutable_try_from::{NotMatch, YesMatch};
+                        (&(PhantomData::<$m>, crate::api::phantom_for_type($e))).try_from($e)
+                    };
+                    if let Some(m) = m {
+                        match syn::parse2(m.transform($s)) {
+                            Ok(m) => return ControlFlow::Break(m),
+                            Err(e) => panic!("mutable `{}` transform syntax error: {}", mutable_name::<$m>(), e)
+                        }
+                    }
+                }
+            )*
+            ControlFlow::Continue(())
+        }
+    };
+}
+
+macro_rules! try_mutate_all {
+    ($s:ident, $ast_node:expr) => {
+        try_mutate!(
+            $s,
+            $ast_node,
+            mutable::lit_char::Mutable,
+            mutable::lit_int::Mutable,
+            mutable::lit_str::Mutable,
+            mutable::binop_eq::Mutable,
+            mutable::binop_cmp::Mutable,
+            mutable::binop_calc::Mutable,
+            mutable::assign_op::Mutable,
+            mutable::binop_bool::Mutable,
+            mutable::extreme::Mutable,
+        )
+    };
+}
+
+impl MuttestTransformer {
+    // TODO: inline these when try-blocks are stable
+    fn try_mutate_all_expr(&mut self, e: &Expr) -> ControlFlow<Expr> {
+        try_mutate_all!(self, e)
+    }
+    fn try_mutate_all_item_fn(&mut self, i: &ItemFn) -> ControlFlow<ItemFn> {
+        try_mutate_all!(self, i)
     }
 }
 
