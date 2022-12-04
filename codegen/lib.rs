@@ -83,17 +83,16 @@ pub fn mutate(_attr: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
     static ISOLATED_MUTATION: AtomicUsize = AtomicUsize::new(1);
+    // static shared across invocations
 
-    // TODO: hide behind feature (unnecessary codegen)
     let input = parse_macro_input!(input as syn::ItemFn);
 
     let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
     if pkg_name != "muttest-core" && pkg_name != "muttest-selftest" {
-        // TODO: compiler error instead of panic
         panic!("`mutate_isolated` should only be used for internal testing");
     }
 
-    let crate_name = format!("#{}", ISOLATED_MUTATION.fetch_add(1, SeqCst));
+    let isolated_crate_name = format!("#{}", ISOLATED_MUTATION.fetch_add(1, SeqCst));
     let mut conf = TransformerConf {
         attr_id: 0,
         span: Span::call_site(),
@@ -104,7 +103,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
             quote!(crate::api) // unit test
         },
         pkg_name: "#isolated",
-        crate_name: crate_name.to_owned(),
+        crate_name: isolated_crate_name.to_owned(),
     };
     if !attr.is_empty() {
         let s = parse_macro_input!(attr as syn::LitStr);
@@ -132,7 +131,7 @@ pub fn mutate_isolated(attr: TokenStream, input: TokenStream) -> TokenStream {
             pub const MUTABLES_CSV: &str = #definitions_csv;
             pub const NUM_MUTABLES: usize = #num_mutables;
             pub const PKG_NAME: &str = "#isolated";
-            pub const CRATE_NAME: &str = #crate_name;
+            pub const CRATE_NAME: &str = #isolated_crate_name;
         }
     }
     .into()
