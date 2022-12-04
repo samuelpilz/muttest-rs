@@ -74,10 +74,8 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
                     // this is required for handling comparisons where one side has type `!`
                     #[allow(unused_imports)]
-                    use #muttest_api::mutable::binop_cmp::is_partial_ord::{IsNo, IsYes};
-                    let ord = (&(&_left, &_right))
-                        .get_impl()
-                        .run(_left, _right);
+                    use #muttest_api::mutable::binop_cmp::is_partial_ord::{YesOrd, NotOrd};
+                    let ord = (&(_left, _right)).get_ord(_left, _right);
 
                     #muttest_api::mutable::binop_cmp::run(__muttest_mutation, #op_str, ord)
                 }
@@ -131,42 +129,28 @@ pub fn run(mutation: Mutation, op_str: &str, ord: Option<Ordering>) -> bool {
 pub mod is_partial_ord {
     use std::cmp::Ordering;
 
-    pub struct Yes;
-    pub struct No;
-
-    pub trait IsYes {
-        fn get_impl(&self) -> Yes;
+    pub trait YesOrd<L: ?Sized, R: ?Sized> {
+        fn is_ord(&self) -> bool;
+        fn get_ord(&self, left: &L, right: &R) -> Option<Ordering>;
     }
-    pub trait IsNo {
-        fn get_impl(&self) -> No;
+    pub trait NotOrd<L: ?Sized, R: ?Sized> {
+        fn is_ord(&self) -> bool;
+        fn get_ord(&self, left: &L, right: &R) -> Option<Ordering>;
     }
-    impl<L: PartialOrd<R> + ?Sized, R: ?Sized> IsYes for (&L, &R) {
-        fn get_impl(&self) -> Yes {
-            Yes
-        }
-    }
-    impl<L: ?Sized, R: ?Sized> IsNo for &(&L, &R) {
-        fn get_impl(&self) -> No {
-            No
-        }
-    }
-    impl Yes {
-        pub fn is_impl(&self) -> bool {
+    impl<L: PartialOrd<R> + ?Sized, R: ?Sized> YesOrd<L, R> for (&L, &R) {
+        fn is_ord(&self) -> bool {
             true
         }
-        pub fn run<L: PartialOrd<R> + ?Sized, R: ?Sized>(
-            self,
-            left: &L,
-            right: &R,
-        ) -> Option<Ordering> {
+        fn get_ord(&self, left: &L, right: &R) -> Option<Ordering> {
             <L as PartialOrd<R>>::partial_cmp(left, right)
         }
     }
-    impl No {
-        pub fn is_impl(&self) -> bool {
+    impl<L: ?Sized, R: ?Sized> NotOrd<L, R> for &(&L, &R) {
+        fn is_ord(&self) -> bool {
             false
         }
-        pub fn run<L, R, O>(self, _: L, _: R) -> O {
+
+        fn get_ord(&self, _: &L, _: &R) -> Option<Ordering> {
             unreachable!()
         }
     }
