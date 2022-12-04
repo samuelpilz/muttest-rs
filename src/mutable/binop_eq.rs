@@ -18,7 +18,7 @@ pub struct Mutable<'a> {
 }
 
 impl<'a> MatchMutable<'a, Expr> for Mutable<'a> {
-    fn try_match<'b: 'a>(expr: &'b Expr) -> Option<Self> {
+    fn try_match(expr: &'a Expr) -> Option<Self> {
         match expr {
             Expr::Binary(ExprBinary {
                 left, op, right, ..

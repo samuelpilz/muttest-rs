@@ -20,7 +20,7 @@ pub struct Mutable<'a> {
 }
 
 impl<'a> MatchMutable<'a, ItemFn> for Mutable<'a> {
-    fn try_match<'b: 'a>(item_fn: &'b ItemFn) -> Option<Self> {
+    fn try_match(item_fn: &'a ItemFn) -> Option<Self> {
         let ItemFn {
             vis, sig, block, ..
         } = item_fn;

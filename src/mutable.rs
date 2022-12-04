@@ -44,7 +44,7 @@ pub trait Mutable<'a> {
 
 /// trait to extract a mutable from AST nodes
 pub trait MatchMutable<'a, T: Parse>: Sized + Mutable<'a> {
-    fn try_match<'b: 'a>(ast_node: &'b T) -> Option<Self>;
+    fn try_match(ast_node: &'a T) -> Option<Self>;
 }
 
 pub fn mutations_for_mutable(kind: &str, analysis: &MutableAnalysis) -> Result<Vec<String>, Error> {
