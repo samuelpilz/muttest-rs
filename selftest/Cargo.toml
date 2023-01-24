@@ -16,7 +16,7 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = "1"
 syn = { version = "1.0", features = ["full", "fold"] }
 csv = "1.1"
-backtrace-on-stack-overflow = "0.2.0"
+backtrace-on-stack-overflow = "0.3.0"
 log = "0.4.0"
 env_logger = "0.10.0"
 
