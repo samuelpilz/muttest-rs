@@ -82,53 +82,6 @@ lazy_static! {
         MuttestContext::new_from_env().expect("unable to create muttest context");
 }
 
-#[derive(Debug)]
-pub struct Mutation {
-    id: BakedMutableId,
-    mutation: Option<Arc<str>>,
-    skip: bool,
-}
-
-impl Mutation {
-    pub fn new_from_option(id: BakedMutableId, mutation: Option<Arc<str>>) -> Self {
-        Self {
-            id,
-            mutation,
-            skip: false,
-        }
-    }
-    pub fn new_skip(id: BakedMutableId) -> Self {
-        Self {
-            skip: true,
-            ..Self::new_from_option(id, None)
-        }
-    }
-    pub fn as_option(&self) -> Option<&str> {
-        self.mutation.as_deref()
-    }
-    pub fn is_skip(&self) -> bool {
-        self.skip
-    }
-
-    /// reports details of mutables gathered by static analysis
-    pub fn report_details(&self, loc: BakedLocation, ty: &str, mutations: &str) {
-        if let Some(c) = self.id.context() {
-            debug_assert!(!self.skip);
-            c.write_details(self.id.crate_local_id(), loc, ty, mutations)
-                .expect("unable to write details")
-        }
-    }
-
-    pub fn report_coverage(&self, behavior: Option<&str>) {
-        if let Some(c) = self.id.context() {
-            debug_assert!(!self.skip);
-            c.write_coverage(self.id.crate_local_id(), behavior)
-                .expect("unable to write coverage")
-        }
-    }
-    // TODO: error handling instead of excepts
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -170,7 +123,7 @@ impl Error {
 }
 
 impl BakedMutableId {
-    fn context(&self) -> Option<impl context::IMuttestContext> {
+    fn context(self) -> Option<impl context::IMuttestContext> {
         #[cfg(test)]
         return self.test_context();
         #[cfg(not(test))]
@@ -180,11 +133,24 @@ impl BakedMutableId {
     }
 
     /// get the active mutation for a mutable
-    pub fn get_active_mutation(self) -> Mutation {
+    pub fn get_action(self) -> Option<Arc<str>> {
         let id = self.crate_local_id();
-        match self.context() {
-            Some(ctx) => Mutation::new_from_option(self, ctx.mutations().get(&id).cloned()),
-            None => Mutation::new_skip(self),
+
+        Some(self.context()?.mutations().get(&id)?.clone())
+    }
+
+    /// reports details of mutables gathered by static analysis
+    pub fn report_details(self, loc: BakedLocation, ty: &str, mutations: &str) {
+        if let Some(c) = self.context() {
+            c.write_details(self.crate_local_id(), loc, ty, mutations)
+                .expect("unable to write details")
+        }
+    }
+
+    pub fn report_coverage(self, behavior: Option<&str>) {
+        if let Some(c) = self.context() {
+            c.write_coverage(self.crate_local_id(), behavior)
+                .expect("unable to write coverage")
         }
     }
 }

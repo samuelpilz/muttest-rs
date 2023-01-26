@@ -5,8 +5,8 @@ use quote::{quote_spanned, ToTokens};
 use syn::{spanned::Spanned, BinOp, Expr, ExprBinary};
 
 use crate::{
+    api::BakedMutableId,
     transformer::{strip_expr_parens, MuttestTransformer, TransformSnippets},
-    Mutation,
 };
 
 use super::FilterMutableCode;
@@ -55,20 +55,19 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
         } = transformer.new_mutable(&self, &op_str);
 
         quote_spanned! {span=>
-            #muttest_api::id({
-                let __muttest_mutation = (#m_id).get_active_mutation();
-                if __muttest_mutation.is_skip() {
+            #muttest_api::id(
+                if false {
                     (#left) #op (#right)
                 } else {
-                    __muttest_mutation.report_details(#loc, "bool", "");
-                    match #muttest_api::mutable::binop_bool::run_left(&__muttest_mutation, #op_str, #left) {
+                    (#m_id).report_details(#loc, "bool", "");
+                    match #muttest_api::mutable::binop_bool::run_left(#m_id, #op_str, #left) {
                         #muttest_api::ControlFlow::Break(b) => b,
                         #muttest_api::ControlFlow::Continue(b) => {
-                            #muttest_api::mutable::binop_bool::run_right(__muttest_mutation, b, #right)
+                            #muttest_api::mutable::binop_bool::run_right(#m_id, b, #right)
                         }
                     }
                 }
-            })
+            )
         }
     }
 
@@ -78,25 +77,25 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(feature = "selftest", muttest::mutate)]
-pub fn run_left(mutation: &Mutation, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
+pub fn run_left(m_id: BakedMutableId, op_str: &str, left: bool) -> ControlFlow<bool, bool> {
     debug_assert!(matches!(op_str, "&&" | "||"));
-    debug_assert!(!mutation.skip);
 
-    mutation.report_coverage(if left == (op_str == "&&") {
+    m_id.report_coverage(if left == (op_str == "&&") {
         None
     } else {
         Some(bool_to_str(left, None))
     });
 
-    match (left, mutation.as_option().unwrap_or(op_str)) {
+    match (left, m_id.get_action().as_deref().unwrap_or(op_str)) {
         (false, "&&") | (true, "||") => ControlFlow::Break(left),
         (true, "&&") | (false, "||") => ControlFlow::Continue(left),
         _ => todo!(),
     }
 }
 
-pub fn run_right(mutation: Mutation, left: bool, right: bool) -> bool {
-    mutation.report_coverage(Some(bool_to_str(left, Some(right))));
+#[cfg_attr(feature = "selftest", muttest::mutate)]
+pub fn run_right(m_id: BakedMutableId, left: bool, right: bool) -> bool {
+    m_id.report_coverage(Some(bool_to_str(left, Some(right))));
     right
 }
 fn bool_to_str(left: bool, right: Option<bool>) -> &'static str {

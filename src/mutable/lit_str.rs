@@ -75,16 +75,11 @@ pub fn run(
     loc: BakedLocation,
     mutation_store: &RwLock<Option<&'static str>>,
 ) -> &'static str {
-    let mutation = m_id.get_active_mutation();
-    if mutation.skip {
-        return s;
-    }
+    m_id.report_coverage(None);
 
-    mutation.report_coverage(None);
+    m_id.report_details(loc, "&'static str", "");
 
-    mutation.report_details(loc, "&'static str", "");
-
-    match mutation.as_option() {
+    match m_id.get_action().as_deref() {
         None => s,
         Some("") => "",
         Some(s_mut) => {

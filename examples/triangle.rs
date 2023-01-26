@@ -1,24 +1,23 @@
-use std::{cmp::Ordering, mem::swap};
-
 #[muttest::mutate]
-fn triangle(mut x: usize, mut y: usize, mut z: usize) -> &'static str {
-    if x > z {
-        swap(&mut x, &mut z);
+fn triangle(x: usize, y: usize, z: usize) -> &'static str {
+    if x > y || y > z {
+        return "lengths not sorted";
     }
-    if y > z {
-        swap(&mut y, &mut z);
-    }
-    // z is greatest
-
     if x + y <= z {
         return "illegal";
     }
-    let x2y2 = x * x + y * y;
-    match x2y2.cmp(&(z * z)) {
-        Ordering::Less => "obtuse",
-        Ordering::Equal => "right",
-        Ordering::Greater => "acute",
+    if x == y || y == z {
+        return if x == z { "equilateral" } else { "isoceles" };
     }
+    let x2y2 = x * x + y * y;
+    let z2 = z * z;
+    if x2y2 == z2 {
+        return "right angled";
+    }
+    if x2y2 < z2 {
+        return "obtuse angled";
+    }
+    return "acute angled";
 }
 
 #[test]
@@ -28,15 +27,15 @@ pub fn illegal_triangle() {
 
 #[test]
 pub fn right_triangle() {
-    assert_eq!(triangle(3, 4, 5), "right");
+    assert_eq!(triangle(3, 4, 5), "right angled");
 }
 
 #[test]
 pub fn acute_triangle() {
-    assert_eq!(triangle(5, 4, 6), "acute");
+    assert_eq!(triangle(4, 5, 6), "acute angled");
 }
 
 #[test]
 pub fn obtuse_triangle() {
-    assert_eq!(triangle(2, 4, 5), "obtuse");
+    assert_eq!(triangle(2, 4, 5), "obtuse angled");
 }

@@ -5,9 +5,9 @@ use quote::{quote_spanned, ToTokens};
 use syn::{spanned::Spanned, BinOp, Expr, ExprBinary};
 
 use crate::{
+    api::BakedMutableId,
     report::MutableAnalysis,
     transformer::{strip_expr_parens, MuttestTransformer, TransformSnippets},
-    Mutation,
 };
 
 use super::FilterMutableCode;
@@ -62,13 +62,12 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
         } = transformer.new_mutable(&self, &op_str);
 
         quote_spanned! {span=>
-            #muttest_api::id({
-                let __muttest_mutation = (#m_id).get_active_mutation();
-                if __muttest_mutation.is_skip() {
+            #muttest_api::id(
+                if false {
                     (#left) #op (#right)
                 } else {
 
-                    __muttest_mutation.report_details(#loc, "", "");
+                    (#m_id).report_details(#loc, "", "");
 
                     let (_left, _right) = (&(#left), &(#right));
 
@@ -77,9 +76,9 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                     use #muttest_api::mutable::binop_cmp::is_partial_ord::{YesOrd, NotOrd};
                     let ord = (&(_left, _right)).get_ord(_left, _right);
 
-                    #muttest_api::mutable::binop_cmp::run(__muttest_mutation, #op_str, ord)
+                    #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, ord)
                 }
-            })
+            )
         }
     }
 
@@ -108,15 +107,15 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(feature = "selftest", muttest::mutate)]
-pub fn run(mutation: Mutation, op_str: &str, ord: Option<Ordering>) -> bool {
-    mutation.report_coverage(Some(match ord {
+pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
+    m_id.report_coverage(Some(match ord {
         None => "",
         Some(Ordering::Less) => "LT",
         Some(Ordering::Equal) => "EQ",
         Some(Ordering::Greater) => "GT",
     }));
 
-    match (ord, mutation.as_option().unwrap_or(op_str)) {
+    match (ord, m_id.get_action().as_deref().unwrap_or(op_str)) {
         (None, _) => false,
         (Some(ord), "<") => ord.is_lt(),
         (Some(ord), "<=") => ord.is_le(),

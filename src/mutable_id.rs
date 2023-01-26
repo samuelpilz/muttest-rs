@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::Error;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BakedMutableId {
     pub pkg_name: &'static str,
     pub crate_name: &'static str,

@@ -78,48 +78,43 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                 let (mut left_type, mut right_type, mut output_type) =
                     (#muttest_api::PhantomData, #muttest_api::PhantomData,#muttest_api::PhantomData);
 
-                let __muttest_mutation = (#m_id).get_active_mutation();
-
                 // TODO: this has exponential blowup of code-size. Dead branches should use original code instead
                 // dead branches to help type inference
                 #[allow(unused_assignments)]
-                match 0 {
-                    _ if __muttest_mutation.is_skip() => {
-                        let (_left, _right) = (#left, #right);
-                        left_type = #muttest_api::phantom_for_type(&_left);
-                        right_type = #muttest_api::phantom_for_type(&_right);
-                        let _output = _left #op _right;
-                        output_type = #muttest_api::phantom_for_type(&_output);
-                        _output
-                    }
-                    _ => {
-                        __muttest_mutation.report_details(
-                            #loc,
-                            "",
-                            &#muttest_api::mutation_string_from_bool_list(&[
-                                #((
-                                    #op_symbols,
-                                    {
-                                        #[allow(unused_imports)]
-                                        use #muttest_api::mutable::binop_calc::#op_names::{YesOp, NotOp};
-                                        (&(left_type, right_type, output_type)).is_op()
-                                    }
-                                ),)*
-                            ])
-                        );
-                        let (_left, _right) = (#left, #right);
-                        __muttest_mutation.report_coverage(#muttest_api::Option::None);
-                        match &*__muttest_mutation.as_option().unwrap_or_default() {
-                            "" => _left #op _right,
-                            #(#op_symbols =>
+                if false {
+                    let (_left, _right) = (#left, #right);
+                    left_type = #muttest_api::phantom_for_type(&_left);
+                    right_type = #muttest_api::phantom_for_type(&_right);
+                    let _output = _left #op _right;
+                    output_type = #muttest_api::phantom_for_type(&_output);
+                    _output
+                } else {
+                    (#m_id).report_details(
+                        #loc,
+                        "",
+                        &#muttest_api::mutation_string_from_bool_list(&[
+                            #((
+                                #op_symbols,
                                 {
                                     #[allow(unused_imports)]
                                     use #muttest_api::mutable::binop_calc::#op_names::{YesOp, NotOp};
-                                    (&(left_type, right_type, output_type)).do_op(_left, _right)
+                                    (&(left_type, right_type, output_type)).is_op()
                                 }
-                            )*
-                            _ => todo!()
-                        }
+                            ),)*
+                        ])
+                    );
+                    let (_left, _right) = (#left, #right);
+                    (#m_id).report_coverage(#muttest_api::Option::None);
+                    match (#m_id).get_action().as_deref().unwrap_or_default() {
+                        "" => _left #op _right,
+                        #(#op_symbols =>
+                            {
+                                #[allow(unused_imports)]
+                                use #muttest_api::mutable::binop_calc::#op_names::{YesOp, NotOp};
+                                (&(left_type, right_type, output_type)).do_op(_left, _right)
+                            }
+                        )*
+                        _ => todo!()
                     }
                 }
             })

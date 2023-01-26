@@ -34,7 +34,6 @@ impl<'a> TryFrom<&'a Expr> for Mutable<'a> {
 
 impl<'a> super::Mutable<'a> for Mutable<'a> {
     const NAME: &'static str = "lit_int";
-
     fn span(&self) -> Span {
         self.span
     }
@@ -65,25 +64,19 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
     }
 }
 
-// #[cfg_attr(feature = "selftest", muttest::mutate)]
-// TODO: enable
+#[cfg_attr(feature = "selftest", muttest::mutate)]
 pub fn run<I: MutableInt>(m_id: BakedMutableId, lit: I, loc: BakedLocation) -> I {
-    let mutation = m_id.get_active_mutation();
-    if mutation.is_skip() {
-        return lit;
-    }
+    m_id.report_coverage(None);
+    m_id.report_details(loc, I::type_str(), "");
 
-    mutation.report_coverage(None);
-
-    mutation.report_details(loc, I::type_str(), "");
-
-    match mutation.as_option() {
+    match m_id.get_action().as_deref() {
         None => lit,
         Some(p) => {
             if !p.chars().all(|c| c.is_numeric()) {
                 todo!();
             }
             I::parse(p)
+            // TODO: manage error
         }
     }
 }

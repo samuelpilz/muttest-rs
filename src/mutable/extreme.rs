@@ -5,8 +5,8 @@ use quote::{quote_spanned, ToTokens};
 use syn::ItemFn;
 
 use crate::{
+    api::BakedMutableId,
     transformer::{MuttestTransformer, TransformSnippets},
-    Mutation,
 };
 
 // TODO: mutate (some) blocks instead of complete `fn`s?
@@ -52,22 +52,20 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
         } = self;
         quote_spanned! {span=>
             #vis #sig {
-                let __muttest_mutation = (#m_id).get_active_mutation();
-
                 let ret_type = #muttest_api::PhantomData;
                 // dead branches help type inference
                 match 0 {
-                    // type-check the original code first, skip this mutation if necessary
-                    _ if __muttest_mutation.is_skip() => #block,
+                    // type-check the original code first
+                    1 => #block,
                     // unify the ret_type with expression-type of block
                     2 => #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
-                    // unify the ret_type with fn return value
+                    // unify the ret_type with fn return type
                     3 => return #muttest_api::mutable::extreme::phantom_unwrap(ret_type),
 
                     // run mutable
                     _ => {
                         // report static analysis
-                        __muttest_mutation.report_details(
+                        (#m_id).report_details(
                             #loc,
                             "",
                             &#muttest_api::mutation_string_from_bool_list(
@@ -83,7 +81,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                             )
                         );
 
-                        match #muttest_api::mutable::extreme::run(__muttest_mutation) {
+                        match #muttest_api::mutable::extreme::run(#m_id) {
                             #muttest_api::ControlFlow::Continue(_) => #block,
                             #muttest_api::ControlFlow::Break(_) => {
                                 #[allow(unused_imports)]
@@ -99,10 +97,10 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(feature = "selftest", muttest::mutate)]
-pub fn run(mutation: Mutation) -> ControlFlow<()> {
-    mutation.report_coverage(None);
+pub fn run(m_id: BakedMutableId) -> ControlFlow<()> {
+    m_id.report_coverage(None);
 
-    match mutation.as_option() {
+    match m_id.get_action().as_deref() {
         None => ControlFlow::Continue(()),
         Some("default") => ControlFlow::Break(()),
         Some("panic") => panic!("panic from extreme mutation"),

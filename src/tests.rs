@@ -23,11 +23,11 @@ lazy_static::lazy_static! {
 }
 
 impl BakedMutableId {
-    pub(crate) fn is_isolated(&self) -> bool {
+    pub(crate) fn is_isolated(self) -> bool {
         self.pkg_name == "#isolated"
     }
 
-    pub(crate) fn test_context(&self) -> Option<Box<dyn IMuttestContext>> {
+    pub(crate) fn test_context(self) -> Option<Box<dyn IMuttestContext>> {
         if self.is_isolated() {
             Some(as_box_dyn_context(
                 TEST_ISOLATED_CONTEXT
@@ -187,7 +187,7 @@ impl<R: IMuttestContext> IMuttestContext for Arc<R> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         <R as IMuttestContext>::mutations(self)
     }
-    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
     fn write_details(
@@ -207,7 +207,7 @@ impl<R: IMuttestContext + ?Sized> IMuttestContext for Box<R> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         <R as IMuttestContext>::mutations(self)
     }
-    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
     fn write_details(

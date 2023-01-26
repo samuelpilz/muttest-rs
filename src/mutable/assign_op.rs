@@ -63,46 +63,41 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                 let (mut left_type, mut right_type) =
                     (#muttest_api::PhantomData, #muttest_api::PhantomData);
 
-                let __muttest_mutation = (#m_id).get_active_mutation();
-
                 // TODO: this has exponential blowup of code-size. Dead branches should use original code instead
                 // dead branches to help type inference
                 #[allow(unused_assignments)]
-                match 0 {
-                    _ if __muttest_mutation.is_skip() => {
-                        let (mut _left, _right) = (&mut (#left), #right);
-                        left_type = #muttest_api::phantom_for_type(&_left);
-                        right_type = #muttest_api::phantom_for_type(&_right);
-                        *_left #op _right;
-                    }
-                    _ => {
-                        __muttest_mutation.report_details(
-                            #loc,
-                            "",
-                            &#muttest_api::mutation_string_from_bool_list(&[
-                                #((
-                                    #op_symbols,
-                                    {
-                                        #[allow(unused_imports)]
-                                        use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
-                                        (&(left_type, right_type)).is_op()
-                                    }
-                                ),)*
-                            ])
-                        );
-                        let (mut _left, _right) = (&mut #left, #right);
-                        __muttest_mutation.report_coverage(#muttest_api::Option::None);
-                        match __muttest_mutation.as_option() {
-                            #muttest_api::Option::None => *_left #op _right,
-                            #(#muttest_api::Option::Some(#op_symbols) =>
+                if false {
+                    let (mut _left, _right) = (&mut (#left), #right);
+                    left_type = #muttest_api::phantom_for_type(&_left);
+                    right_type = #muttest_api::phantom_for_type(&_right);
+                    *_left #op _right;
+                } else {
+                    (#m_id).report_details(
+                        #loc,
+                        "",
+                        &#muttest_api::mutation_string_from_bool_list(&[
+                            #((
+                                #op_symbols,
                                 {
                                     #[allow(unused_imports)]
                                     use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
-                                    (&(left_type, right_type)).do_op(_left, _right)
+                                    (&(left_type, right_type)).is_op()
                                 }
-                            )*
-                            _ => todo!()
-                        }
+                            ),)*
+                        ])
+                    );
+                    let (mut _left, _right) = (&mut #left, #right);
+                    (#m_id).report_coverage(#muttest_api::Option::None);
+                    match (#m_id).get_action().as_deref() {
+                        #muttest_api::Option::None => *_left #op _right,
+                        #(#muttest_api::Option::Some(#op_symbols) =>
+                            {
+                                #[allow(unused_imports)]
+                                use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
+                                (&(left_type, right_type)).do_op(_left, _right)
+                            }
+                        )*
+                        _ => todo!()
                     }
                 }
             })

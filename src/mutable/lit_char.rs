@@ -59,16 +59,10 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
 #[cfg_attr(feature = "selftest", muttest::mutate)]
 pub fn run(m_id: BakedMutableId, c: char, loc: BakedLocation) -> char {
-    let mutation = m_id.get_active_mutation();
-    if mutation.is_skip() {
-        return c;
-    }
+    m_id.report_coverage(None);
+    m_id.report_details(loc, "char", "");
 
-    mutation.report_coverage(None);
-
-    mutation.report_details(loc, "char", "");
-
-    match mutation.as_option() {
+    match m_id.get_action().as_deref() {
         None => c,
         Some(p) => {
             if p.chars().count() != 1 {

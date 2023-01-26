@@ -34,7 +34,7 @@ pub(crate) struct MuttestContext<F> {
 /// object-safe trait for `MuttestContext` functions
 pub(crate) trait IMuttestContext {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>>;
-    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool;
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool;
 
     fn write_details(
         &self,
@@ -85,7 +85,7 @@ impl<F: Write> IMuttestContext for MuttestContext<F> {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         &self.mutations
     }
-    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         self.pkg_name == m_id.pkg_name && self.crate_name == m_id.crate_name
     }
     fn write_details(
@@ -158,7 +158,7 @@ impl<R: IMuttestContext> IMuttestContext for &'static R {
     fn mutations(&self) -> &BTreeMap<CrateLocalMutableId, Arc<str>> {
         <R as IMuttestContext>::mutations(self)
     }
-    fn tracks_mutable(&self, m_id: &BakedMutableId) -> bool {
+    fn tracks_mutable(&self, m_id: BakedMutableId) -> bool {
         <R as IMuttestContext>::tracks_mutable(self, m_id)
     }
     fn write_details(

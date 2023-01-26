@@ -3,9 +3,9 @@ use quote::{quote_spanned, ToTokens};
 use syn::{spanned::Spanned, BinOp, Expr, ExprBinary};
 
 use crate::{
+    api::BakedMutableId,
     report::MutableAnalysis,
     transformer::{MuttestTransformer, TransformSnippets},
-    Mutation,
 };
 
 use super::FilterMutableCode;
@@ -54,19 +54,18 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
         } = transformer.new_mutable(&self, &op_str);
 
         quote_spanned! {span=>
-            #muttest_api::id({
-                let __muttest_mutation = (#m_id).get_active_mutation();
-                if __muttest_mutation.is_skip() {
-                    (#left) #op (#right)
+            #muttest_api::id(
+                if false {
+                    #left #op #right
                 } else {
-                    __muttest_mutation.report_details(#loc,"","");
+                    (#m_id).report_details(#loc,"","");
 
                     // for improved type-inference and `!`-type handling call the eq-operation here.
                     let _res = #left #op #right;
 
-                    #muttest_api::mutable::binop_eq::run(__muttest_mutation, #op_str, _res)
+                    #muttest_api::mutable::binop_eq::run(#m_id, #op_str, _res)
                 }
-            })
+            )
         }
     }
 
@@ -76,15 +75,15 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 }
 
 #[cfg_attr(feature = "selftest", muttest::mutate)]
-pub fn run(mutation: Mutation, op_str: &str, res: bool) -> bool {
+pub fn run(m_id: BakedMutableId, op_str: &str, res: bool) -> bool {
     debug_assert!(matches!(op_str, "==" | "!="));
 
     let eq = (op_str == "==") == res;
 
     // this reports behavior but is irrelevant for weak mutation testing
-    mutation.report_coverage(Some(if eq { "EQ" } else { "NE" }));
+    m_id.report_coverage(Some(if eq { "EQ" } else { "NE" }));
 
-    match mutation.as_option().unwrap_or(op_str) {
+    match m_id.get_action().as_deref().unwrap_or(op_str) {
         "==" => eq,
         "!=" => !eq,
         _ => todo!(),
