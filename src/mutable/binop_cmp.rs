@@ -73,7 +73,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
 
                     // this is required for handling comparisons where one side has type `!`
                     #[allow(unused_imports)]
-                    use #muttest_api::mutable::binop_cmp::is_partial_ord::{YesOrd, NotOrd};
+                    use #muttest_api::mutable::binop_cmp::is_partial_ord::IsOrd;
                     let ord = (&(_left, _right)).get_ord(_left, _right);
 
                     #muttest_api::mutable::binop_cmp::run(#m_id, #op_str, ord)
@@ -128,15 +128,11 @@ pub fn run(m_id: BakedMutableId, op_str: &str, ord: Option<Ordering>) -> bool {
 pub mod is_partial_ord {
     use std::cmp::Ordering;
 
-    pub trait YesOrd<L: ?Sized, R: ?Sized> {
+    pub trait IsOrd<L: ?Sized, R: ?Sized> {
         fn is_ord(&self) -> bool;
         fn get_ord(&self, left: &L, right: &R) -> Option<Ordering>;
     }
-    pub trait NotOrd<L: ?Sized, R: ?Sized> {
-        fn is_ord(&self) -> bool;
-        fn get_ord(&self, left: &L, right: &R) -> Option<Ordering>;
-    }
-    impl<L: PartialOrd<R> + ?Sized, R: ?Sized> YesOrd<L, R> for (&L, &R) {
+    impl<L: PartialOrd<R> + ?Sized, R: ?Sized> IsOrd<L, R> for (&L, &R) {
         fn is_ord(&self) -> bool {
             true
         }
@@ -144,7 +140,7 @@ pub mod is_partial_ord {
             <L as PartialOrd<R>>::partial_cmp(left, right)
         }
     }
-    impl<L: ?Sized, R: ?Sized> NotOrd<L, R> for &(&L, &R) {
+    impl<L: ?Sized, R: ?Sized> IsOrd<L, R> for &(&L, &R) {
         fn is_ord(&self) -> bool {
             false
         }

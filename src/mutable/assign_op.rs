@@ -80,7 +80,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                                 #op_symbols,
                                 {
                                     #[allow(unused_imports)]
-                                    use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
+                                    use #muttest_api::mutable::assign_op::#op_names::IsOp;
                                     (&(left_type, right_type)).is_op()
                                 }
                             ),)*
@@ -93,7 +93,7 @@ impl<'a> super::Mutable<'a> for Mutable<'a> {
                         #(#muttest_api::Option::Some(#op_symbols) =>
                             {
                                 #[allow(unused_imports)]
-                                use #muttest_api::mutable::assign_op::#op_names::{YesOp, NotOp};
+                                use #muttest_api::mutable::assign_op::#op_names::IsOp;
                                 (&(left_type, right_type)).do_op(_left, _right)
                             }
                         )*
@@ -117,15 +117,11 @@ macro_rules! assign_op_traits {
             pub mod $op {
                 use std::marker::PhantomData;
 
-                pub trait YesOp<L, R> {
+                pub trait IsOp<L, R> {
                     fn is_op(&self) -> bool;
                     fn do_op(&self, left: &mut L, right: R);
                 }
-                pub trait NotOp<L, R> {
-                    fn is_op(&self) -> bool;
-                    fn do_op(&self, left: &mut L, right: R);
-                }
-                impl<L: ::std::ops::$t<R>, R> YesOp<L, R> for (PhantomData<&mut L>, PhantomData<R>)
+                impl<L: ::std::ops::$t<R>, R> IsOp<L, R> for (PhantomData<&mut L>, PhantomData<R>)
                 {
                     fn is_op(&self) -> bool {
                         true
@@ -134,7 +130,7 @@ macro_rules! assign_op_traits {
                         <L as ::std::ops::$t<R>>::$op(left, right)
                     }
                 }
-                impl<L, R> NotOp<L, R> for &(PhantomData<&mut L>, PhantomData<R>) {
+                impl<L, R> IsOp<L, R> for &(PhantomData<&mut L>, PhantomData<R>) {
                     fn is_op(&self) -> bool {
                         false
                     }

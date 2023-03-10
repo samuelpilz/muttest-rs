@@ -62,7 +62,7 @@ pub fn run(m_id: BakedMutableId, c: char, loc: BakedLocation) -> char {
     m_id.report_coverage(None);
     m_id.report_details(loc, "char", "");
 
-    match m_id.get_action().as_deref() {
+    match m_id.get_action() {
         None => c,
         Some(p) => {
             if p.chars().count() != 1 {
