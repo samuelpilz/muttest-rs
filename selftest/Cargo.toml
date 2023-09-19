@@ -1,0 +1,31 @@
+[package]
+name = "muttest-selftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "../src/lib.rs"
+
+[dependencies]
+muttest = { path = "../api" }
+muttest-codegen = { path = "../codegen" }
+once_cell = "1.17.1"
+thiserror = "1.0"
+serde = { version = "1", features = ["derive"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+syn = { version = "2.0", features = ["full", "fold"] }
+csv = "1.2.2"
+backtrace-on-stack-overflow = "0.3.0"
+log = "0.4.0"
+env_logger = "0.10.0"
+futures = { version = "0.3.28", features = ["executor"] }
+strum = { version = "0.25.0", features = ["derive"] }
+
+[features]
+default = ["selftest"]
+selftest = ["muttest-codegen/selftest"]
+
+[dev-dependencies]
+anyhow = "1.0.72"

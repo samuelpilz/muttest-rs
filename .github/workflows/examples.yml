@@ -1,0 +1,44 @@
+name: Examples
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+      - name: Cache
+        uses: actions/cache@v3.0.11
+        with:
+          key: cargo-cache
+          path: |
+            target/
+            ~/.cargo
+      - name: Run examples
+        run: cargo run -p cargo-muttest -- muttest -p muttest-examples
+
+  examples-nightly:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg procmacro2_semver_exempt"
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Cache
+        uses: actions/cache@v3.0.11
+        with:
+          key: cargo-cache-nightly
+          path: |
+            target/
+            ~/.cargo
+      - name: Run examples
+        run: cargo run -p cargo-muttest -- muttest -p muttest-examples

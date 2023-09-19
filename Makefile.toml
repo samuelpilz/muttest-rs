@@ -1,0 +1,52 @@
+[config]
+default_to_workspace = false
+
+[tasks.examples]
+description = "Run Mutation Testing on exampes"
+command = "cargo"
+args = [
+    "run",
+    "-p",
+    "cargo-muttest",
+    "--",
+    "muttest",
+    "-p",
+    "muttest-examples",
+    "--test-timeout",
+    "1",
+    "--all-features"
+]
+cwd = "examples"
+
+[tasks.test-nightly]
+description = "Run Mutation Testing on muttest-rs itself, nightly version"
+toolchain = "nightly"
+env.RUSTFLAGS = "--cfg procmacro2_semver_exempt"
+command = "cargo"
+args = ["test"]
+
+[tasks.selftest]
+description = "Run Mutation Testing on muttest-rs itself"
+command = "cargo"
+args = ["run", "-p", "cargo-muttest", "--", "muttest", "-p", "muttest-selftest"]
+
+[tasks.selftest-nightly]
+description = "Run Mutation Testing on muttest-rs itself, nightly version"
+toolchain = "nightly"
+env.RUSTFLAGS = "--cfg procmacro2_semver_exempt"
+command = "cargo"
+args = ["run", "-p", "cargo-muttest", "--", "muttest", "-p", "muttest-selftest"]
+
+[tasks.lint]
+description = "Run clippy"
+command = "cargo"
+args = ["clippy", "--tests", "--workspace"]
+
+[tasks.check-fmt]
+description = "Run clippy"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.all]
+description = "Run everything (on stable)"
+run_task = { name = ["test", "selftest", "examples", "lint", "check-fmt"] }

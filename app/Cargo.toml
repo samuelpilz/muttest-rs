@@ -1,0 +1,21 @@
+[package]
+name = "cargo-muttest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive", "cargo"] }
+cargo_metadata = "0.17.0"
+thiserror = "1.0"
+csv = "1.2.2"
+serde = "1"
+muttest-core = { path = ".." }
+serde_json = "1.0"
+log = "0.4.0"
+env_logger = "0.10.0"
+
+[[bin]]
+name = "cargo-muttest"
+path = "main.rs"
+test = false
+bench = false

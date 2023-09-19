@@ -1,0 +1,21 @@
+[package]
+name = "muttest-codegen"
+version = "0.1.0-alpha"
+edition = "2021"
+
+[dependencies]
+proc-macro2 = { version = "1.0.24", features = ["span-locations"] }
+syn = { version = "2.0", features = ["full", "fold"] }
+quote = "1.0.9"
+once_cell = "1.17.1"
+muttest-core = { path = "..", optional = true }
+csv = "1.2.2"
+
+[lib]
+proc_macro = true
+path = "lib.rs"
+
+[features]
+default = ["mutate"]
+mutate = ["dep:muttest-core"]
+selftest = []

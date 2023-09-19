@@ -1,0 +1,15 @@
+[package]
+name = "muttest"
+version = "0.1.0-alpha"
+edition = "2021"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+muttest-core = { path = "..", optional = true }
+muttest-codegen = { path = "../codegen" }
+
+[features]
+default = ["mutate"]
+mutate = ["dep:muttest-core", "muttest-codegen/mutate"]
